@@ -1,0 +1,280 @@
+/* ============================================================
+   MedMatrix 360 — Assigned Tests Stylesheet
+   Phase 7 UI Redesign — Scoped to .assigned-tests-page & .loading
+   Zero global :root leakage | Matches exact JSX structure
+   ============================================================ */
+
+.assigned-tests-page {
+  --lab-bg: #FFF7FA;
+  --lab-surface: #FFFFFF;
+  --lab-primary: #D85F89;
+  --lab-primary-hover: #C94D78;
+  --lab-primary-tint: #FCE7EF;
+  --lab-border: #F1DCE4;
+  --lab-text-primary: #172238;
+  --lab-text-secondary: #64748B;
+  --lab-text-muted: #94A3B8;
+  --lab-shadow: 0 4px 20px rgba(216, 95, 137, 0.08);
+  --lab-shadow-hover: 0 12px 28px rgba(216, 95, 137, 0.15);
+  --lab-amber: #F59E0B;
+  --lab-amber-bg: #FEF3C7;
+  --lab-amber-text: #B45309;
+
+  min-height: 100vh;
+  padding: 32px 36px;
+  background-color: var(--lab-bg);
+  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--lab-text-primary);
+  box-sizing: border-box;
+}
+
+/* Page Heading */
+.assigned-tests-page h2 {
+  font-size: 1.85rem;
+  font-weight: 800;
+  color: var(--lab-text-primary);
+  margin: 0 0 28px 0;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+/* ============================================================
+   Loading State (renders at top level when loading = true)
+   ============================================================ */
+.loading {
+  min-height: 50vh;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #64748B;
+  background: #FFF7FA;
+  font-family: 'Outfit', 'Inter', sans-serif;
+  letter-spacing: -0.01em;
+}
+
+.assigned-tests-page .loading {
+  min-height: auto;
+  padding: 60px 24px;
+  text-align: center;
+  color: var(--lab-text-secondary);
+  background: var(--lab-surface);
+  border-radius: 20px;
+  border: 1.5px solid var(--lab-border);
+  box-shadow: var(--lab-shadow);
+}
+
+/* ============================================================
+   Empty State
+   ============================================================ */
+.assigned-tests-page .empty-state {
+  text-align: center;
+  padding: 64px 24px;
+  background: var(--lab-surface);
+  border-radius: 20px;
+  border: 2px dashed var(--lab-border);
+  color: var(--lab-text-secondary);
+  box-shadow: var(--lab-shadow);
+}
+
+.assigned-tests-page .empty-state p {
+  font-size: 1.1rem;
+  font-weight: 600;
+  color: var(--lab-text-secondary);
+  margin: 0;
+}
+
+/* ============================================================
+   Requests Grid
+   ============================================================ */
+.assigned-tests-page .requests-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(360px, 1fr));
+  gap: 24px;
+}
+
+/* ============================================================
+   Request Card
+   ============================================================ */
+.assigned-tests-page .request-card {
+  background: var(--lab-surface);
+  border: 1.5px solid var(--lab-border);
+  border-radius: 20px;
+  box-shadow: var(--lab-shadow);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  position: relative;
+}
+
+.assigned-tests-page .request-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--lab-shadow-hover);
+  border-color: #F7BFD2;
+}
+
+/* Card Header */
+.assigned-tests-page .request-card .card-header {
+  padding: 18px 22px;
+  background: #FFF7FA;
+  border-bottom: 1.5px solid var(--lab-border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+
+.assigned-tests-page .request-card .patient-name {
+  font-size: 1.15rem;
+  font-weight: 800;
+  color: var(--lab-text-primary);
+  letter-spacing: -0.01em;
+}
+
+.assigned-tests-page .request-card .patient-id {
+  font-size: 0.82rem;
+  font-weight: 700;
+  color: var(--lab-primary);
+  background: var(--lab-primary-tint);
+  border: 1px solid #F7BFD2;
+  padding: 4px 10px;
+  border-radius: 8px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
+  letter-spacing: 0.04em;
+}
+
+/* Card Body */
+.assigned-tests-page .request-card .card-body {
+  padding: 22px;
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.assigned-tests-page .request-card .info-row {
+  font-size: 0.95rem;
+  color: var(--lab-text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.assigned-tests-page .request-card .info-row strong {
+  color: var(--lab-text-primary);
+  font-weight: 700;
+}
+
+/* Tests List */
+.assigned-tests-page .request-card .tests-list {
+  margin-top: 4px;
+  padding-top: 14px;
+  border-top: 1px solid #F8E7EE;
+}
+
+.assigned-tests-page .request-card .tests-list strong {
+  font-size: 0.8rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--lab-text-muted);
+  display: block;
+  margin-bottom: 10px;
+}
+
+.assigned-tests-page .request-card .tests-list ul {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.assigned-tests-page .request-card .tests-list li {
+  background: #FFF7FA;
+  color: var(--lab-text-primary);
+  border: 1px solid var(--lab-border);
+  padding: 6px 14px;
+  border-radius: 10px;
+  font-size: 0.88rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+}
+
+/* Card Footer */
+.assigned-tests-page .request-card .card-footer {
+  padding: 18px 22px;
+  background: var(--lab-surface);
+  border-top: 1.5px solid var(--lab-border);
+}
+
+/* Upload Button (label styling) */
+.assigned-tests-page .request-card .upload-btn {
+  width: 100%;
+  box-sizing: border-box;
+  background: var(--lab-primary);
+  color: #FFFFFF;
+  border: 1.5px solid transparent;
+  padding: 13px 20px;
+  border-radius: 12px;
+  font-weight: 700;
+  font-size: 0.95rem;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  box-shadow: 0 4px 14px rgba(216, 95, 137, 0.25);
+  text-align: center;
+  user-select: none;
+}
+
+.assigned-tests-page .request-card .upload-btn:hover:not(.disabled) {
+  background: var(--lab-primary-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(216, 95, 137, 0.35);
+}
+
+.assigned-tests-page .request-card .upload-btn:active:not(.disabled) {
+  transform: translateY(0);
+}
+
+.assigned-tests-page .request-card .upload-btn.disabled {
+  background: #E2E8F0;
+  color: #94A3B8;
+  cursor: not-allowed;
+  box-shadow: none;
+  border-color: #CBD5E1;
+}
+
+/* ============================================================
+   Responsive Design Breakpoints
+   ============================================================ */
+@media (max-width: 768px) {
+  .assigned-tests-page {
+    padding: 20px 18px;
+  }
+
+  .assigned-tests-page h2 {
+    font-size: 1.55rem;
+    margin-bottom: 20px;
+  }
+
+  .assigned-tests-page .requests-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .assigned-tests-page .request-card .card-header,
+  .assigned-tests-page .request-card .card-body,
+  .assigned-tests-page .request-card .card-footer {
+    padding: 16px 18px;
+  }
+}

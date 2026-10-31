@@ -1,0 +1,545 @@
+/* ==========================================================================
+   MedMatrix 360 — Shared Authentication Form Design System
+   Reusable Stylesheet for Secondary Auth Screens (Signup, Forgot, Reset)
+   Aesthetic: MedMatrix 360 Dark Slate / Deep Navy & Clinical Teal / Cyber Cyan
+   ========================================================================== */
+
+/* Design Tokens Scoped to Auth Portal Components */
+.ap-page {
+  --ap-teal-dark: #D85F89;
+  --ap-teal: #D85F89;
+  --ap-teal-light: #D85F89;
+  --ap-cyan: #0ea5e9;
+  --ap-cyan-glow: #38bdf8;
+  --ap-navy-deep: #0a0f1d;
+  --ap-navy: #0f172a;
+  --ap-slate: #1e293b;
+  --ap-slate-light: #334155;
+  --ap-border: #334155;
+  --ap-border-subtle: rgba(51, 65, 85, 0.65);
+  --ap-border-focus: #D85F89;
+  --ap-text-primary: #f8fafc;
+  --ap-text-secondary: #cbd5e1;
+  --ap-text-muted: #94a3b8;
+  --ap-error-bg: rgba(239, 68, 68, 0.12);
+  --ap-error-border: rgba(239, 68, 68, 0.35);
+  --ap-error-text: #fca5a5;
+  --ap-success-bg: rgba(16, 185, 129, 0.12);
+  --ap-success-border: rgba(16, 185, 129, 0.35);
+  --ap-success-text: #6ee7b7;
+  --ap-info-bg: rgba(14, 165, 233, 0.12);
+  --ap-info-border: rgba(14, 165, 233, 0.35);
+  --ap-info-text: #7dd3fc;
+  --ap-card-bg: rgba(15, 23, 42, 0.88);
+  --ap-input-bg: rgba(15, 23, 42, 0.75);
+
+  min-height: 100vh;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 32px 16px;
+  background-color: var(--ap-navy-deep);
+  background-image: 
+    radial-gradient(rgba(14, 165, 233, 0.12) 1.5px, transparent 1.5px),
+    radial-gradient(ellipse at 50% 0%, rgba(216, 95, 137, 0.15) 0%, transparent 65%),
+    radial-gradient(ellipse at 80% 100%, rgba(14, 165, 233, 0.1) 0%, transparent 60%);
+  background-size: 32px 32px, 100% 100%, 100% 100%;
+  font-family: 'Outfit', 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+  color: var(--ap-text-primary);
+  box-sizing: border-box;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Ambient glow orb for depth */
+.ap-page::before {
+  content: '';
+  position: absolute;
+  top: -120px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 680px;
+  height: 280px;
+  background: radial-gradient(circle, rgba(216, 95, 137, 0.18) 0%, rgba(14, 165, 233, 0.08) 45%, transparent 70%);
+  filter: blur(60px);
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* Page Outer Container */
+.ap-container {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 520px;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+
+/* Wider Container for Complex Multi-Field Signups */
+.ap-container-wide {
+  max-width: 580px;
+}
+
+/* Centered Authentication Card */
+.ap-card {
+  background: var(--ap-card-bg);
+  backdrop-filter: blur(16px);
+  -webkit-backdrop-filter: blur(16px);
+  border: 1px solid var(--ap-border);
+  border-radius: 20px;
+  padding: 36px 34px;
+  box-shadow: 
+    0 24px 50px -12px rgba(0, 0, 0, 0.55),
+    0 0 0 1px rgba(255, 255, 255, 0.04),
+    0 1px 2px 0 rgba(14, 165, 233, 0.1);
+  box-sizing: border-box;
+  position: relative;
+}
+
+/* Back Button */
+.ap-back-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(30, 41, 59, 0.65);
+  border: 1px solid var(--ap-border);
+  color: var(--ap-text-secondary);
+  padding: 7px 14px;
+  border-radius: 10px;
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  text-decoration: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  margin-bottom: 20px;
+}
+
+.ap-back-btn:hover {
+  background: var(--ap-slate-light);
+  color: var(--ap-text-primary);
+  border-color: var(--ap-teal);
+  transform: translateX(-2px);
+}
+
+/* Header & Branding Area */
+.ap-header {
+  text-align: center;
+  margin-bottom: 28px;
+}
+
+.ap-brand-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: rgba(216, 95, 137, 0.15);
+  border: 1px solid rgba(216, 95, 137, 0.35);
+  padding: 5px 14px;
+  border-radius: 20px;
+  font-size: 11.5px;
+  font-weight: 750;
+  color: var(--ap-cyan-glow);
+  letter-spacing: 0.6px;
+  text-transform: uppercase;
+  margin-bottom: 14px;
+}
+
+.ap-brand-logo-wrap {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.ap-brand-logo {
+  max-height: 48px;
+  width: auto;
+  max-width: 220px;
+  object-fit: contain;
+  filter: drop-shadow(0 4px 12px rgba(14, 165, 233, 0.2));
+}
+
+.ap-title {
+  font-size: 24px;
+  font-weight: 800;
+  color: var(--ap-text-primary);
+  margin: 0 0 6px 0;
+  letter-spacing: -0.4px;
+  line-height: 1.25;
+}
+
+.ap-title-underline {
+  display: block;
+  width: 48px;
+  height: 2.5px;
+  margin: 8px auto 10px auto;
+  border-radius: 9999px;
+  background: linear-gradient(90deg, var(--ap-teal) 0%, var(--ap-cyan) 100%);
+  box-shadow: 0 1px 6px rgba(216, 95, 137, 0.4);
+}
+
+.ap-subtitle {
+  font-size: 13.5px;
+  color: var(--ap-text-muted);
+  margin: 0;
+  line-height: 1.45;
+  font-weight: 500;
+}
+
+/* Alerts & Notifications */
+.ap-alert {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  font-weight: 600;
+  margin-bottom: 18px;
+  line-height: 1.4;
+  box-sizing: border-box;
+}
+
+.ap-alert-error {
+  background: var(--ap-error-bg);
+  border: 1px solid var(--ap-error-border);
+  color: var(--ap-error-text);
+}
+
+.ap-alert-success {
+  background: var(--ap-success-bg);
+  border: 1px solid var(--ap-success-border);
+  color: var(--ap-success-text);
+}
+
+.ap-alert-info {
+  background: var(--ap-info-bg);
+  border: 1px solid var(--ap-info-border);
+  color: var(--ap-info-text);
+}
+
+/* Form Layout */
+.ap-form {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Responsive Form Row / Grids (Collapses to 1 Column at <= 640px) */
+.ap-grid-2 {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Form Groups & Labels */
+.ap-form-group {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ap-label {
+  font-size: 11.5px;
+  font-weight: 750;
+  text-transform: uppercase;
+  letter-spacing: 0.6px;
+  color: var(--ap-text-secondary);
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.ap-label-required {
+  color: #f87171;
+  margin-left: 2px;
+}
+
+/* Input Box Wrapper */
+.ap-input-wrapper {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+.ap-input-wrapper > div {
+  width: 100%;
+}
+
+.ap-input-icon {
+  position: absolute;
+  left: 14px;
+  color: var(--ap-text-muted);
+  font-size: 17px;
+  pointer-events: none;
+  transition: color 0.2s ease;
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.ap-input {
+  width: 100%;
+  padding: 12px 14px;
+  background: var(--ap-input-bg);
+  border: 1.5px solid var(--ap-border);
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ap-text-primary);
+  outline: none;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
+  box-sizing: border-box;
+}
+
+.ap-input-with-icon {
+  padding-left: 42px;
+}
+
+.ap-input::placeholder {
+  color: var(--ap-text-muted);
+  font-weight: 400;
+  opacity: 0.8;
+}
+
+.ap-input:hover:not(:disabled) {
+  border-color: var(--ap-slate-light);
+}
+
+.ap-input:focus {
+  border-color: var(--ap-border-focus);
+  background: rgba(15, 23, 42, 0.95);
+  box-shadow: 0 0 0 3.5px rgba(216, 95, 137, 0.22);
+}
+
+.ap-input:focus + .ap-input-icon,
+.ap-input:focus ~ .ap-input-icon {
+  color: var(--ap-cyan);
+}
+
+.ap-input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Action Buttons */
+.ap-btn-primary {
+  width: 100%;
+  padding: 13px 20px;
+  background: linear-gradient(135deg, var(--ap-teal) 0%, var(--ap-teal-dark) 100%);
+  color: #ffffff;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 12px;
+  font-size: 14.5px;
+  font-weight: 750;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 4px 14px rgba(216, 95, 137, 0.35);
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  font-family: inherit;
+  margin-top: 8px;
+}
+
+.ap-btn-primary:hover:not(:disabled) {
+  transform: translateY(-1.5px);
+  background: linear-gradient(135deg, var(--ap-teal-light) 0%, var(--ap-teal) 100%);
+  box-shadow: 0 6px 20px rgba(216, 95, 137, 0.5);
+}
+
+.ap-btn-primary:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.ap-btn-primary:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+  transform: none;
+}
+
+.ap-btn-secondary {
+  width: 100%;
+  padding: 12px 18px;
+  background: rgba(30, 41, 59, 0.7);
+  border: 1px solid var(--ap-border);
+  color: var(--ap-text-secondary);
+  border-radius: 12px;
+  font-size: 14px;
+  font-weight: 650;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  transition: all 0.2s ease;
+  font-family: inherit;
+  text-decoration: none;
+  box-sizing: border-box;
+}
+
+.ap-btn-secondary:hover {
+  background: var(--ap-slate-light);
+  color: var(--ap-text-primary);
+  border-color: var(--ap-teal);
+}
+
+/* Checkbox Row (e.g. Terms & Policy Acceptance) */
+.ap-checkbox-row {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  margin: 6px 0;
+  font-size: 12.5px;
+  color: var(--ap-text-secondary);
+  line-height: 1.4;
+  cursor: pointer;
+  user-select: none;
+}
+
+.ap-checkbox {
+  width: 17px;
+  height: 17px;
+  accent-color: var(--ap-teal);
+  cursor: pointer;
+  margin-top: 1px;
+  flex-shrink: 0;
+}
+
+.ap-inline-link {
+  background: none;
+  border: none;
+  color: var(--ap-cyan-glow);
+  font-weight: 700;
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  font-size: inherit;
+  font-family: inherit;
+  display: inline;
+}
+
+.ap-inline-link:hover {
+  color: #7dd3fc;
+}
+
+/* Divider & Switch Links */
+.ap-divider {
+  display: flex;
+  align-items: center;
+  text-align: center;
+  margin: 22px 0 18px 0;
+  color: var(--ap-text-muted);
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.3px;
+}
+
+.ap-divider::before,
+.ap-divider::after {
+  content: '';
+  flex: 1;
+  border-bottom: 1px solid var(--ap-border);
+}
+
+.ap-divider:not(:empty)::before {
+  margin-right: 12px;
+}
+
+.ap-divider:not(:empty)::after {
+  margin-left: 12px;
+}
+
+.ap-footer-text {
+  text-align: center;
+  font-size: 13px;
+  color: var(--ap-text-muted);
+  margin: 16px 0 0 0;
+}
+
+.ap-link {
+  color: var(--ap-cyan-glow);
+  font-weight: 700;
+  text-decoration: none;
+  transition: color 0.15s ease;
+  margin-left: 4px;
+}
+
+.ap-link:hover {
+  color: #7dd3fc;
+  text-decoration: underline;
+}
+
+/* Dev / Mock Link Card for Local Password Reset Testing */
+.ap-mock-box {
+  background: rgba(14, 165, 233, 0.08);
+  border: 1px dashed var(--ap-info-border);
+  padding: 12px 14px;
+  border-radius: 10px;
+  font-size: 12.5px;
+  color: var(--ap-info-text);
+  margin-bottom: 16px;
+  word-break: break-all;
+  line-height: 1.45;
+}
+
+/* ==========================================================================
+   Responsive Breakpoints
+   ========================================================================== */
+@media (max-width: 640px) {
+  .ap-page {
+    padding: 16px 12px;
+    align-items: flex-start;
+  }
+
+  .ap-card {
+    padding: 26px 18px;
+    border-radius: 16px;
+  }
+
+  .ap-grid-2 {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .ap-title {
+    font-size: 21px;
+  }
+
+  .ap-subtitle {
+    font-size: 12.5px;
+  }
+
+  .ap-btn-primary {
+    padding: 12px 16px;
+    font-size: 14px;
+  }
+}
+
+/* ==========================================================================
+   Reduced Motion Accessibility (WCAG 2.1)
+   ========================================================================== */
+@media (prefers-reduced-motion: reduce) {
+  .ap-page,
+  .ap-card,
+  .ap-btn-primary,
+  .ap-btn-secondary,
+  .ap-input,
+  .ap-back-btn {
+    transition: none !important;
+    animation: none !important;
+    transform: none !important;
+  }
+}

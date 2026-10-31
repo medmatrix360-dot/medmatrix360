@@ -1,0 +1,576 @@
+/* ============================================================
+   MedMatrix 360 Design System — Pharmacy Returns & Exchanges
+   Scoped under .pharmacy-returns-container & .pharmacy-management-container
+   Zero global :root leakage
+   ============================================================ */
+
+.pharmacy-returns-container {
+    --ret-bg: #FFF7FA;
+    --ret-surface: #FFFFFF;
+    --ret-primary: #D85F89;
+    --ret-primary-hover: #C94D78;
+    --ret-primary-active: #B83D68;
+    --ret-selected-bg: #FCE7EF;
+    --ret-selected-border: #F7BFD2;
+    --ret-navy: #172238;
+    --ret-muted: #64748B;
+    --ret-subtle: #94A3B8;
+    --ret-border: #F1DCE4;
+    --ret-border-light: #FDF2F6;
+    --ret-shadow: 0 4px 18px -2px rgba(216, 95, 137, 0.06), 0 2px 6px -1px rgba(23, 34, 56, 0.03);
+    --ret-shadow-sm: 0 1px 3px rgba(23, 34, 56, 0.04);
+
+    /* Semantic Clinical Tokens */
+    --ret-success: #10B981;
+    --ret-success-bg: #DCFCE7;
+    --ret-success-border: #BBF7D0;
+    --ret-warning: #F59E0B;
+    --ret-warning-bg: #FEF3C7;
+    --ret-warning-border: #FDE68A;
+    --ret-danger: #EF4444;
+    --ret-danger-bg: #FEE2E2;
+    --ret-danger-border: #FECACA;
+
+    min-height: 100vh;
+    padding: 24px;
+    background-color: var(--ret-bg);
+    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--ret-navy);
+}
+
+/* ============================================================
+   Header Section
+   ============================================================ */
+.pharmacy-returns-container .returns-header {
+    background: var(--ret-surface);
+    padding: 20px 24px;
+    border-radius: 16px;
+    border: 1.5px solid var(--ret-border);
+    box-shadow: var(--ret-shadow);
+    margin-bottom: 24px;
+}
+
+.pharmacy-returns-container .returns-header h1 {
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--ret-navy);
+    margin: 0 0 4px 0;
+    letter-spacing: -0.02em;
+}
+
+.pharmacy-returns-container .returns-header p {
+    color: var(--ret-muted);
+    margin: 0;
+    font-size: 0.92rem;
+    font-weight: 500;
+}
+
+/* ============================================================
+   Search & Lookup Section
+   ============================================================ */
+.pharmacy-returns-container .search-section {
+    background: var(--ret-surface);
+    padding: 24px;
+    border-radius: 16px;
+    border: 1.5px solid var(--ret-border);
+    box-shadow: var(--ret-shadow);
+    margin-bottom: 24px;
+}
+
+.pharmacy-returns-container .search-form {
+    display: flex;
+    gap: 12px;
+}
+
+.pharmacy-returns-container .search-input {
+    flex: 1;
+    padding: 11px 16px;
+    border: 1.5px solid var(--ret-border);
+    border-radius: 10px;
+    font-size: 0.92rem;
+    color: var(--ret-navy);
+    outline: none;
+    transition: all 0.15s ease;
+    background: #FFFFFF;
+}
+
+.pharmacy-returns-container .search-input:focus {
+    border-color: var(--ret-primary);
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.18);
+}
+
+.pharmacy-returns-container .btn-search {
+    padding: 11px 22px;
+    background: var(--ret-primary);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.9rem;
+    font-weight: 700;
+    transition: all 0.2s ease;
+    box-shadow: 0 2px 8px rgba(216, 95, 137, 0.28);
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pharmacy-returns-container .btn-search:hover:not(:disabled) {
+    background: var(--ret-primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(216, 95, 137, 0.38);
+}
+
+.pharmacy-returns-container .btn-search:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ============================================================
+   Search Results & Tables
+   ============================================================ */
+.pharmacy-returns-container .search-results {
+    margin-top: 24px;
+    padding-top: 18px;
+    border-top: 1.5px solid var(--ret-border);
+}
+
+.pharmacy-returns-container .search-results h3 {
+    margin: 0 0 16px 0;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--ret-navy);
+}
+
+.pharmacy-returns-container .results-table,
+.pharmacy-returns-container .items-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    margin-top: 10px;
+}
+
+.pharmacy-returns-container .results-table th,
+.pharmacy-returns-container .items-table th {
+    background-color: #FFF7FA;
+    padding: 12px 14px;
+    text-align: left;
+    color: var(--ret-navy);
+    font-weight: 700;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1.5px solid var(--ret-border);
+}
+
+.pharmacy-returns-container .results-table th:first-child,
+.pharmacy-returns-container .items-table th:first-child {
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+}
+
+.pharmacy-returns-container .results-table th:last-child,
+.pharmacy-returns-container .items-table th:last-child {
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.pharmacy-returns-container .results-table td,
+.pharmacy-returns-container .items-table td {
+    padding: 12px 14px;
+    border-bottom: 1px solid var(--ret-border);
+    color: var(--ret-navy);
+    font-size: 0.88rem;
+    vertical-align: middle;
+}
+
+.pharmacy-returns-container .results-table tbody tr:hover td,
+.pharmacy-returns-container .items-table tbody tr:hover td {
+    background: #FFF7FA;
+}
+
+.pharmacy-returns-container .btn-select {
+    padding: 7px 16px;
+    background: var(--ret-primary);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.84rem;
+    font-weight: 700;
+    transition: all 0.15s ease;
+    box-shadow: 0 1px 4px rgba(216, 95, 137, 0.25);
+}
+
+.pharmacy-returns-container .btn-select:hover {
+    background: var(--ret-primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 3px 8px rgba(216, 95, 137, 0.35);
+}
+
+/* Status badges */
+.pharmacy-returns-container .status {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: inline-block;
+}
+
+.pharmacy-returns-container .status.completed,
+.pharmacy-returns-container .status.dispensed {
+    background: var(--ret-success-bg);
+    color: #166534;
+    border: 1px solid var(--ret-success-border);
+}
+
+.pharmacy-returns-container .status.pending {
+    background: var(--ret-warning-bg);
+    color: #92400E;
+    border: 1px solid var(--ret-warning-border);
+}
+
+.pharmacy-returns-container .status.cancelled,
+.pharmacy-returns-container .status.refunded {
+    background: var(--ret-danger-bg);
+    color: #991B1B;
+    border: 1px solid var(--ret-danger-border);
+}
+
+/* ============================================================
+   Process Return / Exchange Section
+   ============================================================ */
+.pharmacy-returns-container .process-section {
+    background: var(--ret-surface);
+    padding: 28px;
+    border-radius: 16px;
+    border: 1.5px solid var(--ret-border);
+    box-shadow: var(--ret-shadow);
+}
+
+.pharmacy-returns-container .process-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 20px;
+    padding-bottom: 16px;
+    border-bottom: 1.5px solid var(--ret-border);
+}
+
+.pharmacy-returns-container .process-header h2 {
+    margin: 0;
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: var(--ret-navy);
+}
+
+.pharmacy-returns-container .process-header h2 small {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--ret-muted);
+}
+
+.pharmacy-returns-container .btn-cancel {
+    padding: 8px 16px;
+    background: #F8FAFC;
+    color: #475569;
+    border: 1.5px solid #E2E8F0;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: 0.86rem;
+    font-weight: 700;
+    transition: all 0.15s ease;
+}
+
+.pharmacy-returns-container .btn-cancel:hover {
+    background: #E2E8F0;
+    color: var(--ret-navy);
+}
+
+.pharmacy-returns-container .patient-info {
+    margin-bottom: 22px;
+    font-size: 0.95rem;
+    background: #FFF7FA;
+    padding: 14px 18px;
+    border-radius: 10px;
+    border: 1.5px solid var(--ret-border);
+    color: var(--ret-navy);
+}
+
+.pharmacy-returns-container .patient-info strong {
+    color: var(--ret-primary);
+}
+
+/* Toggle Pills */
+.pharmacy-returns-container .toggle-type {
+    display: flex;
+    gap: 12px;
+    margin-bottom: 24px;
+}
+
+.pharmacy-returns-container .toggle-label {
+    padding: 10px 20px;
+    border: 1.5px solid var(--ret-border);
+    border-radius: 10px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.9rem;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #FFFFFF;
+    color: var(--ret-muted);
+    transition: all 0.15s ease;
+}
+
+.pharmacy-returns-container .toggle-label input {
+    accent-color: var(--ret-primary);
+}
+
+.pharmacy-returns-container .toggle-label:hover {
+    border-color: var(--ret-selected-border);
+    background: #FFF7FA;
+}
+
+.pharmacy-returns-container .toggle-label.active {
+    background-color: var(--ret-selected-bg);
+    border-color: var(--ret-selected-border);
+    color: var(--ret-primary);
+    font-weight: 800;
+}
+
+.pharmacy-returns-container .original-items,
+.pharmacy-returns-container .exchange-items {
+    margin-bottom: 28px;
+}
+
+.pharmacy-returns-container .original-items h3,
+.pharmacy-returns-container .exchange-items h3 {
+    margin: 0 0 12px 0;
+    font-size: 1.1rem;
+    font-weight: 800;
+    color: var(--ret-navy);
+}
+
+.pharmacy-returns-container .qty-input {
+    width: 70px;
+    padding: 7px 10px;
+    border: 1.5px solid var(--ret-border);
+    border-radius: 8px;
+    outline: none;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--ret-navy);
+    background: #FFFFFF;
+    transition: all 0.15s ease;
+}
+
+.pharmacy-returns-container .qty-input:focus {
+    border-color: var(--ret-primary);
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.18);
+}
+
+.pharmacy-returns-container .exchange-items select {
+    padding: 8px 12px;
+    border: 1.5px solid var(--ret-border);
+    border-radius: 8px;
+    font-size: 0.9rem;
+    color: var(--ret-navy);
+    background: #FFFFFF;
+    outline: none;
+    width: 100%;
+}
+
+.pharmacy-returns-container .exchange-items select:focus {
+    border-color: var(--ret-primary);
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.18);
+}
+
+.pharmacy-returns-container .btn-remove {
+    background: var(--ret-danger-bg);
+    color: var(--ret-danger);
+    border: 1px solid var(--ret-danger-border);
+    border-radius: 8px;
+    width: 28px;
+    height: 28px;
+    cursor: pointer;
+    font-weight: bold;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.pharmacy-returns-container .btn-remove:hover {
+    background: #FEE2E2;
+    color: #DC2626;
+    transform: scale(1.05);
+}
+
+.pharmacy-returns-container .btn-add-item {
+    margin-top: 14px;
+    padding: 9px 18px;
+    background-color: var(--ret-selected-bg);
+    color: var(--ret-primary);
+    border: 1.5px dashed var(--ret-selected-border);
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 700;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.pharmacy-returns-container .btn-add-item:hover {
+    background-color: #F8D5E3;
+    border-color: var(--ret-primary);
+}
+
+/* ============================================================
+   Summary Section
+   ============================================================ */
+.pharmacy-returns-container .summary-section {
+    background-color: #FFF7FA;
+    padding: 24px;
+    border-radius: 14px;
+    border: 1.5px solid var(--ret-border);
+    margin-top: 24px;
+}
+
+.pharmacy-returns-container .summary-section h3 {
+    margin: 0 0 16px 0;
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--ret-navy);
+}
+
+.pharmacy-returns-container .summary-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+    font-size: 0.95rem;
+    color: var(--ret-muted);
+    font-weight: 600;
+}
+
+.pharmacy-returns-container .summary-row span:last-child {
+    font-weight: 700;
+    color: var(--ret-navy);
+}
+
+.pharmacy-returns-container .summary-section hr {
+    border: none;
+    border-top: 1.5px solid var(--ret-border);
+    margin: 16px 0;
+}
+
+.pharmacy-returns-container .summary-row.final {
+    font-size: 1.15rem;
+    font-weight: 800;
+    color: var(--ret-navy);
+    margin-top: 12px;
+}
+
+.pharmacy-returns-container .refund-amount {
+    color: var(--ret-danger) !important;
+    font-weight: 800;
+}
+
+.pharmacy-returns-container .collect-amount {
+    color: var(--ret-success) !important;
+    font-weight: 800;
+}
+
+.pharmacy-returns-container .process-actions {
+    margin-top: 24px;
+    text-align: right;
+}
+
+.pharmacy-returns-container .btn-submit {
+    padding: 12px 28px;
+    background: var(--ret-primary);
+    color: #FFFFFF;
+    border: none;
+    border-radius: 10px;
+    font-size: 0.95rem;
+    font-weight: 800;
+    cursor: pointer;
+    box-shadow: 0 2px 10px rgba(216, 95, 137, 0.32);
+    transition: all 0.2s ease;
+}
+
+.pharmacy-returns-container .btn-submit:hover {
+    background: var(--ret-primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 16px rgba(216, 95, 137, 0.42);
+}
+
+/* ============================================================
+   Responsive Design Breakpoints
+   ============================================================ */
+@media (max-width: 1024px) {
+    .pharmacy-returns-container {
+        padding: 18px;
+    }
+}
+
+@media (max-width: 768px) {
+    .pharmacy-returns-container .search-form {
+        flex-direction: column;
+    }
+
+    .pharmacy-returns-container .btn-search {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .pharmacy-returns-container .process-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+
+    .pharmacy-returns-container .process-header .btn-cancel {
+        width: 100%;
+        text-align: center;
+    }
+
+    .pharmacy-returns-container .toggle-type {
+        flex-direction: column;
+    }
+
+    .pharmacy-returns-container .search-results,
+    .pharmacy-returns-container .original-items,
+    .pharmacy-returns-container .exchange-items {
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .pharmacy-returns-container .results-table,
+    .pharmacy-returns-container .items-table {
+        min-width: 580px;
+    }
+
+    .pharmacy-returns-container .btn-submit {
+        width: 100%;
+    }
+}
+
+@media (max-width: 480px) {
+    .pharmacy-returns-container {
+        padding: 12px;
+    }
+
+    .pharmacy-returns-container .returns-header h1 {
+        font-size: 1.25rem;
+    }
+
+    .pharmacy-returns-container .summary-section {
+        padding: 16px;
+    }
+}

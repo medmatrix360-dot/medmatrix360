@@ -1,0 +1,2144 @@
+/* ==========================================================================
+   MEDMATRIX 360 - DOCTOR CLINICAL PATIENT QUEUE & WORKSPACE
+   Palette:
+   - Primary Teal: #D85F89
+   - Accent Teal: #D85F89
+   - Light Teal: #FFF7FA
+   - Page Background: #F8FAFC
+   - Surface: #FFFFFF
+   - Text: #0F172A, #475569, #64748B
+   - Borders: #E2E8F0, #F1F5F9
+   ========================================================================== */
+
+.doc-exact-patients-page {
+    width: 100%;
+    max-width: 100%;
+    box-sizing: border-box;
+    font-family: inherit;
+    color: #0f172a;
+    padding: 10px 4px 40px;
+}
+
+/* --- Error Banner --- */
+.doc-error-banner {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: #fef2f2;
+    color: #b91c1c;
+    border: 1px solid #fecaca;
+    padding: 12px 18px;
+    border-radius: 12px;
+    font-size: 0.88rem;
+    font-weight: 600;
+    margin-bottom: 20px;
+}
+
+.doc-error-icon {
+    flex-shrink: 0;
+    color: #dc2626;
+}
+
+/* ==========================================================================
+   1. MODERN HEALTHCARE SAAS BANNER
+   ========================================================================== */
+.doc-modern-banner {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: linear-gradient(135deg, #ffffff 0%, #FFF7FA 100%);
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    padding: 20px 26px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 4px rgba(216, 95, 137, 0.04);
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.doc-banner-left {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.doc-title-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.doc-exact-title {
+    font-size: 1.65rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+
+.doc-role-badge {
+    background: #FFF7FA;
+    color: #D85F89;
+    border: 1px solid #FCE7EF;
+    font-size: 0.70rem;
+    font-weight: 800;
+    letter-spacing: 0.06em;
+    padding: 3px 10px;
+    border-radius: 9999px;
+    text-transform: uppercase;
+}
+
+.doc-count-pill {
+    background: #FFF7FA;
+    color: #D85F89;
+    border: 1px solid #FCE7EF;
+    font-size: 0.72rem;
+    font-weight: 700;
+    padding: 3px 10px;
+    border-radius: 9999px;
+}
+
+.doc-exact-subtitle {
+    font-size: 0.88rem;
+    color: #475569;
+    margin: 0;
+    font-weight: 450;
+    max-width: 680px;
+}
+
+/* Date Card Badge & Refresh Button */
+.doc-banner-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.doc-date-card {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 8px 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.doc-date-icon-wrap {
+    color: #D85F89;
+    background: #FFF7FA;
+    width: 34px;
+    height: 34px;
+    border-radius: 8px;
+    font-size: 1.1rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.doc-date-info {
+    display: flex;
+    flex-direction: column;
+}
+
+.doc-date-day {
+    font-size: 0.7rem;
+    color: #64748b;
+    font-weight: 600;
+    line-height: 1.1;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.doc-date-full {
+    font-size: 0.90rem;
+    color: #0f172a;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.doc-banner-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 9px 15px;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 650;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    transition: all 0.2s ease;
+}
+
+.doc-banner-refresh-btn:hover {
+    background: #FFF7FA;
+    color: #D85F89;
+    border-color: #F1DCE4;
+    box-shadow: 0 2px 8px rgba(216, 95, 137, 0.1);
+}
+
+.doc-banner-refresh-btn:focus-visible {
+    outline: none;
+    border-color: #D85F89;
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.15);
+}
+
+.doc-banner-refresh-btn.is-refreshing {
+    opacity: 0.75;
+    cursor: not-allowed;
+}
+
+.doc-banner-refresh-icon {
+    color: #D85F89;
+    transition: transform 0.25s ease;
+}
+
+.doc-banner-refresh-icon.spin,
+.spin {
+    animation: docSpin 0.75s linear infinite;
+}
+
+/* ==========================================================================
+   2. STATS ROW (3 SUMMARY CARDS)
+   ========================================================================== */
+.doc-stats-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+    margin-bottom: 22px;
+}
+
+.doc-stat-box {
+    border-radius: 14px;
+    padding: 18px 22px;
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    position: relative;
+    overflow: hidden;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.doc-stat-box:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(216, 95, 137, 0.06);
+    border-color: #cbd5e1;
+}
+
+.stat-blue {
+    border-left: 4px solid #D85F89;
+}
+
+.stat-orange {
+    border-left: 4px solid #f97316;
+}
+
+.stat-green {
+    border-left: 4px solid #10b981;
+}
+
+.doc-stat-icon-wrapper {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.stat-blue .doc-stat-icon-wrapper {
+    background: #FFF7FA;
+    color: #D85F89;
+}
+
+.stat-orange .doc-stat-icon-wrapper {
+    background: #fff7ed;
+    color: #ea580c;
+}
+
+.stat-green .doc-stat-icon-wrapper {
+    background: #f0fdf4;
+    color: #16a34a;
+}
+
+.doc-stat-svg-icon {
+    font-size: 1.35rem;
+}
+
+.doc-stat-data {
+    display: flex;
+    flex-direction: column;
+    z-index: 1;
+}
+
+.doc-stat-number {
+    font-size: 1.85rem;
+    font-weight: 800;
+    color: #0f172a;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+}
+
+.doc-stat-title {
+    font-size: 0.80rem;
+    color: #64748b;
+    font-weight: 600;
+    margin-top: 3px;
+}
+
+.doc-stat-watermark {
+    position: absolute;
+    right: 18px;
+    top: 50%;
+    transform: translateY(-50%);
+    font-size: 2.2rem;
+    opacity: 0.12;
+    pointer-events: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.stat-blue .doc-stat-watermark {
+    color: #D85F89;
+}
+
+.stat-orange .doc-stat-watermark {
+    color: #ea580c;
+}
+
+.stat-green .doc-stat-watermark {
+    color: #16a34a;
+}
+
+/* ==========================================================================
+   3. CONSOLIDATED TOOLBAR CARD (Search + Tabs + Filter)
+   ========================================================================== */
+.doc-toolbar-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 8px 14px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.doc-toolbar-main-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    flex-wrap: wrap;
+}
+
+.doc-toolbar-controls-group {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: wrap;
+}
+
+/* Desktop Search Bar */
+.doc-search-pill-container {
+    position: relative;
+    flex: 1;
+    max-width: 440px;
+    min-width: 260px;
+}
+
+.doc-search-pill-icon {
+    position: absolute;
+    left: 14px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #64748b;
+    font-size: 0.95rem;
+}
+
+.doc-search-pill-input {
+    width: 100%;
+    padding: 8px 34px 8px 36px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    font-size: 0.84rem;
+    color: #0f172a;
+    outline: none;
+    transition: all 0.2s ease;
+    box-sizing: border-box;
+}
+
+.doc-search-pill-input:focus {
+    background: #ffffff;
+    border-color: #D85F89;
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.12);
+}
+
+.doc-search-pill-input::placeholder {
+    color: #94a3b8;
+}
+
+.doc-search-clear-btn {
+    position: absolute;
+    right: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: #f1f5f9;
+    border: none;
+    border-radius: 50%;
+    width: 20px;
+    height: 20px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #64748b;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.doc-search-clear-btn:hover {
+    background: #e2e8f0;
+    color: #0f172a;
+}
+
+/* Tabs */
+.doc-tab-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px;
+    border-radius: 9px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #475569;
+    white-space: nowrap;
+}
+
+.doc-tab-pill:hover {
+    background: #f8fafc;
+    color: #0f172a;
+    border-color: #cbd5e1;
+}
+
+.doc-tab-pill.active {
+    background: #D85F89 !important;
+    color: #ffffff !important;
+    border-color: #D85F89 !important;
+    box-shadow: 0 2px 8px rgba(216, 95, 137, 0.22);
+}
+
+.doc-tab-count-badge {
+    background: #f1f5f9;
+    color: #475569;
+    font-size: 0.70rem;
+    font-weight: 800;
+    padding: 2px 7px;
+    border-radius: 9999px;
+}
+
+.doc-tab-pill.active .doc-tab-count-badge {
+    background: rgba(255, 255, 255, 0.22);
+    color: #ffffff;
+}
+
+.doc-queue-pulse {
+    background: #fef3c7;
+    color: #b45309;
+}
+
+.doc-tab-pill.active .doc-queue-pulse {
+    background: rgba(255, 255, 255, 0.28);
+    color: #ffffff;
+}
+
+/* Filter Trigger Button */
+.doc-filter-trigger-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 7px 14px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    white-space: nowrap;
+}
+
+.doc-filter-trigger-btn:hover {
+    background: #f8fafc;
+    border-color: #94a3b8;
+    color: #0f172a;
+}
+
+.doc-filter-trigger-btn.panel-open,
+.doc-filter-trigger-btn.has-active-filters {
+    background: #FFF7FA;
+    border-color: #D85F89;
+    color: #D85F89;
+}
+
+.doc-active-filter-badge {
+    background: #D85F89;
+    color: #ffffff;
+    font-size: 0.7rem;
+    font-weight: 800;
+    min-width: 18px;
+    height: 18px;
+    padding: 0 5px;
+    border-radius: 9999px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.doc-clear-filters-quick-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 6.5px 11px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 9px;
+    color: #dc2626;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.doc-clear-filters-quick-btn:hover {
+    background: #fee2e2;
+    border-color: #f87171;
+    color: #b91c1c;
+}
+
+/* ==========================================================================
+   4. FILTER & SORT MODAL POPUP
+   ========================================================================== */
+.doc-filter-backdrop {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(3px);
+    z-index: 1050;
+    animation: docFadeIn 0.2s ease;
+}
+
+.doc-filter-modal-card {
+    position: fixed;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -50%);
+    width: 92%;
+    max-width: 540px;
+    max-height: 88vh;
+    overflow-y: auto;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 16px;
+    box-shadow: 0 20px 45px -10px rgba(15, 23, 42, 0.2);
+    padding: 22px 24px;
+    z-index: 1051;
+    animation: docScaleIn 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+@keyframes docFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes docScaleIn {
+    from {
+        opacity: 0;
+        transform: translate(-50%, -46%) scale(0.96);
+    }
+    to {
+        opacity: 1;
+        transform: translate(-50%, -50%) scale(1);
+    }
+}
+
+.doc-filter-modal-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-bottom: 14px;
+    border-bottom: 1px solid #f1f5f9;
+}
+
+.doc-filter-title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.doc-filter-title-icon-wrap {
+    width: 36px;
+    height: 36px;
+    border-radius: 10px;
+    background: #FFF7FA;
+    color: #D85F89;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 1.1rem;
+    flex-shrink: 0;
+}
+
+.doc-filter-title-text h4 {
+    margin: 0;
+    font-size: 1.02rem;
+    font-weight: 800;
+    color: #0f172a;
+}
+
+.doc-filter-subtitle {
+    font-size: 0.78rem;
+    color: #64748b;
+    font-weight: 500;
+}
+
+.doc-active-filter-pill {
+    background: #FFF7FA;
+    color: #D85F89;
+    font-size: 0.70rem;
+    font-weight: 700;
+    padding: 3px 9px;
+    border-radius: 9999px;
+    border: 1px solid #FCE7EF;
+}
+
+.doc-filter-close-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.doc-filter-close-btn:hover {
+    background: #fee2e2;
+    color: #dc2626;
+    border-color: #fca5a5;
+}
+
+.doc-filter-modal-body {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+}
+
+.doc-filter-modal-section {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.doc-filter-section-title {
+    font-size: 0.74rem;
+    font-weight: 800;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.doc-filter-chips-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+}
+
+.doc-status-chips-wrap {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+}
+
+.doc-status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.doc-chip-btn {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 9px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #475569;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    text-align: left;
+}
+
+.doc-chip-btn:hover {
+    background: #f8fafc;
+    color: #0f172a;
+    border-color: #cbd5e1;
+}
+
+.doc-chip-btn.active {
+    background: #FFF7FA;
+    border-color: #D85F89;
+    color: #D85F89;
+    font-weight: 700;
+}
+
+.doc-chip-check {
+    color: inherit;
+    flex-shrink: 0;
+}
+
+.doc-date-range-modal-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.doc-date-field-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.doc-date-field-group label {
+    font-size: 0.74rem;
+    font-weight: 600;
+    color: #64748b;
+}
+
+.doc-date-picker-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    font-size: 0.84rem;
+    color: #0f172a;
+    background: #ffffff;
+    outline: none;
+    box-sizing: border-box;
+    transition: border-color 0.15s;
+}
+
+.doc-date-picker-input:focus {
+    border-color: #D85F89;
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.12);
+}
+
+.doc-filter-modal-footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding-top: 14px;
+    border-top: 1px solid #f1f5f9;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.doc-filter-footer-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+}
+
+.doc-filter-reset-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 7px 12px;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    border-radius: 9px;
+    color: #dc2626;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.doc-filter-reset-btn:hover {
+    background: #fee2e2;
+}
+
+.doc-match-count {
+    font-size: 0.78rem;
+    color: #64748b;
+}
+
+.doc-match-count strong {
+    color: #0f172a;
+}
+
+.doc-btn-apply-modal {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 18px;
+    background: #D85F89;
+    color: #ffffff;
+    border: none;
+    border-radius: 9px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.doc-btn-apply-modal:hover {
+    background: #D85F89;
+}
+
+/* ==========================================================================
+   5. PATIENT APPOINTMENT CARDS (GRID)
+   ========================================================================== */
+.doc-cards-section {
+    width: 100%;
+}
+
+.doc-patient-cards-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+}
+
+.doc-exact-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    padding: 14px 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+    transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+    display: flex;
+    flex-direction: column;
+    box-sizing: border-box;
+}
+
+.doc-exact-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 18px rgba(216, 95, 137, 0.07);
+    border-color: #FCE7EF;
+}
+
+/* Top Row of Card */
+.doc-card-top-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 10px;
+}
+
+.doc-card-user-left {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-width: 0;
+    flex: 1;
+}
+
+.doc-card-avatar {
+    width: 38px;
+    height: 38px;
+    min-width: 38px;
+    border-radius: 10px;
+    color: #ffffff;
+    font-weight: 800;
+    font-size: 0.90rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.08);
+}
+
+.doc-card-user-names {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-width: 0;
+}
+
+.doc-card-patient-name {
+    font-size: 0.92rem;
+    font-weight: 750;
+    color: #0f172a;
+    margin: 0;
+    cursor: pointer;
+    transition: color 0.15s;
+    line-height: 1.25;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    text-transform: capitalize;
+}
+
+.doc-card-patient-name:hover {
+    color: #D85F89;
+}
+
+.doc-card-patient-id {
+    font-size: 0.70rem;
+    color: #64748b;
+    font-weight: 600;
+    margin-top: 2px;
+    line-height: 1;
+}
+
+.doc-card-user-right {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+/* Status Badges */
+.doc-status-pill {
+    padding: 3px 8px;
+    border-radius: 9999px;
+    font-size: 0.68rem;
+    font-weight: 750;
+    text-transform: capitalize;
+    display: inline-block;
+    line-height: 1.1;
+    border: 1px solid transparent;
+}
+
+.status-completed {
+    background: #FFF7FA;
+    color: #D85F89;
+    border-color: #F1DCE4;
+}
+
+.status-confirmed,
+.status-accepted {
+    background: #f0fdf4;
+    color: #166534;
+    border-color: #bbf7d0;
+}
+
+.status-pending {
+    background: #fffbeb;
+    color: #b45309;
+    border-color: #fde68a;
+}
+
+.status-referred {
+    background: #eff6ff;
+    color: #1d4ed8;
+    border-color: #bfdbfe;
+}
+
+.status-not-required,
+.status-not_required {
+    background: #f1f5f9;
+    color: #475569;
+    border-color: #cbd5e1;
+}
+
+.status-planned {
+    background: #FFF7FA;
+    color: #D85F89;
+    border-color: #F1DCE4;
+}
+
+.status-scheduled {
+    background: #eef2ff;
+    color: #4338ca;
+    border-color: #c7d2fe;
+}
+
+.status-in-progress,
+.status-in_progress {
+    background: #fff7ed;
+    color: #c2410c;
+    border-color: #fed7aa;
+}
+
+.status-cancelled {
+    background: #fef2f2;
+    color: #b91c1c;
+    border-color: #fecaca;
+}
+
+.doc-prepped-badge {
+    background: #f0fdf4;
+    color: #047857;
+    border: 1px solid #a7f3d0;
+    padding: 2.5px 8px;
+    border-radius: 12px;
+    font-size: 0.68rem;
+    font-weight: 750;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+}
+
+/* 3-Dots Action Button */
+.doc-card-menu-wrapper {
+    position: relative;
+}
+
+.doc-card-more-btn {
+    width: 28px;
+    height: 28px;
+    border-radius: 8px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s;
+}
+
+.doc-card-more-btn:hover {
+    background: #f8fafc;
+    color: #0f172a;
+    border-color: #94a3b8;
+}
+
+.doc-card-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.12);
+    min-width: 175px;
+    padding: 6px;
+    z-index: 40;
+}
+
+.doc-card-menu-action {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    font-size: 0.80rem;
+    font-weight: 600;
+    color: #334155;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.doc-card-menu-action:hover {
+    background: #FFF7FA;
+    color: #D85F89;
+}
+
+.doc-card-menu-divider {
+    height: 1px;
+    background: #f1f5f9;
+    margin: 4px 0;
+}
+
+/* Structured Card Details Box */
+.doc-card-details-box {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 9px 12px;
+    margin-bottom: 12px;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.doc-card-date-status-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 6px;
+    width: 100%;
+}
+
+.doc-schedule-part {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+.doc-schedule-status-badge {
+    display: flex;
+    align-items: center;
+    flex-shrink: 0;
+}
+
+.doc-card-time-row {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding-bottom: 4px;
+    border-bottom: 1px dashed #e2e8f0;
+}
+
+.doc-card-doctor-line {
+    display: flex;
+    align-items: center;
+    gap: 5px;
+    min-width: 0;
+}
+
+.doc-detail-icon-mini {
+    font-size: 0.82rem;
+    flex-shrink: 0;
+}
+
+.doc-detail-icon-mini.icon-blue {
+    color: #D85F89;
+}
+
+.doc-detail-icon-mini.icon-muted {
+    color: #64748b;
+}
+
+.doc-detail-icon-mini.icon-orange {
+    color: #ea580c;
+}
+
+.doc-detail-icon-mini.icon-teal {
+    color: #D85F89;
+}
+
+.doc-detail-icon-mini.icon-doctor {
+    color: #D85F89;
+}
+
+.doc-detail-mini-label {
+    font-size: 0.68rem;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.doc-detail-mini-val {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: #1e293b;
+    white-space: normal;
+}
+
+.doc-time-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 1.5px 7px;
+    background: #fff7ed;
+    color: #c2410c;
+    border: 1px solid #fed7aa;
+    border-radius: 4px;
+    font-size: 0.72rem;
+    font-weight: 700;
+    line-height: 1.1;
+}
+
+.doc-phone-link {
+    color: #D85F89;
+    text-decoration: none;
+    font-weight: 700;
+}
+
+.doc-phone-link:hover {
+    color: #D85F89;
+    text-decoration: underline;
+}
+
+.doc-email-val {
+    color: #475569;
+    font-weight: 500;
+    max-width: 145px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    display: inline-block;
+    vertical-align: middle;
+}
+
+.doc-doctor-name {
+    font-size: 0.78rem;
+    color: #0f172a;
+    font-weight: 600;
+}
+
+/* Card Action Buttons */
+.doc-card-actions-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+    margin-top: auto;
+}
+
+.doc-action-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    padding: 7px 10px;
+    border-radius: 8px;
+    border: none;
+    font-size: 0.78rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.btn-profile {
+    background: #f8fafc;
+    color: #334155;
+    border: 1px solid #cbd5e1;
+}
+
+.btn-profile:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+    border-color: #94a3b8;
+    transform: translateY(-1px);
+}
+
+.btn-consult {
+    background: #D85F89;
+    color: #ffffff;
+    box-shadow: 0 1px 3px rgba(216, 95, 137, 0.2);
+}
+
+.btn-consult:hover {
+    background: #D85F89;
+    box-shadow: 0 4px 12px rgba(216, 95, 137, 0.25);
+    transform: translateY(-1px);
+}
+
+.btn-vitals {
+    background: #FFF7FA;
+    color: #D85F89;
+    border: 1px solid #FCE7EF;
+}
+
+.btn-vitals:hover {
+    background: #FCE7EF;
+}
+
+.btn-upload {
+    background: #f59e0b;
+    color: #ffffff;
+}
+
+.btn-upload:hover {
+    background: #d97706;
+}
+
+/* ==========================================================================
+   6. TABLES & HELPERS (Shared with DoctorSurgeries.jsx)
+   ========================================================================== */
+.doc-tab-view-container {
+    padding: 0 0 30px;
+}
+
+.doc-table-card-wrapper {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    overflow: hidden;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.02);
+}
+
+.doc-table-header-bar {
+    padding: 16px 20px;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.doc-table-header-bar h3 {
+    margin: 0;
+    font-size: 0.95rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.doc-table-scroll {
+    overflow-x: auto;
+}
+
+.doc-clean-table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+.doc-clean-table th {
+    padding: 12px 18px;
+    text-align: left;
+    font-size: 0.74rem;
+    font-weight: 700;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    background: #f8fafc;
+    border-bottom: 1px solid #e2e8f0;
+}
+
+.doc-clean-table td {
+    padding: 13px 18px;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 0.86rem;
+    color: #334155;
+}
+
+.doc-clean-table tr:hover td {
+    background: #f8fafc;
+}
+
+.doc-plan-badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 800;
+    background: #FFF7FA;
+    color: #D85F89;
+    border: 1px solid #FCE7EF;
+    padding: 2px 7px;
+    border-radius: 5px;
+    margin-top: 2px;
+}
+
+/* ==========================================================================
+   Doctor Surgeries Console (Scoped UI Extensions)
+   ========================================================================== */
+.doc-surgeries-tab-strip {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #ffffff;
+    padding: 6px;
+    border-radius: 14px;
+    border: 1px solid #e2e8f0;
+    margin-bottom: 16px;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.03);
+    width: fit-content;
+    max-width: 100%;
+}
+
+.doc-surgeries-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 10px 18px;
+    border-radius: 10px;
+    border: none;
+    font-size: 0.90rem;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    background: transparent;
+    color: #64748b;
+    outline: none;
+}
+
+.doc-surgeries-tab-btn:hover {
+    background: #f8fafc;
+    color: #0f172a;
+}
+
+.doc-surgeries-tab-btn:focus-visible {
+    outline: 2px solid #D85F89;
+    outline-offset: 2px;
+}
+
+.doc-surgeries-tab-btn.is-active {
+    background: #D85F89;
+    color: #ffffff;
+    box-shadow: 0 1px 2px rgba(216, 95, 137, 0.2);
+}
+
+.doc-surgeries-tab-btn.is-active:hover {
+    background: #D85F89;
+    color: #ffffff;
+}
+
+.doc-surgeries-tab-badge {
+    font-size: 0.74rem;
+    padding: 2px 8px;
+    border-radius: 12px;
+    background: #f1f5f9;
+    color: #475569;
+    font-weight: 800;
+    transition: all 0.2s ease;
+}
+
+.doc-surgeries-tab-btn.is-active .doc-surgeries-tab-badge {
+    background: rgba(255, 255, 255, 0.22);
+    color: #ffffff;
+}
+
+.doc-surgeries-empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    padding: 52px 24px;
+    color: #64748b;
+}
+
+.doc-surgeries-empty-icon {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: #FFF7FA;
+    border: 1px solid #FCE7EF;
+    color: #D85F89;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 14px;
+    box-shadow: 0 2px 6px rgba(216, 95, 137, 0.08);
+}
+
+.doc-surgeries-empty-title {
+    margin: 0 0 6px;
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #0f172a;
+}
+
+.doc-surgeries-empty-desc {
+    margin: 0;
+    font-size: 0.88rem;
+    color: #64748b;
+    max-width: 440px;
+    line-height: 1.5;
+}
+
+.doc-action-btn.btn-surgery-table {
+    padding: 8px 16px;
+    font-size: 0.82rem;
+    font-weight: 600;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    border-radius: 8px;
+    min-height: 36px;
+    white-space: nowrap;
+}
+
+.doc-sub-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+    gap: 12px;
+}
+
+.doc-sub-header-left {
+    display: flex;
+    flex-direction: column;
+}
+
+.doc-section-heading {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #0f172a;
+    margin: 0;
+}
+
+.doc-showing-count {
+    font-size: 0.82rem;
+    color: #64748b;
+    font-weight: 500;
+    margin-top: 2px;
+}
+
+.doc-sub-header-right {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.doc-dropdown-wrapper {
+    position: relative;
+}
+
+.doc-control-pill-btn {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 7px 14px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    color: #334155;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.doc-control-pill-btn:hover {
+    background: #f8fafc;
+    border-color: #94a3b8;
+}
+
+.doc-control-pill-btn.filter-active {
+    background: #FFF7FA;
+    border-color: #D85F89;
+    color: #D85F89;
+}
+
+.doc-filter-dropdown-menu {
+    position: absolute;
+    top: calc(100% + 6px);
+    right: 0;
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1);
+    min-width: 190px;
+    padding: 6px;
+    z-index: 50;
+}
+
+.doc-filter-menu-header {
+    padding: 7px 10px;
+    font-size: 0.70rem;
+    font-weight: 700;
+    color: #94a3b8;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1px solid #f1f5f9;
+    margin-bottom: 4px;
+}
+
+.doc-filter-menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 7px 10px;
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: #334155;
+    border-radius: 7px;
+    cursor: pointer;
+    transition: background 0.15s;
+}
+
+.doc-filter-menu-item:hover {
+    background: #FFF7FA;
+    color: #D85F89;
+}
+
+.doc-filter-menu-item.selected {
+    background: #FFF7FA;
+    color: #D85F89;
+    font-weight: 700;
+}
+
+.doc-filter-right-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+.doc-status-filter-pills {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.doc-status-filter-btn {
+    padding: 6px 12px;
+    border-radius: 9999px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #475569;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.doc-status-filter-btn:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+.doc-status-filter-btn.active {
+    background: #D85F89;
+    color: #ffffff;
+    border-color: #D85F89;
+}
+
+.doc-refresh-btn {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 12px;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    color: #334155;
+    font-size: 0.80rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.doc-refresh-btn:hover {
+    background: #FFF7FA;
+    color: #D85F89;
+}
+
+/* ==========================================================================
+   7. LOADING & EMPTY STATES
+   ========================================================================== */
+.doc-loading-container {
+    text-align: center;
+    padding: 70px 0;
+    color: #64748b;
+}
+
+.doc-custom-spinner {
+    width: 36px;
+    height: 36px;
+    border: 3px solid #e2e8f0;
+    border-top-color: #D85F89;
+    border-radius: 50%;
+    animation: docSpin 0.8s linear infinite;
+    margin: 0 auto 14px;
+}
+
+@keyframes docSpin {
+    to {
+        transform: rotate(360deg);
+    }
+}
+
+.doc-empty-box {
+    text-align: center;
+    padding: 50px 20px;
+    background: #ffffff;
+    border-radius: 16px;
+    border: 1px dashed #cbd5e1;
+}
+
+.doc-empty-icon-wrap {
+    width: 56px;
+    height: 56px;
+    border-radius: 14px;
+    background: #FFF7FA;
+    color: #D85F89;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin: 0 auto 14px;
+}
+
+.doc-empty-box h3 {
+    margin: 0 0 8px;
+    font-size: 1.10rem;
+    font-weight: 750;
+    color: #0f172a;
+}
+
+.doc-empty-box p {
+    margin: 0;
+    font-size: 0.86rem;
+    color: #64748b;
+    max-width: 440px;
+    margin: 0 auto;
+    line-height: 1.5;
+}
+
+/* ==========================================================================
+   8. MODALS (Vitals & Upload)
+   ========================================================================== */
+.doc-modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.5);
+    backdrop-filter: blur(4px);
+    z-index: 2000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+}
+
+.doc-modal-box {
+    background: #ffffff;
+    border-radius: 16px;
+    width: 560px;
+    max-width: 95vw;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 45px -10px rgba(15, 23, 42, 0.22);
+    border: 1px solid #e2e8f0;
+    display: flex;
+    flex-direction: column;
+}
+
+.doc-modal-sm {
+    width: 440px;
+}
+
+.doc-modal-header {
+    padding: 18px 22px;
+    border-bottom: 1px solid #f1f5f9;
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+
+.doc-modal-title {
+    font-size: 1.10rem;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.doc-modal-header-icon {
+    color: #D85F89;
+    font-size: 1.15rem;
+}
+
+.doc-modal-subtitle {
+    font-size: 0.80rem;
+    color: #64748b;
+    margin: 4px 0 0;
+}
+
+.doc-modal-close {
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    width: 30px;
+    height: 30px;
+    color: #64748b;
+    cursor: pointer;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.15s ease;
+}
+
+.doc-modal-close:hover {
+    color: #dc2626;
+    background: #fee2e2;
+    border-color: #fca5a5;
+}
+
+.doc-modal-body {
+    padding: 22px;
+}
+
+.doc-form-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 12px;
+}
+
+.doc-form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+
+.doc-form-label {
+    font-size: 0.72rem;
+    font-weight: 700;
+    color: #475569;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.doc-form-label-icon {
+    color: #D85F89;
+    display: inline-flex;
+    align-items: center;
+}
+
+.doc-form-input,
+.doc-form-textarea {
+    width: 100%;
+    padding: 9px 12px;
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    color: #0f172a;
+    font-size: 0.86rem;
+    outline: none;
+    transition: all 0.2s;
+    box-sizing: border-box;
+}
+
+.doc-form-input:focus,
+.doc-form-textarea:focus {
+    background: #ffffff;
+    border-color: #D85F89;
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.12);
+}
+
+.doc-form-textarea {
+    min-height: 70px;
+    resize: vertical;
+    font-family: inherit;
+}
+
+.doc-dropzone {
+    border: 2px dashed #cbd5e1;
+    border-radius: 12px;
+    padding: 24px;
+    text-align: center;
+    background: #f8fafc;
+    cursor: pointer;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.doc-dropzone:hover {
+    border-color: #D85F89;
+    background: #FFF7FA;
+}
+
+.doc-dropzone-icon {
+    color: #D85F89;
+}
+
+.doc-file-input {
+    width: 100%;
+    cursor: pointer;
+}
+
+.doc-modal-footer {
+    padding: 16px 22px;
+    border-top: 1px solid #f1f5f9;
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+}
+
+.doc-btn-secondary {
+    padding: 8px 16px;
+    background: #f8fafc;
+    color: #475569;
+    border: 1px solid #cbd5e1;
+    border-radius: 9px;
+    font-size: 0.84rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.doc-btn-secondary:hover {
+    background: #f1f5f9;
+    color: #0f172a;
+}
+
+.doc-btn-primary {
+    padding: 8px 18px;
+    background: #D85F89;
+    color: #ffffff;
+    border: none;
+    border-radius: 9px;
+    font-size: 0.84rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(216, 95, 137, 0.2);
+    transition: all 0.15s ease;
+}
+
+.doc-btn-primary:hover {
+    background: #D85F89;
+}
+
+.doc-btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+}
+
+/* ==========================================================================
+   9. RESPONSIVENESS (390px, 768px, desktop)
+   ========================================================================== */
+@media (max-width: 1100px) {
+    .doc-stats-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+
+    .doc-patient-cards-grid {
+        grid-template-columns: repeat(2, 1fr);
+        gap: 14px;
+    }
+}
+
+@media (max-width: 768px) {
+    .doc-exact-patients-page {
+        padding: 8px 4px 30px;
+    }
+
+    .doc-modern-banner {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 14px;
+        padding: 16px 18px;
+    }
+
+    .doc-banner-right {
+        width: 100%;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+    }
+
+    .doc-date-card {
+        flex: 1;
+        justify-content: flex-start;
+    }
+
+    .doc-stats-grid {
+        grid-template-columns: 1fr;
+    }
+
+    /* Single-line toolbar for mobile */
+    .doc-toolbar-card {
+        padding: 8px 10px;
+        margin-bottom: 16px;
+    }
+
+    .doc-desktop-only-search {
+        display: none !important;
+    }
+
+    .doc-mobile-search-trigger-btn {
+        display: inline-flex !important;
+        align-items: center;
+        justify-content: center;
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        background: #ffffff;
+        border: 1px solid #cbd5e1;
+        color: #334155;
+        cursor: pointer;
+        flex-shrink: 0;
+        position: relative;
+    }
+
+    .doc-mobile-search-trigger-btn.has-query {
+        background: #FFF7FA;
+        color: #D85F89;
+        border-color: #D85F89;
+    }
+
+    .doc-mobile-search-indicator {
+        position: absolute;
+        top: 5px;
+        right: 5px;
+        width: 6px;
+        height: 6px;
+        border-radius: 50%;
+        background: #D85F89;
+    }
+
+    .doc-toolbar-main-row {
+        flex-direction: row;
+        align-items: center;
+        justify-content: flex-start;
+        gap: 8px;
+        flex-wrap: nowrap;
+        overflow-x: auto;
+        -webkit-overflow-scrolling: touch;
+        padding-bottom: 2px;
+        width: 100%;
+    }
+
+    .doc-toolbar-controls-group {
+        width: auto;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+        flex-wrap: nowrap;
+        flex-shrink: 0;
+    }
+
+    .doc-tab-pill, .doc-filter-trigger-btn {
+        padding: 6px 11px;
+        font-size: 0.78rem;
+        border-radius: 8px;
+        gap: 5px;
+        white-space: nowrap;
+    }
+
+    .doc-mobile-search-active-bar {
+        display: flex !important;
+        align-items: center;
+        gap: 8px;
+        width: 100%;
+    }
+
+    .doc-search-pill-container.mobile-active {
+        flex: 1;
+        min-width: 0;
+        max-width: 100%;
+    }
+
+    .doc-mobile-search-close-btn {
+        width: 34px;
+        height: 34px;
+        border-radius: 8px;
+        background: #f1f5f9;
+        border: 1px solid #cbd5e1;
+        color: #64748b;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        cursor: pointer;
+        flex-shrink: 0;
+    }
+
+    .doc-filter-modal-card {
+        width: 94%;
+        max-width: 480px;
+        padding: 18px 16px;
+        border-radius: 14px;
+    }
+
+    .doc-date-range-modal-row {
+        grid-template-columns: 1fr;
+        gap: 10px;
+    }
+
+    .doc-filter-chips-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .doc-patient-cards-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .doc-card-date-status-row {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .doc-form-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .doc-exact-title {
+        font-size: 1.35rem;
+    }
+
+    .doc-card-top-row {
+        flex-direction: row;
+        align-items: center;
+        justify-content: space-between;
+        gap: 8px;
+    }
+
+    .doc-card-actions-row {
+        grid-template-columns: 1fr 1fr;
+        gap: 6px;
+    }
+
+    .doc-action-btn {
+        padding: 7px 6px;
+        font-size: 0.74rem;
+    }
+
+    .doc-surgeries-tab-strip {
+        width: 100%;
+        display: flex;
+        flex-direction: row;
+        gap: 6px;
+        padding: 4px;
+        box-sizing: border-box;
+    }
+
+    .doc-surgeries-tab-btn {
+        flex: 1;
+        justify-content: center;
+        padding: 8px 10px;
+        font-size: 0.82rem;
+        gap: 6px;
+        min-height: 40px;
+    }
+
+    .doc-surgeries-tab-badge {
+        padding: 1px 6px;
+        font-size: 0.70rem;
+    }
+
+    .doc-action-btn.btn-surgery-table {
+        padding: 8px 12px;
+        min-height: 40px;
+    }
+}
+
+@media (max-width: 390px) {
+    .doc-card-actions-row {
+        grid-template-columns: 1fr;
+    }
+
+    .doc-surgeries-tab-btn {
+        padding: 8px 6px;
+        font-size: 0.78rem;
+        gap: 4px;
+    }
+}

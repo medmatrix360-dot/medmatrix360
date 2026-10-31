@@ -1,0 +1,544 @@
+import React, { useState, useEffect, useRef, useMemo, memo } from 'react';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { useAuth, useAppDispatch } from '../../store/hooks';
+import { logout } from '../../store/slices/authSlice';
+import { useBranding } from '../../context/BrandingContext';
+import { prefetchRoute } from '../../utils/prefetch';
+import {
+    FiHome, FiUsers, FiCalendar, FiActivity, FiPackage,
+    FiSettings, FiLogOut, FiPieChart, FiClipboard,
+    FiFileText, FiPlusSquare, FiDatabase, FiGrid, FiShield, FiMenu, FiX,
+    FiClock, FiBox, FiUserCheck, FiHeart, FiCheckCircle, FiUser,
+    FiChevronDown, FiChevronRight, FiCpu, FiScissors, FiDollarSign, FiServer
+} from 'react-icons/fi';
+import GlobalSearch from '../GlobalSearch';
+import './DashboardLayout.css';
+
+const DashboardSidebar = memo(({ isOpen, setOpen }) => {
+    const { user } = useAuth();
+    const { branding, hospitalName } = useBranding();
+    const role = (user?.role || '').toLowerCase();
+    const location = useLocation();
+    const navigate = useNavigate();
+    const isCentralAdmin = (role === 'centraladmin' || role === 'superadmin');
+    
+    // Memoized Categorized Menus with prefetch hooks
+    const menuItems = useMemo(() => {
+        const isOTRoute = location.pathname.startsWith('/ot') || location.pathname === '/ot-dashboard';
+        const roleClean = role.replace(/\s+/g, '');
+
+        if (roleClean === 'otmanager' || roleClean === 'otstaff' || (isOTRoute && (role === 'hospitaladmin' || role === 'centraladmin' || role === 'superadmin' || role === 'doctor'))) {
+            return [
+                { label: 'OT Dashboard', path: '/ot/dashboard', icon: <FiHome />, prefetchKey: 'ot_dash', prefetchFn: () => import('../../pages/ot/OTDashboard') },
+                { label: 'Planned Surgeries', path: '/ot/planned', icon: <FiClock />, prefetchKey: 'ot_planned', prefetchFn: () => import('../../pages/ot/OTPlannedSurgeries') },
+                { label: 'OT Schedule', path: '/ot/schedule', icon: <FiCalendar />, prefetchKey: 'ot_sched', prefetchFn: () => import('../../pages/ot/OTSchedulePage') },
+                { label: 'OT Rooms', path: '/ot/rooms', icon: <FiBox />, prefetchKey: 'ot_rooms', prefetchFn: () => import('../../pages/ot/OTRoomsPage') },
+                { label: 'OT Reports', path: '/ot/reports', icon: <FiFileText />, prefetchKey: 'ot_reports', prefetchFn: () => import('../../pages/ot/OTReportsPage') }
+            ];
+        }
+
+        if (role === 'centraladmin' || role === 'superadmin') {
+            return [
+                { label: 'System Overview', path: '/supremeadmin', icon: <FiHome />, prefetchKey: 'ca_dash', prefetchFn: () => import('../../pages/centraladmin/CentralAdminDashboard') },
+                { label: 'Question Library', path: '/admin/question-library', icon: <FiFileText />, prefetchKey: 'ca_ql', prefetchFn: () => import('../../pages/admin/AdminQuestionLibrary') },
+                { label: 'Consent Hub', path: '/admin/consent', icon: <FiClipboard />, prefetchKey: 'ca_consent', prefetchFn: () => import('../../pages/admin/ConsentManagement') },
+                { label: 'Role & Permissions', path: '/admin/roles', icon: <FiShield />, prefetchKey: 'ca_roles', prefetchFn: () => import('../../pages/admin/AdminRoles') },
+                { label: 'Manage All Staff', path: '/admin/users', icon: <FiUsers />, prefetchKey: 'ca_users', prefetchFn: () => import('../../pages/admin/Admin') },
+            ];
+        }
+        if (role === 'hospitaladmin') {
+            const u = JSON.parse(localStorage.getItem('user') || '{}');
+            if (u.clinicType === 'clinic' || u.subscriptionPlan === 'starter') {
+                return [
+                    { label: 'Clinic Hub', path: '/hospitaladmin', icon: <FiHome />, prefetchKey: 'ha_clinic', prefetchFn: () => import('../../pages/hospitaladmin/ClinicDashboard') },
+                    { label: 'Billing & Payments', path: '/billing/patient', icon: <FiFileText />, prefetchKey: 'ha_billing', prefetchFn: () => import('../../pages/billing/PatientBillingProfile') },
+                    { label: 'Refund Approvals', path: '/hospitaladmin/refunds', icon: <FiDollarSign />, prefetchKey: 'ha_refunds', prefetchFn: () => import('../../pages/hospitaladmin/HospitalAdminRefunds') },
+                    { label: 'Vial Management', path: '/hospitaladmin/vials', icon: <FiBox />, prefetchKey: 'ha_vials', prefetchFn: () => import('../../pages/hospitaladmin/VialManagement') },
+                    { label: 'Package Management', path: '/hospitaladmin/packages', icon: <FiGrid />, prefetchKey: 'ha_packages', prefetchFn: () => import('../../pages/hospitaladmin/PackageManagement') },
+                    { label: 'Data Migration', path: '/hospitaladmin/data-migration', icon: <FiDatabase />, prefetchKey: 'ha_migration', prefetchFn: () => import('../../pages/hospitaladmin/DataMigration') },
+                    { label: 'Local DB & Sync', path: '/hospitaladmin/local-sync', icon: <FiServer />, prefetchKey: 'ha_localsync', prefetchFn: () => import('../../pages/hospitaladmin/LocalSync') },
+                ];
+            }
+            return [
+                { label: 'Hospital Overview', path: '/hospitaladmin', icon: <FiHome />, prefetchKey: 'ha_dash', prefetchFn: () => import('../../pages/hospitaladmin/HospitalAdminDashboard') },
+                { label: 'Vial Management', path: '/hospitaladmin/vials', icon: <FiBox />, prefetchKey: 'ha_vials', prefetchFn: () => import('../../pages/hospitaladmin/VialManagement') },
+                { label: 'Clinical Questions', path: '/hospitaladmin/question-library', icon: <FiFileText />, prefetchKey: 'ha_ql', prefetchFn: () => import('../../pages/hospitaladmin/HospitalAdminQuestionLibrary') },
+                { label: 'Staff Management', path: '/admin/users', icon: <FiUsers />, prefetchKey: 'ha_users', prefetchFn: () => import('../../pages/admin/Admin') },
+                { label: 'Doctors Feed', path: '/admin/doctors', icon: <FiActivity />, prefetchKey: 'ha_doctors', prefetchFn: () => import('../../pages/admin/AdminDoctors') },
+                { label: 'Pharma Inventory', path: '/pharmacy/inventory', icon: <FiPackage />, prefetchKey: 'ha_pharma', prefetchFn: () => import('../../pages/pharmacy/PharmacyInventory') },
+                { label: 'Billing & Payments', path: '/billing/patient', icon: <FiFileText />, prefetchKey: 'ha_billing', prefetchFn: () => import('../../pages/billing/PatientBillingProfile') },
+                { label: 'Refund Approvals', path: '/hospitaladmin/refunds', icon: <FiDollarSign />, prefetchKey: 'ha_refunds', prefetchFn: () => import('../../pages/hospitaladmin/HospitalAdminRefunds') },
+                { label: 'Package Management', path: '/hospitaladmin/packages', icon: <FiGrid />, prefetchKey: 'ha_packages', prefetchFn: () => import('../../pages/hospitaladmin/PackageManagement') },
+                { label: 'Data Migration', path: '/hospitaladmin/data-migration', icon: <FiDatabase />, prefetchKey: 'ha_migration', prefetchFn: () => import('../../pages/hospitaladmin/DataMigration') },
+                { label: 'Local DB & Sync', path: '/hospitaladmin/local-sync', icon: <FiServer />, prefetchKey: 'ha_localsync', prefetchFn: () => import('../../pages/hospitaladmin/LocalSync') },
+            ];
+        }
+        if (role === 'doctor_assistant' || role === 'doctor assistant' || role === 'clinical assistant' || role.includes('assistant')) {
+            return [
+                { label: 'Assistant Dashboard', path: '/assistant/dashboard', icon: <FiHome />, prefetchKey: 'asst_dash', prefetchFn: () => import('../../pages/assistant/DoctorAssistantDashboard') },
+                { label: 'Patient Queue', path: '/assistant/queue', icon: <FiUsers />, prefetchKey: 'asst_queue', prefetchFn: () => import('../../pages/assistant/DoctorAssistantQueue') },
+                { label: 'Question Library', path: '/assistant/question-library', icon: <FiFileText />, prefetchKey: 'asst_ql', prefetchFn: () => import('../../pages/assistant/DoctorAssistantQuestionLibrary') },
+            ];
+        }
+        if (role === 'doctor' || role === 'clinic doctor' || role === 'clinicdoctor' || (role.includes('doctor') && !role.includes('assistant'))) {
+            return [
+                { label: 'Dashboard', path: '/my-dashboard', icon: <FiHome />, prefetchKey: 'doc_dash', prefetchFn: () => import('../../pages/doctors/DoctorDashboard') },
+                { label: 'My Patients', path: '/doctor/patients', icon: <FiUsers />, prefetchKey: 'doc_patients', prefetchFn: () => import('../../pages/doctors/Patient') },
+                { label: 'AI Assistant', path: '/doctor/ai-assistant', icon: <FiCpu />, prefetchKey: 'doc_ai', prefetchFn: () => import('../../pages/doctors/AIAssistant') },
+                { label: 'Surgeries', path: '/doctor/surgeries', icon: <FiScissors />, prefetchKey: 'doc_surgeries', prefetchFn: () => import('../../pages/doctors/DoctorSurgeries') },
+                { label: 'Real-Time Monitoring', path: '/doctor/real-time-monitoring', icon: <FiActivity />, prefetchKey: 'doc_rtm', prefetchFn: () => import('../../pages/monitoring/RealTimeMonitoring') },
+            ];
+        }
+        if (role === 'reception' || role === 'receptionist') {
+            return [
+                { label: 'Reception Dashboard', path: '/reception/dashboard', icon: <FiHome />, prefetchKey: 'rec_dash', prefetchFn: () => import('../../pages/reception/ReceptionDashboard') },
+                { label: 'Patient Registration', path: '/reception/dashboard?view=intake', icon: <FiPlusSquare />, prefetchKey: 'rec_intake', prefetchFn: () => import('../../pages/reception/ReceptionDashboard') },
+                { label: 'Patient Billing', path: '/billing/patient', icon: <FiFileText />, prefetchKey: 'rec_billing', prefetchFn: () => import('../../pages/billing/PatientBillingProfile') },
+                { label: 'Cash Refunds', path: '/reception/refunds', icon: <FiDollarSign />, prefetchKey: 'rec_refunds', prefetchFn: () => import('../../pages/reception/ReceptionRefunds') },
+            ];
+        }
+        if (role === 'lab') {
+            return [
+                { label: 'Lab Dashboard', path: '/lab/dashboard', icon: <FiActivity />, prefetchKey: 'lab_dash', prefetchFn: () => import('../../pages/lab/LabDashboard') },
+                { label: 'Assigned Tests', path: '/lab/tests', icon: <FiFileText />, prefetchKey: 'lab_tests', prefetchFn: () => import('../../pages/lab/AssignedTests') },
+            ];
+        }
+        if (role.includes('pharmac')) {
+            return [
+                { label: 'Inventory', path: '/pharmacy/inventory', icon: <FiPackage />, prefetchKey: 'pharm_inv', prefetchFn: () => import('../../pages/pharmacy/PharmacyInventory') },
+                { label: 'Pharmacy Orders', path: '/pharmacy/orders', icon: <FiClipboard />, prefetchKey: 'pharm_orders', prefetchFn: () => import('../../pages/pharmacy/PharmacyOrders') },
+                { label: 'Purchase Invoices', path: '/pharmacy/purchase-invoices', icon: <FiFileText />, prefetchKey: 'pharm_invs', prefetchFn: () => import('../../pages/pharmacy/PurchaseInvoiceHistory') },
+                { label: 'Returns', path: '/pharmacy/returns', icon: <FiActivity />, prefetchKey: 'pharm_rets', prefetchFn: () => import('../../pages/pharmacy/PharmacyReturns') },
+                { label: 'Vendor Returns', path: '/pharmacy/vendor-returns', icon: <FiActivity />, prefetchKey: 'pharm_vret', prefetchFn: () => import('../../pages/pharmacy/VendorReturns') },
+                { label: 'Collections', path: '/pharmacy/collections', icon: <FiPieChart />, prefetchKey: 'pharm_colls', prefetchFn: () => import('../../pages/pharmacy/PharmacyCollections') },
+                { label: 'Departments', path: '/pharmacy/departments', icon: <FiGrid />, prefetchKey: 'pharm_depts', prefetchFn: () => import('../../pages/pharmacy/PharmacyDepartments') },
+            ];
+        }
+
+        if (role === 'accountant') {
+            return [
+                { label: 'Dashboard', path: '/accountant/dashboard', icon: <FiPieChart />, prefetchKey: 'acc_dash', prefetchFn: () => import('../../pages/accountant/AccountantDashboard') },
+                { label: 'Financial Records', path: '/accountant/financial-records', icon: <FiFileText />, prefetchKey: 'acc_records', prefetchFn: () => import('../../pages/accountant/AccountantFinancialRecords') },
+                { label: 'Refunds', path: '/accountant/refunds', icon: <FiDollarSign />, prefetchKey: 'acc_refunds', prefetchFn: () => import('../../pages/accountant/AccountantRefunds') },
+                { label: 'History', path: '/accountant/history', icon: <FiClock />, prefetchKey: 'acc_hist', prefetchFn: () => import('../../pages/accountant/AccountantHistory') },
+            ];
+        }
+        if (role === 'cashier') {
+            return [
+                { label: 'Billing/Payments', path: '/cashier/billing', icon: <FiFileText />, prefetchKey: 'cash_bill', prefetchFn: () => import('../../pages/cashier/CashierDashboard') },
+            ];
+        }
+        if (role === 'nurse' || role === 'staffnurse' || role === 'headnurse') {
+            return [
+                { label: 'Nurse IPD Care', path: '/nurse/dashboard', icon: <FiHome />, prefetchKey: 'nurse_dash', prefetchFn: () => import('../../pages/nurse/NurseDashboard') },
+                { label: 'Patient Reports & Consents', path: '/nurse/patient-documents', icon: <FiFileText />, prefetchKey: 'nurse_docs', prefetchFn: () => import('../../pages/nurse/NursePatientDocuments') },
+                { label: 'Real-Time Monitoring', path: '/nurse/real-time-monitoring', icon: <FiActivity />, prefetchKey: 'nurse_rtm', prefetchFn: () => import('../../pages/monitoring/RealTimeMonitoring') },
+            ];
+        }
+        if (role === 'billing') {
+            return [
+                { label: 'Patient Billing', path: '/cashier/billing', icon: <FiFileText />, prefetchKey: 'bill_page', prefetchFn: () => import('../../pages/cashier/CashierDashboard') },
+            ];
+        }
+        if (role === 'patient') {
+            return [
+                { label: 'Patient Dashboard', path: '/patient/dashboard', icon: <FiHome />, prefetchKey: 'pat_dash', prefetchFn: () => import('../../pages/patient/PatientDashboard') },
+            ];
+        }
+        return [
+            { label: 'My Dashboard', path: '/my-dashboard', icon: <FiHome />, prefetchKey: 'my_dash', prefetchFn: () => import('../../pages/RoleDashboard') },
+        ];
+    }, [role, location.pathname, user?.clinicType]);
+
+    const isPathActive = (itemPath) => {
+        const currentPath = location.pathname;
+        const currentSearch = location.search;
+        
+        if (itemPath.includes('?')) {
+            const [basePath, searchPart] = itemPath.split('?');
+            return currentPath === basePath && currentSearch.includes(searchPart);
+        }
+        
+        if (itemPath === '/reception/dashboard') {
+            const searchParams = new URLSearchParams(currentSearch);
+            const view = searchParams.get('view');
+            return currentPath === '/reception/dashboard' && (!view || view === 'welcome');
+        }
+
+        if (itemPath === '/ot/dashboard' && (currentPath === '/ot/dashboard' || currentPath === '/ot-dashboard' || currentPath === '/ot')) {
+            return true;
+        }
+
+        if (itemPath === '/my-dashboard' && (currentPath === '/doctor/dashboard' || currentPath === '/my-dashboard')) {
+            return true;
+        }
+
+        if (itemPath === '/doctor/surgeries' && (currentPath.startsWith('/doctor/surgeries') || currentPath.startsWith('/doctor/surgery-referrals') || currentPath.startsWith('/doctor/surgery-plans'))) {
+            return true;
+        }
+        
+        return currentPath === itemPath;
+    };
+
+    return (
+        <aside className={`erp-sidebar ${isOpen ? 'open' : 'collapsed'} ${isCentralAdmin ? 'ca-erp-sidebar' : ''}`}>
+            <div className={`sidebar-brand ${isCentralAdmin ? 'ca-sidebar-brand' : ''}`}>
+                <div className="ca-brand-container">
+                    <img
+                        src={(isCentralAdmin ? '/assets/logo.png' : (branding?.logoUrl || branding?.logo || '/assets/logo.png'))}
+                        alt={hospitalName || "MedMatrix 360"}
+                        onError={(e) => {
+                            e.target.onerror = null;
+                            e.target.src = '/logo.png';
+                        }}
+                        style={{ height: '36px', maxWidth: '175px', width: 'auto', objectFit: 'contain' }}
+                    />
+                </div>
+                <button 
+                    className="block lg:hidden p-1 rounded-md hover:bg-gray-100 transition-colors" 
+                    onClick={() => setOpen(false)}
+                    style={{ border: 'none', background: 'transparent', cursor: 'pointer' }}
+                >
+                    <FiX size={24} color="#64748b" />
+                </button>
+            </div>
+            
+            <nav className="sidebar-nav">
+                {menuItems.map((item, idx) => {
+                    const active = isPathActive(item.path);
+
+                    const handlePrefetch = () => {
+                        if (item.prefetchFn) {
+                            prefetchRoute(item.prefetchKey || item.path, item.prefetchFn, true);
+                        }
+                    };
+
+                    const handleNavClick = () => {
+                        // Instant drawer dismissal on mobile/tablet screens
+                        if (typeof window !== 'undefined' && window.innerWidth <= 1024) {
+                            setOpen(false);
+                        }
+                    };
+
+                    return (
+                        <NavLink 
+                            key={item.path || idx} 
+                            to={item.path} 
+                            end
+                            className={() => `sidebar-link ca-sidebar-link ${item.isSubItem ? 'sidebar-sub-link' : ''} ${active ? 'active' : ''}`}
+                            onClick={handleNavClick}
+                            onMouseEnter={handlePrefetch}
+                            onTouchStart={handlePrefetch}
+                        >
+                            <span className="sidebar-link-icon">{item.icon}</span>
+                            <span className="sidebar-link-text">{item.label}</span>
+                        </NavLink>
+                    );
+                })}
+
+                {/* AI Assistant Quick-Launch Tile inside Sidebar */}
+                {(role === 'hospitaladmin' || isCentralAdmin || role.includes('doctor')) && isOpen && (
+                    <div 
+                        className="ha-sidebar-ai-card"
+                        onClick={() => navigate('/doctor/ai-assistant')}
+                        title="Open Clinical AI Assistant"
+                        role="button"
+                        tabIndex={0}
+                        onKeyDown={(e) => { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); navigate('/doctor/ai-assistant'); } }}
+                    >
+                        <div className="ha-sidebar-ai-inner">
+                            <div className="ha-sidebar-ai-icon-box">
+                                <FiCpu size={17} />
+                            </div>
+                            <div className="ha-sidebar-ai-text-group">
+                                <div className="ha-sidebar-ai-headline">
+                                    <span className="ha-sidebar-ai-title">AI Assistant</span>
+                                    <span className="ha-sidebar-ai-pill">PRO</span>
+                                </div>
+                                <span className="ha-sidebar-ai-subtitle">Clinical Intelligence</span>
+                            </div>
+                            <FiChevronRight size={14} className="ha-sidebar-ai-arrow" />
+                        </div>
+                    </div>
+                )}
+            </nav>
+
+        </aside>
+    );
+});
+
+const TopBar = ({ toggleSidebar, sidebarOpen }) => {
+    const { user } = useAuth();
+    const { branding, hospitalName } = useBranding();
+    const dispatch = useAppDispatch();
+    const navigate = useNavigate();
+    const location = useLocation();
+    const role = (user?.role || '').toLowerCase();
+    const isCentralAdmin = (role === 'centraladmin' || role === 'superadmin');
+    const [dropdownOpen, setDropdownOpen] = useState(false);
+    const dropdownRef = useRef(null);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (dropdownRef.current && !dropdownRef.current.contains(event.target)) {
+                setDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const handleLogout = (e) => {
+        if (e) {
+            e.preventDefault();
+            e.stopPropagation();
+        }
+        setDropdownOpen(false);
+        try {
+            localStorage.removeItem('loginTime');
+        } catch (_) {}
+        dispatch(logout());
+        navigate('/login');
+    };
+
+    // Helper to format last login time without fabricating timestamps
+    const formatLastLogin = (timestamp) => {
+        if (!timestamp) return 'Active Session';
+        const date = new Date(timestamp);
+        if (isNaN(date.getTime())) return 'Active Session';
+
+        const now = new Date();
+        const isToday = date.toDateString() === now.toDateString();
+        
+        const yesterday = new Date(now);
+        yesterday.setDate(now.getDate() - 1);
+        const isYesterday = date.toDateString() === yesterday.toDateString();
+
+        const timeStr = date.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+
+        if (isToday) {
+            return `Today, ${timeStr}`;
+        } else if (isYesterday) {
+            return `Yesterday, ${timeStr}`;
+        } else {
+            const dateStr = date.toLocaleDateString('en-US', { day: '2-digit', month: 'short' });
+            return `${dateStr}, ${timeStr}`;
+        }
+    };
+
+    // Helper to get initials
+    const getInitials = (name) => {
+        return (name || 'Administrator').split(' ').map(n => n[0]).join('').toUpperCase().substring(0, 2);
+    };
+
+    const getCentralAdminTag = () => {
+        const path = location.pathname;
+        if (path === '/supremeadmin') return 'CENTRAL ADMIN';
+        if (path.includes('question-library')) return 'QUESTION LIBRARY';
+        if (path.includes('consent')) return 'CONSENT HUB';
+        if (path.includes('roles')) return 'ROLES & PERMISSIONS';
+        if (path.includes('users')) return 'MANAGE STAFF';
+        if (path.includes('revenue')) return 'REVENUE ANALYTICS';
+        return 'CENTRAL ADMIN';
+    };
+
+    const getPageTitle = (pathname) => {
+        if (pathname.includes('real-time-monitoring')) return 'Real-Time Monitoring';
+        if (pathname === '/nurse/dashboard') return 'Nurse IPD Care';
+        if (pathname === '/nurse/patient-documents') return 'Patient Reports & Clinical Consents';
+        if (pathname === '/nurse/opd-queue') return 'OPD Patient Queue';
+        if (pathname === '/nurse/appointments') return 'Appointments';
+        if (pathname.startsWith('/nurse/patient/') || pathname.startsWith('/nurse/ipd/patient/')) return 'Patient IPD Care';
+        if (pathname === '/ipd/command-center' || pathname === '/nurse/command-center') return 'IPD Command Center';
+        if (pathname === '/doctor/dashboard') return 'Doctor Dashboard';
+        if (pathname === '/doctor/patients') return 'My Patients';
+        if (pathname === '/doctor/surgeries' || pathname === '/doctor/surgery-referrals' || pathname === '/doctor/surgery-plans') return 'Surgeries';
+        if (pathname.includes('/doctor/patient/')) return 'Patient Consultation Details';
+        if (pathname.includes('/patient/')) return 'Patient Profile';
+        if (pathname === '/reception/dashboard') return 'Reception Dashboard';
+        if (pathname === '/reception/patients') return 'Patient Search';
+        if (pathname === '/hospitaladmin') return 'Hospital Overview';
+        if (pathname === '/supremeadmin') return 'System Overview';
+        const lastPart = pathname.split('/').filter(Boolean).pop();
+        return lastPart ? decodeURIComponent(lastPart).replace(/-/g, ' ') : 'Dashboard';
+    };
+
+    return (
+        <header className={`erp-topbar ${isCentralAdmin ? 'ca-erp-topbar' : ''}`}>
+            <div className="topbar-left">
+                <button className="sidebar-toggle" onClick={toggleSidebar}>
+                    <div className={`hamburger ${sidebarOpen ? 'active' : ''}`}>
+                        <FiMenu size={24} color="#1e293b" />
+                    </div>
+                </button>
+                {isCentralAdmin ? (
+                    <div className="ca-topbar-breadcrumb">
+                        <span className="ca-bc-user-type">
+                            {user?.role ? (user.role.charAt(0).toUpperCase() + user.role.slice(1)) : 'Central Admin'}
+                        </span>
+                        <span className="ca-bc-divider">/</span>
+                        <span className="ca-bc-tag">{getCentralAdminTag()}</span>
+                    </div>
+                ) : (
+                    <div className="breadcrumb-wrap flex flex-nowrap whitespace-nowrap overflow-x-auto overflow-y-hidden items-center">
+                        <span className="curr-page-name capitalize">
+                            {getPageTitle(location.pathname)}
+                        </span>
+                        <span className="path-slash">/</span>
+                        <span className="path-user-role">{user?.role}</span>
+                    </div>
+                )}
+            </div>
+
+            <div className="topbar-right">
+                <div className="ca-topbar-actions">
+                    {user?.isDemo && (
+                        <div 
+                            className="demo-mode-badge"
+                            style={{
+                                display: 'inline-flex',
+                                alignItems: 'center',
+                                gap: '6px',
+                                background: 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+                                color: '#ffffff',
+                                padding: '4px 11px',
+                                borderRadius: '9999px',
+                                fontSize: '0.72rem',
+                                fontWeight: '800',
+                                letterSpacing: '0.08em',
+                                boxShadow: '0 2px 8px rgba(217, 119, 6, 0.35)',
+                                textTransform: 'uppercase',
+                                userSelect: 'none',
+                                whiteSpace: 'nowrap'
+                            }}
+                            title="MedMatrix 360 Demo Mode (Isolated Tenant)"
+                        >
+                            <span style={{ width: '6px', height: '6px', borderRadius: '50%', backgroundColor: '#ffffff', display: 'inline-block' }} />
+                            DEMO MODE
+                        </div>
+                    )}
+                    <GlobalSearch />
+
+                    {/* Profile Dropdown Container */}
+                    <div className="ca-profile-dropdown-container" ref={dropdownRef}>
+                        <button 
+                            type="button"
+                            className={`ca-user-profile-circle-btn ${dropdownOpen ? 'active' : ''}`}
+                            onClick={() => setDropdownOpen(prev => !prev)}
+                            title={user?.name ? `${user.name} (${user.role || 'User'})` : 'Account & Profile'}
+                            aria-label="Account & Profile"
+                        >
+                            <div className="ca-avatar-wrapper">
+                                <div className="ca-avatar-circle">
+                                    {user?.avatar ? (
+                                        <img src={user.avatar} alt={user.name} />
+                                    ) : (
+                                        <span>{getInitials(user?.name) || 'AD'}</span>
+                                    )}
+                                </div>
+                                <div className="ca-avatar-online" />
+                            </div>
+                        </button>
+
+                        {/* Dropdown Modal Card (Separate sibling, stationary & smooth) */}
+                        {dropdownOpen && (
+                            <div className="ca-profile-dropdown-card" onClick={(e) => e.stopPropagation()}>
+                                {/* Speech Bubble Pointer Arrow */}
+                                <div className="ca-dropdown-pointer" />
+
+                                {/* Header Row with Professional Enterprise User Card */}
+                                <div className="ca-drop-header">
+                                    <div className="ca-drop-avatar-wrap">
+                                        <div className="ca-drop-avatar">
+                                            {user?.avatar ? (
+                                                <img src={user.avatar} alt={user.name} />
+                                            ) : (
+                                                <span>{getInitials(user?.name) || 'AD'}</span>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Center User Info */}
+                                    <div className="ca-drop-user-info">
+                                        <h3 className="ca-drop-name">{user?.name || 'Administrator'}</h3>
+                                        {user?.email ? (
+                                            <p className="ca-drop-email" title={user.email}>{user.email}</p>
+                                        ) : (
+                                            <p className="ca-drop-email">admin@hospital.local</p>
+                                        )}
+                                        <div className="ca-drop-badge-tag">
+                                            <FiShield size={11} className="ca-role-shield-icon" />
+                                            <span className="ca-badge-text">{(user?.role || 'Administrator').toUpperCase().replace(/_/g, ' ')}</span>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Single Compact Session Status Card */}
+                                <div className="ca-drop-login-card">
+                                    <div className="ca-login-icon-box">
+                                        <FiClock size={14} />
+                                    </div>
+                                    <div className="ca-login-texts">
+                                        <span className="ca-login-label">{user?.lastLogin ? 'Last Login' : 'Session Status'}</span>
+                                        <span className="ca-login-value">{formatLastLogin(user?.lastLogin)}</span>
+                                    </div>
+                                </div>
+
+                                {/* Logout Session Button */}
+                                <button 
+                                    type="button" 
+                                    onClick={handleLogout} 
+                                    className="ca-drop-logout-btn"
+                                >
+                                    <FiLogOut size={15} />
+                                    <span>Logout</span>
+                                </button>
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </div>
+        </header>
+    );
+};
+
+const DashboardLayout = ({ children }) => {
+    const location = useLocation();
+    const isFullBleed = location.pathname.includes('/patient') || 
+                        location.pathname.includes('/patients') || 
+                        location.pathname.includes('/real-time-monitoring') || 
+                        location.pathname.includes('/monitoring');
+    const [sidebarOpen, setSidebarOpen] = useState(typeof window !== 'undefined' ? window.innerWidth > 1024 : true);
+
+    useEffect(() => {
+        const handleResize = () => {
+            if (window.innerWidth <= 1024) {
+                setSidebarOpen(false);
+            } else {
+                setSidebarOpen(true);
+            }
+        };
+        window.addEventListener('resize', handleResize);
+        handleResize();
+        return () => window.removeEventListener('resize', handleResize);
+    }, []);
+
+    return (
+        <div className="erp-layout">
+            <DashboardSidebar isOpen={sidebarOpen} setOpen={setSidebarOpen} />
+            <div 
+                className={`sidebar-overlay ${sidebarOpen ? 'show' : ''}`} 
+                onClick={() => setSidebarOpen(false)}
+            />
+            <div className={`erp-main-area ${sidebarOpen ? 'shifted' : 'full'}`}>
+                <TopBar sidebarOpen={sidebarOpen} toggleSidebar={() => setSidebarOpen(!sidebarOpen)} />
+                <main className={`erp-page-content ${isFullBleed ? 'erp-fullbleed-content' : ''}`}>
+                    {children}
+                </main>
+            </div>
+        </div>
+    );
+};
+
+export { TopBar, DashboardSidebar };
+export default DashboardLayout;

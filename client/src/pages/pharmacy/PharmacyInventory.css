@@ -1,0 +1,571 @@
+/* ============================================================
+   Pharmacy Management Suite — MedMatrix 360 Design System
+   Scoped styles for PharmacyInventory, PharmacyOrders & PurchaseInvoiceHistory
+   Zero global :root leakage
+   ============================================================ */
+
+.pharmacy-management-container,
+.erp-page-container {
+    --pharma-bg: #FFF7FA;
+    --pharma-card: #FFFFFF;
+    --pharma-primary: #D85F89;
+    --pharma-primary-hover: #C94D78;
+    --pharma-primary-active: #B83D68;
+    --pharma-selected-bg: #FCE7EF;
+    --pharma-selected-border: #F7BFD2;
+    --pharma-navy: #172238;
+    --pharma-muted: #64748B;
+    --pharma-border: #F1DCE4;
+    --pharma-border-light: #FDF2F6;
+    --pharma-shadow-sm: 0 1px 3px rgba(23, 34, 56, 0.04);
+    --pharma-shadow: 0 4px 18px -2px rgba(216, 95, 137, 0.08), 0 2px 6px -1px rgba(23, 34, 56, 0.03);
+    --pharma-shadow-lg: 0 14px 34px -4px rgba(23, 34, 56, 0.12);
+    --radius-sm: 8px;
+    --radius-md: 10px;
+    --radius-lg: 14px;
+    --radius-xl: 16px;
+
+    /* Semantic clinical colors - preserved */
+    --pharma-success: #10B981;
+    --pharma-success-bg: #DCFCE7;
+    --pharma-success-border: #BBF7D0;
+    --pharma-warning: #F59E0B;
+    --pharma-warning-bg: #FEF3C7;
+    --pharma-warning-border: #FDE68A;
+    --pharma-danger: #EF4444;
+    --pharma-danger-bg: #FEE2E2;
+    --pharma-danger-border: #FECACA;
+    --pharma-info: #2563EB;
+    --pharma-info-bg: #EFF6FF;
+    --pharma-info-border: #BFDBFE;
+
+    min-height: 100vh;
+    padding: 24px;
+    background: var(--pharma-bg);
+    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--pharma-navy);
+}
+
+/* ============================================================
+   Page Header
+   ============================================================ */
+.pharmacy-management-container .pharmacy-header,
+.erp-page-container .erp-page-header {
+    margin-bottom: 24px;
+    background: #FFFFFF;
+    padding: 20px 24px;
+    border-radius: 16px;
+    border: 1.5px solid #F1DCE4;
+    box-shadow: 0 4px 18px -2px rgba(216, 95, 137, 0.06);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+}
+
+.pharmacy-management-container .pharmacy-header h1,
+.pharmacy-management-container .pharmacy-header h2,
+.erp-page-container .erp-page-header h2 {
+    font-size: 1.6rem;
+    font-weight: 800;
+    color: #172238;
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+
+.pharmacy-management-container .pharmacy-header p,
+.erp-page-container .erp-page-header p {
+    color: #64748B;
+    font-size: 0.92rem;
+    margin-top: 4px;
+    font-weight: 500;
+}
+
+/* ============================================================
+   Controls & Search
+   ============================================================ */
+.pharmacy-management-container .inventory-controls {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 24px;
+    gap: 16px;
+    flex-wrap: wrap;
+}
+
+.pharmacy-management-container .search-bar {
+    flex: 1;
+    max-width: 500px;
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 10px 16px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 1px 3px rgba(23, 34, 56, 0.04);
+    border: 1.5px solid #F1DCE4;
+    transition: all 0.2s ease;
+}
+
+.pharmacy-management-container .search-bar:focus-within {
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.18);
+    border-color: #D85F89;
+}
+
+.pharmacy-management-container .search-bar input {
+    border: none;
+    background: transparent;
+    width: 100%;
+    font-size: 0.92rem;
+    color: #172238;
+    outline: none;
+    font-weight: 500;
+}
+
+.pharmacy-management-container .search-bar input::placeholder {
+    color: #94A3B8;
+}
+
+/* Primary Action Buttons */
+.pharmacy-management-container .btn-add,
+.pharmacy-orders-container .btn-add {
+    background: #D85F89;
+    color: #FFFFFF;
+    border: none;
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-size: 0.9rem;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(216, 95, 137, 0.28);
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.pharmacy-management-container .btn-add:hover,
+.pharmacy-orders-container .btn-add:hover {
+    background: #C94D78;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(216, 95, 137, 0.38);
+}
+
+/* ============================================================
+   Inventory Table
+   ============================================================ */
+.pharmacy-management-container .inventory-table-wrapper {
+    background: #FFFFFF;
+    border-radius: 16px;
+    border: 1.5px solid #F1DCE4;
+    box-shadow: 0 4px 18px -2px rgba(216, 95, 137, 0.06);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    padding: 12px 16px;
+}
+
+.pharmacy-management-container .inventory-table {
+    width: 100%;
+    min-width: 860px;
+    border-collapse: separate;
+    border-spacing: 0 6px;
+}
+
+.pharmacy-management-container .inventory-table th {
+    text-align: left;
+    padding: 12px 16px;
+    color: #172238;
+    font-size: 0.78rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    background: #FFF7FA;
+    border-bottom: 1.5px solid #F1DCE4;
+}
+
+.pharmacy-management-container .inventory-table th:first-child {
+    border-radius: 8px 0 0 8px;
+}
+
+.pharmacy-management-container .inventory-table th:last-child {
+    border-radius: 0 8px 8px 0;
+}
+
+.pharmacy-management-container .inventory-table tbody tr {
+    background: #FFFFFF;
+    box-shadow: 0 1px 3px rgba(23, 34, 56, 0.03);
+    border: 1px solid #F1DCE4;
+    transition: background 0.15s ease, box-shadow 0.15s ease, transform 0.15s ease;
+}
+
+.pharmacy-management-container .inventory-table tbody tr:hover {
+    background: #FFF7FA;
+    box-shadow: 0 3px 8px rgba(216, 95, 137, 0.08);
+}
+
+.pharmacy-management-container .inventory-table td {
+    padding: 12px 16px;
+    border: none;
+    vertical-align: middle;
+    font-size: 0.88rem;
+    color: #172238;
+}
+
+.pharmacy-management-container .inventory-table td:first-child {
+    border-radius: 8px 0 0 8px;
+}
+
+.pharmacy-management-container .inventory-table td:last-child {
+    border-radius: 0 8px 8px 0;
+}
+
+.pharmacy-management-container .med-name {
+    font-weight: 700;
+    color: #172238;
+}
+
+.pharmacy-management-container .category-tag {
+    background: #FCE7EF;
+    color: #D85F89;
+    border: 1px solid #F7BFD2;
+    padding: 3px 10px;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    font-weight: 700;
+    display: inline-block;
+}
+
+/* Semantic stock levels */
+.pharmacy-management-container .low-stock {
+    color: #DC2626;
+    font-weight: 700;
+}
+
+.pharmacy-management-container .good-stock {
+    color: #10B981;
+    font-weight: 700;
+}
+
+/* Action Buttons */
+.pharmacy-management-container .action-btn {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    border: 1.5px solid #F1DCE4;
+    background: #FFFFFF;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.pharmacy-management-container .action-btn:hover {
+    border-color: #D85F89;
+    background: #FCE7EF;
+    color: #D85F89;
+}
+
+.pharmacy-management-container .action-btn.delete {
+    background: #FEF2F2;
+    color: #EF4444;
+    border-color: #FECACA;
+}
+
+.pharmacy-management-container .action-btn.delete:hover {
+    background: #FEE2E2;
+    color: #DC2626;
+    transform: translateY(-1px);
+}
+
+/* ============================================================
+   Modals & Overlays (Scoped to Pharmacy Containers)
+   ============================================================ */
+.pharmacy-management-container .modal-overlay,
+.erp-page-container .modal-overlay {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(23, 34, 56, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 1000;
+    animation: pharmaFadeIn 0.2s ease;
+    box-sizing: border-box;
+    padding: 16px;
+}
+
+.pharmacy-management-container .modal-content,
+.erp-page-container .modal-content {
+    background: #FFFFFF;
+    width: 100%;
+    max-width: 720px;
+    max-height: 90vh;
+    border-radius: 18px;
+    padding: 28px 32px;
+    box-shadow: 0 20px 50px -10px rgba(23, 34, 56, 0.22);
+    animation: pharmaSlideIn 0.2s ease;
+    overflow-y: auto;
+    border: 1.5px solid #F1DCE4;
+}
+
+@keyframes pharmaFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes pharmaSlideIn {
+    from { transform: translateY(12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.pharmacy-management-container .modal-header,
+.erp-page-container .modal-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    position: sticky;
+    top: -28px;
+    background: #FFFFFF;
+    z-index: 100;
+    margin: -28px -32px 24px -32px;
+    padding: 24px 32px 16px 32px;
+    border-bottom: 1.5px solid #F1DCE4;
+    border-radius: 18px 18px 0 0;
+}
+
+.pharmacy-management-container .modal-header h2,
+.erp-page-container .modal-header h2 {
+    font-size: 1.35rem;
+    color: #172238;
+    margin: 0;
+    font-weight: 800;
+}
+
+.pharmacy-management-container .modal-subtitle,
+.erp-page-container .modal-subtitle {
+    color: #64748B;
+    font-size: 0.85rem;
+    margin: 4px 0 0 0;
+}
+
+.pharmacy-management-container .section-title {
+    color: #D85F89;
+    font-size: 0.82rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 2px solid #FCE7EF;
+    padding-bottom: 6px;
+    margin-bottom: 16px;
+    font-weight: 700;
+}
+
+.pharmacy-management-container .form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+
+.pharmacy-management-container .form-group label,
+.erp-page-container .form-group label {
+    display: block;
+    font-size: 0.82rem;
+    font-weight: 700;
+    color: #172238;
+    margin-bottom: 6px;
+}
+
+.pharmacy-management-container .form-group input,
+.pharmacy-management-container .form-group select,
+.erp-page-container .form-group input,
+.erp-page-container .form-group select {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 10px;
+    border: 1.5px solid #F1DCE4;
+    font-size: 0.92rem;
+    color: #172238;
+    background: #FFFFFF;
+    transition: all 0.15s ease;
+    box-sizing: border-box;
+}
+
+.pharmacy-management-container .form-group input:focus,
+.pharmacy-management-container .form-group select:focus,
+.erp-page-container .form-group input:focus,
+.erp-page-container .form-group select:focus {
+    border-color: #D85F89;
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.18);
+    outline: none;
+}
+
+.pharmacy-management-container .modal-actions,
+.erp-page-container .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 28px;
+    padding-top: 16px;
+    border-top: 1.5px solid #F1DCE4;
+}
+
+.pharmacy-management-container .btn-cancel,
+.erp-page-container .btn-cancel {
+    background: #F8FAFC;
+    color: #475569;
+    border: 1.5px solid #E2E8F0;
+    padding: 10px 20px;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    font-size: 0.88rem;
+    transition: all 0.15s ease;
+}
+
+.pharmacy-management-container .btn-cancel:hover,
+.erp-page-container .btn-cancel:hover {
+    background: #E2E8F0;
+    color: #172238;
+}
+
+.pharmacy-management-container .btn-save,
+.erp-page-container .btn-save {
+    background: #D85F89;
+    color: #FFFFFF;
+    border: none;
+    padding: 10px 22px;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 2px 8px rgba(216, 95, 137, 0.28);
+    font-size: 0.88rem;
+    transition: all 0.15s ease;
+}
+
+.pharmacy-management-container .btn-save:hover,
+.erp-page-container .btn-save:hover {
+    background: #C94D78;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(216, 95, 137, 0.38);
+}
+
+.pharmacy-management-container .close-btn,
+.erp-page-container .close-btn {
+    background: transparent;
+    border: none;
+    font-size: 1.4rem;
+    color: #94A3B8;
+    cursor: pointer;
+    padding: 4px;
+    line-height: 1;
+    transition: color 0.15s ease;
+}
+
+.pharmacy-management-container .close-btn:hover,
+.erp-page-container .close-btn:hover {
+    color: #172238;
+}
+
+/* ============================================================
+   Status Badges (Scoped)
+   ============================================================ */
+.pharmacy-management-container .status-badge,
+.erp-page-container .status-badge {
+    padding: 4px 12px;
+    border-radius: 6px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: inline-block;
+}
+
+.pharmacy-management-container .status-active,
+.erp-page-container .status-completed {
+    background: #DCFCE7;
+    color: #166534;
+    border: 1px solid #BBF7D0;
+}
+
+.pharmacy-management-container .status-low,
+.erp-page-container .status-pending {
+    background: #FEF3C7;
+    color: #92400E;
+    border: 1px solid #FDE68A;
+}
+
+.pharmacy-management-container .loader {
+    text-align: center;
+    padding: 40px;
+    color: #64748B;
+    font-size: 1rem;
+    font-weight: 600;
+}
+
+/* ============================================================
+   Responsive Design & Breakpoints
+   ============================================================ */
+@media (max-width: 1024px) {
+    .pharmacy-management-container,
+    .erp-page-container {
+        padding: 16px;
+    }
+}
+
+@media (max-width: 768px) {
+    .pharmacy-management-container .pharmacy-header,
+    .erp-page-container .erp-page-header {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 16px;
+    }
+
+    .pharmacy-management-container .form-row {
+        grid-template-columns: 1fr;
+        gap: 12px;
+    }
+
+    .pharmacy-management-container .modal-content,
+    .erp-page-container .modal-content {
+        padding: 20px 16px;
+        max-width: 95vw;
+    }
+
+    .pharmacy-management-container .modal-header,
+    .erp-page-container .modal-header {
+        margin: -20px -16px 18px -16px;
+        padding: 16px 20px 12px 20px;
+    }
+
+    .pharmacy-management-container .search-bar {
+        max-width: 100%;
+    }
+}
+
+@media (max-width: 480px) {
+    .pharmacy-management-container .pharmacy-header h1,
+    .erp-page-container .erp-page-header h2 {
+        font-size: 1.3rem;
+    }
+
+    .pharmacy-management-container .modal-actions,
+    .erp-page-container .modal-actions {
+        flex-direction: column;
+    }
+
+    .pharmacy-management-container .btn-save,
+    .pharmacy-management-container .btn-cancel,
+    .erp-page-container .btn-save,
+    .erp-page-container .btn-cancel {
+        width: 100%;
+        text-align: center;
+    }
+}

@@ -1,0 +1,459 @@
+import React, { useState } from 'react';
+import { abdmAPI } from '../../utils/api';
+import toast from 'react-hot-toast';
+import { FiShield, FiCheckCircle, FiAlertCircle, FiX, FiLink2, FiPlusCircle, FiArrowRight } from 'react-icons/fi';
+import './AbdmSection.css';
+
+const AbdmSection = ({ patient, onPatientUpdate, compact = false }) => {
+    // ABDM functionality is blocked / disabled
+    return null;
+
+    // Modal state
+    const [modalMode, setModalMode] = useState(null); // 'link' | 'create' | null
+    const [step, setStep] = useState(1); // 1 = identifier input, 2 = OTP verification
+    const [loading, setLoading] = useState(false);
+    const [errorMessage, setErrorMessage] = useState('');
+
+    // Form inputs
+    const [abhaIdentifier, setAbhaIdentifier] = useState('');
+    const [authMethod, setAuthMethod] = useState('AADHAAR_OTP');
+    const [aadhaarInput, setAadhaarInput] = useState('');
+    const [txnId, setTxnId] = useState('');
+    const [otp, setOtp] = useState('');
+    const [mobileInput, setMobileInput] = useState(patient?.phone || patient?.mobile || '');
+
+    // Skip state
+    const [skipped, setSkipped] = useState(false);
+
+    const openLinkModal = () => {
+        setModalMode('link');
+        setStep(1);
+        setErrorMessage('');
+        setAbhaIdentifier('');
+        setOtp('');
+        setTxnId('');
+    };
+
+    const openCreateModal = () => {
+        setModalMode('create');
+        setStep(1);
+        setErrorMessage('');
+        setAadhaarInput('');
+        setOtp('');
+        setTxnId('');
+        setMobileInput(patient?.phone || patient?.mobile || '');
+    };
+
+    const closeModal = () => {
+        setModalMode(null);
+        setStep(1);
+        setErrorMessage('');
+        setOtp('');
+        setTxnId('');
+        setLoading(false);
+    };
+
+    const handleSkip = () => {
+        setSkipped(true);
+        toast('ABHA linking skipped for now. You can link anytime.', { icon: 'ℹ️' });
+    };
+
+    // Step 1: Initiate Link Existing ABHA
+    const handleStartLink = async (e) => {
+        e.preventDefault();
+        if (!abhaIdentifier || abhaIdentifier.trim().length < 4) {
+            setErrorMessage('Please enter a valid ABHA Number or ABHA Address');
+            return;
+        }
+
+        setLoading(true);
+        setErrorMessage('');
+        try {
+            const res = await abdmAPI.startLink({
+                patientId,
+                abhaIdentifier: abhaIdentifier.trim(),
+                authMethod
+            });
+
+            if (res.success) {
+                setTxnId(res.txnId);
+                setStep(2);
+                toast.success('ABDM OTP initiated successfully');
+            } else {
+                setErrorMessage(res.message || 'Failed to initiate ABDM linking');
+            }
+        } catch (err) {
+            const msg = err.response?.data?.message || err.message || 'Failed to connect to ABDM Sandbox';
+            setErrorMessage(msg);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Step 2: Confirm Link Existing ABHA
+    const handleVerifyLink = async (e) => {
+        e.preventDefault();
+        if (!otp || otp.trim().length !== 6) {
+            setErrorMessage('Please enter the 6-digit OTP');
+            return;
+        }
+
+        setLoading(true);
+        setErrorMessage('');
+        try {
+            const res = await abdmAPI.verifyLink({
+                patientId,
+                txnId,
+                otp: otp.trim()
+            });
+
+            if (res.success) {
+                toast.success('ABHA successfully linked & verified!');
+                closeModal();
+                if (onPatientUpdate) onPatientUpdate(res.abha);
+            } else {
+                setErrorMessage(res.message || 'Failed to verify OTP');
+            }
+        } catch (err) {
+            const msg = err.response?.data?.message || err.message || 'OTP verification failed';
+            setErrorMessage(msg);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Step 1: Initiate Create ABHA
+    const handleStartCreate = async (e) => {
+        e.preventDefault();
+        const cleanAadhaar = String(aadhaarInput || '').trim();
+        if (!/^\d{12}$/.test(cleanAadhaar)) {
+            setErrorMessage('Please enter a valid 12-digit Aadhaar number');
+            return;
+        }
+
+        const cleanMobile = String(mobileInput || patient?.phone || patient?.mobile || '').replace(/\D/g, '').slice(-10);
+        if (!cleanMobile || cleanMobile.length !== 10) {
+            setErrorMessage('Please enter a valid 10-digit mobile number for ABHA registration');
+            return;
+        }
+
+        setLoading(true);
+        setErrorMessage('');
+        try {
+            const res = await abdmAPI.startCreate({
+                patientId,
+                aadhaarNumber: cleanAadhaar
+            });
+
+            if (res.success) {
+                setTxnId(res.txnId);
+                setStep(2);
+                toast.success('Aadhaar OTP generated by ABDM');
+            } else {
+                setErrorMessage(res.message || 'Failed to initiate ABHA creation');
+            }
+        } catch (err) {
+            const msg = err.response?.data?.message || err.message || 'Failed to connect to ABDM Sandbox';
+            setErrorMessage(msg);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // Step 2: Confirm Create ABHA
+    const handleVerifyCreate = async (e) => {
+        e.preventDefault();
+        if (!otp || otp.trim().length !== 6) {
+            setErrorMessage('Please enter the 6-digit OTP');
+            return;
+        }
+
+        const cleanMobile = String(mobileInput || patient?.phone || patient?.mobile || '').replace(/\D/g, '').slice(-10);
+        if (!cleanMobile || cleanMobile.length !== 10) {
+            setErrorMessage('Please enter a valid 10-digit mobile number for ABHA profile creation');
+            return;
+        }
+
+        setLoading(true);
+        setErrorMessage('');
+        try {
+            const res = await abdmAPI.verifyCreate({
+                patientId,
+                txnId,
+                otp: otp.trim(),
+                mobile: cleanMobile
+            });
+
+            if (res.success) {
+                toast.success('New ABHA successfully created and linked!');
+                closeModal();
+                if (onPatientUpdate) onPatientUpdate(res.abha);
+            } else {
+                setErrorMessage(res.message || 'Failed to verify OTP');
+            }
+        } catch (err) {
+            const msg = err.response?.data?.message || err.message || 'OTP verification failed';
+            setErrorMessage(msg);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    return (
+        <div className={`abdm-section-card ${compact ? 'abdm-compact' : ''}`}>
+            {/* Header */}
+            <div className="abdm-section-header">
+                <div className="abdm-title-wrapper">
+                    <span className="abdm-gov-logo">
+                        <FiShield />
+                    </span>
+                    <div>
+                        <h4 className="abdm-heading">
+                            Ayushman Bharat Health Account (ABHA)
+                        </h4>
+                        <p className="abdm-subheading">
+                            Government of India ABDM National Digital Health Ecosystem
+                        </p>
+                    </div>
+                </div>
+
+                {isVerified ? (
+                    <span className="abdm-badge abdm-badge-verified">
+                        <FiCheckCircle /> ABHA Status: Verified
+                    </span>
+                ) : (
+                    <span className="abdm-badge abdm-badge-unlinked">
+                        <FiAlertCircle /> ABHA Status: Not Linked
+                    </span>
+                )}
+            </div>
+
+            {/* Body */}
+            {isVerified ? (
+                <div>
+                    <div className="abdm-verified-grid">
+                        <div className="abdm-field-box">
+                            <span className="abdm-field-label">ABHA Number</span>
+                            <span className="abdm-field-val">
+                                {abdm.maskedAbhaNumber || (abdm.abhaNumber ? `**-****-****-${abdm.abhaNumber.slice(-4)}` : '************')}
+                            </span>
+                        </div>
+                        <div className="abdm-field-box">
+                            <span className="abdm-field-label">ABHA Address</span>
+                            <span className="abdm-field-val">
+                                {abdm.maskedAbhaAddress || abdm.abhaAddress || '********@abdm'}
+                            </span>
+                        </div>
+                        <div className="abdm-field-box">
+                            <span className="abdm-field-label">Verification Date</span>
+                            <span className="abdm-field-val">
+                                {abdm.verifiedAt ? new Date(abdm.verifiedAt).toLocaleDateString('en-IN') : 'Verified'}
+                            </span>
+                        </div>
+                    </div>
+                    <div className="abdm-verified-footer">
+                        <FiCheckCircle /> Linked securely with Medical365 Patient MRN: <strong>{patient?.patientId || patient?.mrn || 'N/A'}</strong>
+                    </div>
+                </div>
+            ) : (
+                <div className="abdm-unlinked-wrapper">
+                    <div className="abdm-unlinked-info">
+                        Link the patient's Ayushman Bharat Health Account to enable interoperable healthcare records and unified clinical tracking.
+                    </div>
+                    <div className="abdm-actions-group">
+                        <button
+                            type="button"
+                            className="abdm-btn abdm-btn-primary"
+                            onClick={openLinkModal}
+                        >
+                            <FiLink2 /> Link Existing ABHA
+                        </button>
+                        <button
+                            type="button"
+                            className="abdm-btn abdm-btn-secondary"
+                            onClick={openCreateModal}
+                        >
+                            <FiPlusCircle /> Create ABHA
+                        </button>
+                        {!skipped && (
+                            <button
+                                type="button"
+                                className="abdm-btn abdm-btn-outline"
+                                onClick={handleSkip}
+                            >
+                                Skip for Now
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
+            {/* Modal for Link / Create Flow */}
+            {modalMode && (
+                <div className="abdm-modal-overlay" onClick={closeModal}>
+                    <div className="abdm-modal-card" onClick={(e) => e.stopPropagation()}>
+                        <div className="abdm-modal-header">
+                            <h3 className="abdm-modal-title">
+                                {modalMode === 'link' ? 'Link Existing ABHA' : 'Create New ABHA'}
+                            </h3>
+                            <button className="abdm-modal-close-btn" onClick={closeModal}>
+                                <FiX />
+                            </button>
+                        </div>
+
+                        <div className="abdm-modal-body">
+                            {errorMessage && (
+                                <div className="abdm-alert-box abdm-alert-warning">
+                                    <FiAlertCircle style={{ marginRight: '6px' }} />
+                                    {errorMessage}
+                                </div>
+                            )}
+
+                            {/* Modal Step 1: Identifier Input */}
+                            {step === 1 && modalMode === 'link' && (
+                                <form onSubmit={handleStartLink}>
+                                    <div className="abdm-form-group">
+                                        <label className="abdm-input-label">ABHA Number</label>
+                                        <input
+                                            type="text"
+                                            className="abdm-input"
+                                            placeholder="14-digit ABHA number"
+                                            value={abhaIdentifier}
+                                            onChange={(e) => setAbhaIdentifier(e.target.value)}
+                                            required
+                                            autoFocus
+                                        />
+                                        <p className="abdm-input-hint">
+                                            Enter the 14-digit ABHA number (ABHA-address login is not implemented yet).
+                                        </p>
+                                    </div>
+
+                                    <div className="abdm-form-group">
+                                        <label className="abdm-input-label">Authentication Mode</label>
+                                        <select
+                                            className="abdm-input"
+                                            value={authMethod}
+                                            onChange={(e) => setAuthMethod(e.target.value)}
+                                        >
+                                            <option value="AADHAAR_OTP">Aadhaar OTP (Registered Mobile)</option>
+                                            <option value="MOBILE_OTP">Mobile OTP (ABHA Registered Mobile)</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="abdm-modal-footer">
+                                        <button type="button" className="abdm-btn abdm-btn-outline" onClick={closeModal}>
+                                            Cancel
+                                        </button>
+                                        <button type="submit" className="abdm-btn abdm-btn-primary" disabled={loading}>
+                                            {loading ? 'Requesting OTP...' : 'Request ABDM OTP'} <FiArrowRight />
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+
+                            {/* Modal Step 1: Create ABHA Input */}
+                            {step === 1 && modalMode === 'create' && (
+                                <form onSubmit={handleStartCreate}>
+                                    <div className="abdm-form-group">
+                                        <label className="abdm-input-label">Patient Aadhaar Number</label>
+                                        <input
+                                            type="text"
+                                            className="abdm-input"
+                                            maxLength="12"
+                                            placeholder="12-digit Aadhaar Number"
+                                            value={aadhaarInput}
+                                            onChange={(e) => setAadhaarInput(e.target.value.replace(/\D/g, ''))}
+                                            required
+                                            autoFocus
+                                        />
+                                        <p className="abdm-input-hint">
+                                            An authentication OTP will be sent to the Aadhaar-linked mobile number by UIDAI / ABDM.
+                                        </p>
+                                    </div>
+
+                                    <div className="abdm-form-group">
+                                        <label className="abdm-input-label">Mobile Number for ABHA (10 Digits)</label>
+                                        <input
+                                            type="tel"
+                                            className="abdm-input"
+                                            maxLength="10"
+                                            placeholder="10-digit Mobile Number"
+                                            value={mobileInput}
+                                            onChange={(e) => setMobileInput(e.target.value.replace(/\D/g, ''))}
+                                            required
+                                        />
+                                        <p className="abdm-input-hint">
+                                            The mobile number to associate with the patient's new ABHA profile.
+                                        </p>
+                                    </div>
+
+                                    <div className="abdm-alert-box abdm-alert-info">
+                                        Aadhaar is sent encrypted to ABDM and is not saved by Medical365.
+                                    </div>
+
+                                    <div className="abdm-modal-footer">
+                                        <button type="button" className="abdm-btn abdm-btn-outline" onClick={closeModal}>
+                                            Cancel
+                                        </button>
+                                        <button type="submit" className="abdm-btn abdm-btn-primary" disabled={loading}>
+                                            {loading ? 'Generating OTP...' : 'Generate Aadhaar OTP'} <FiArrowRight />
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+
+                            {/* Modal Step 2: OTP Verification */}
+                            {step === 2 && (
+                                <form onSubmit={modalMode === 'link' ? handleVerifyLink : handleVerifyCreate}>
+                                    <div className="abdm-form-group">
+                                        <label className="abdm-input-label">Enter 6-Digit ABDM OTP</label>
+                                        <input
+                                            type="text"
+                                            className="abdm-input"
+                                            maxLength="6"
+                                            placeholder="••••••"
+                                            value={otp}
+                                            onChange={(e) => setOtp(e.target.value.replace(/\D/g, ''))}
+                                            style={{ letterSpacing: '4px', fontSize: '18px', textAlign: 'center' }}
+                                            required
+                                            autoFocus
+                                        />
+                                        <p className="abdm-input-hint">
+                                            Enter the verification OTP received on the registered mobile number.
+                                        </p>
+                                    </div>
+
+                                    {modalMode === 'create' && (
+                                        <div className="abdm-form-group" style={{ marginTop: '10px' }}>
+                                            <label className="abdm-input-label">Linked Mobile Number</label>
+                                            <input
+                                                type="tel"
+                                                className="abdm-input"
+                                                maxLength="10"
+                                                placeholder="10-digit Mobile Number"
+                                                value={mobileInput}
+                                                onChange={(e) => setMobileInput(e.target.value.replace(/\D/g, ''))}
+                                                required
+                                            />
+                                        </div>
+                                    )}
+
+                                    <div className="abdm-modal-footer">
+                                        <button type="button" className="abdm-btn abdm-btn-outline" onClick={() => setStep(1)} disabled={loading}>
+                                            Back
+                                        </button>
+                                        <button type="submit" className="abdm-btn abdm-btn-primary" disabled={loading || otp.length !== 6}>
+                                            {loading ? 'Verifying with ABDM...' : (modalMode === 'link' ? 'Verify & Link ABHA' : 'Verify & Create ABHA')}
+                                        </button>
+                                    </div>
+                                </form>
+                            )}
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default AbdmSection;

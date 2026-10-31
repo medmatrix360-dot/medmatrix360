@@ -1,0 +1,889 @@
+const express = require('express');
+const router = express.Router();
+const mongoose = require('mongoose');
+const { nanoid } = require('nanoid');
+const Doctor = require('../models/doctor.model');
+const Lab = require('../models/lab.model');
+const Pharmacy = require('../models/pharmacy.model');
+const Reception = require('../models/reception.model');
+const Service = require('../models/service.model');
+const User = require('../models/user.model');
+const { verifyAdminOrSuperAdmin } = require('../middleware/auth.middleware');
+const bcrypt = require('bcryptjs');
+const { sendStaffWelcomeEmail } = require('../services/email.service');
+
+/**
+ * Returns hospitalId filter for queries.
+ * Central admin: no filter (sees all) unless ?hospitalId= query param
+ * Hospital admin / staff: always scoped to their hospitalId
+ */
+function getHospitalFilter(req) {
+  const role = req.user ? req.user.role : null;
+  const isCentral = role === 'centraladmin' || role === 'superadmin';
+  if (isCentral) {
+    const qhid = req.query.hospitalId;
+    return qhid ? { hospitalId: qhid } : {};
+  }
+  const hid = req.user && req.user.hospitalId;
+  return hid ? { hospitalId: hid } : { hospitalId: null };
+}
+
+function getHospitalId(req) {
+  const role = req.user ? req.user.role : null;
+  const isCentral = role === 'centraladmin' || role === 'superadmin';
+  if (isCentral) return req.body.hospitalId || null;
+  return (req.user && req.user.hospitalId) || null;
+}
+
+// Create doctor
+router.post('/doctors', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const { name, email, phone, specialty, experience, education, services, availability, successRate, patientsCount, image, bio, consultationFee, password, gender } = req.body;
+
+    // Validate required fields
+    if (!name || !email) {
+      return res.status(400).json({ success: false, message: 'Name and email are required' });
+    }
+
+    // Validate experience (realistic limit 0-70 years)
+    if (experience !== undefined && experience !== null && String(experience).trim() !== '') {
+      const expMatch = String(experience).match(/\d+/);
+      const expYears = expMatch ? parseInt(expMatch[0], 10) : NaN;
+      if (isNaN(expYears) || expYears < 0 || expYears > 70) {
+        return res.status(400).json({ success: false, message: 'Experience must be a realistic number between 0 and 70 years' });
+      }
+    }
+
+    // Check if email already exists in this hospital
+    const targetHospitalId = getHospitalId(req);
+    const checkUserQuery = { email: email.toLowerCase() };
+    if (targetHospitalId) checkUserQuery.hospitalId = targetHospitalId;
+    const existingUser = await User.findOne(checkUserQuery);
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'User with this email already exists' });
+    }
+
+    // Generate unique doctor ID using nanoid
+    let doctorId;
+    let isUnique = false;
+    while (!isUnique) {
+      doctorId = nanoid(10); // Generate 10-character ID
+      const existingDoctor = await Doctor.findOne({ doctorId });
+      if (!existingDoctor) {
+        isUnique = true;
+      }
+    }
+
+    // Create user account for the doctor
+    const defaultPassword = password || nanoid(12); // Generate password if not provided
+    // Don't hash password here - User model's pre-save hook will handle it
+
+    const user = new User({
+      name,
+      email: email.toLowerCase(),
+      password: defaultPassword,
+      phone: phone || '',
+      role: 'doctor',
+      gender: gender || '',
+      services: services || [],
+      hospitalId: getHospitalId(req)
+    });
+
+    await user.save();
+
+    // --- SEND WELCOME EMAIL (Dispatched asynchronously in background so response returns instantly) ---
+    (async () => {
+        try {
+            let loginUrl = 'https://medical365.in/login';
+            let hName = 'Medical 365';
+            const emailHospId = getHospitalId(req);
+            if (emailHospId) {
+                const emailHosp = await mongoose.model('Hospital').findById(emailHospId).select('name slug customDomain').lean();
+                if (emailHosp) {
+                    hName = emailHosp.name || 'Medical 365';
+                    loginUrl = emailHosp.customDomain ? `https://${emailHosp.customDomain}/login` : `https://${emailHosp.slug}.medical365.in/login`;
+                }
+            }
+            await sendStaffWelcomeEmail({ email: user.email, password: defaultPassword, name: user.name, role: 'Doctor', hospitalName: hName, loginUrl });
+        } catch (emailErr) { console.error('[admin-entities] Failed to send doctor email in background:', emailErr.message); }
+    })();
+    // --------------------------
+
+    // Ensure availability has proper structure
+    const defaultAvailability = {
+      monday: { available: false, startTime: '09:00', endTime: '17:00' },
+      tuesday: { available: false, startTime: '09:00', endTime: '17:00' },
+      wednesday: { available: false, startTime: '09:00', endTime: '17:00' },
+      thursday: { available: false, startTime: '09:00', endTime: '17:00' },
+      friday: { available: false, startTime: '09:00', endTime: '17:00' },
+      saturday: { available: false, startTime: '09:00', endTime: '17:00' },
+      sunday: { available: false, startTime: '09:00', endTime: '17:00' }
+    };
+
+    const mergedAvailability = { ...defaultAvailability };
+    if (availability && typeof availability === 'object') {
+      Object.keys(availability).forEach(day => {
+        if (defaultAvailability[day]) {
+          mergedAvailability[day] = {
+            available: availability[day].available !== undefined ? availability[day].available : false,
+            startTime: availability[day].startTime || defaultAvailability[day].startTime,
+            endTime: availability[day].endTime || defaultAvailability[day].endTime
+          };
+        }
+      });
+    }
+
+    const doctor = new Doctor({
+      doctorId: doctorId,
+      userId: user._id,
+      hospitalId: getHospitalId(req),
+      name: name,
+      email: email.toLowerCase(),
+      phone: phone || '',
+      specialty: specialty || '',
+      experience: experience || '',
+      education: education || '',
+      services: services || [],
+      departments: req.body.departments || [],
+      availability: mergedAvailability,
+      successRate: successRate || '90%',
+      patientsCount: patientsCount || '100+',
+      image: image || '👨‍⚕️',
+      bio: bio || '',
+      consultationFee: consultationFee || 0
+    });
+
+    await doctor.save();
+    const populatedDoctor = await Doctor.findById(doctor._id).populate('userId', 'name email phone role dob gender address avatar createdAt');
+
+    res.status(201).json({
+      success: true,
+      message: 'Doctor created successfully',
+      doctor: populatedDoctor,
+      generatedPassword: !password ? defaultPassword : undefined // Return generated password if not provided
+    });
+  } catch (error) {
+    console.error('Create doctor error:', error);
+
+    // Handle validation errors
+    if (error.name === 'ValidationError') {
+      const errors = Object.values(error.errors).map(err => err.message).join(', ');
+      return res.status(400).json({
+        success: false,
+        message: 'Validation error',
+        error: errors
+      });
+    }
+
+    // Handle duplicate key errors
+    if (error.code === 11000) {
+      return res.status(400).json({
+        success: false,
+        message: 'Doctor profile already exists for this user'
+      });
+    }
+
+    res.status(500).json({
+      success: false,
+      message: 'Error creating doctor',
+      stack: process.env.NODE_ENV === 'development' ? error.stack : undefined
+    });
+  }
+});
+
+// Get all doctors
+router.get('/doctors', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const filter = getHospitalFilter(req);
+    const doctors = await Doctor.find(filter).populate('userId', 'name email phone role dob gender address avatar createdAt').sort({ createdAt: -1 });
+    res.json({ success: true, doctors });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error fetching doctors' });
+  }
+});
+
+// Get single doctor
+router.get('/doctors/:id', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const doctor = await Doctor.findById(req.params.id).populate('userId', 'name email phone role dob gender address avatar createdAt');
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+    res.json({ success: true, doctor });
+  } catch (error) {
+    console.error('Get doctor error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching doctor' });
+  }
+});
+
+// Update doctor
+router.put('/doctors/:id', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const { name, email, phone, specialty, experience, education, services, availability, successRate, patientsCount, image, bio, consultationFee, departments, gender, password } = req.body;
+
+    let doctor = await Doctor.findById(req.params.id);
+    if (!doctor) {
+      doctor = await Doctor.findOne({ $or: [{ doctorId: req.params.id }, { userId: req.params.id }] });
+    }
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    // Hospital isolation check for hospitaladmin
+    if (req.user.role === 'hospitaladmin' && req.user.hospitalId && doctor.hospitalId) {
+      if (String(doctor.hospitalId) !== String(req.user.hospitalId)) {
+        return res.status(403).json({ success: false, message: 'Unauthorized: Cannot update doctors from another hospital' });
+      }
+    }
+
+    // Validate experience (realistic limit 0-70 years)
+    if (experience !== undefined && experience !== null && String(experience).trim() !== '') {
+      const expMatch = String(experience).match(/\d+/);
+      const expYears = expMatch ? parseInt(expMatch[0], 10) : NaN;
+      if (isNaN(expYears) || expYears < 0 || expYears > 70) {
+        return res.status(400).json({ success: false, message: 'Experience must be a realistic number between 0 and 70 years' });
+      }
+    }
+
+    // Sanitize phone if provided
+    let sanitizedPhone = undefined;
+    if (phone !== undefined && phone !== null) {
+      const cleanPhone = String(phone).replace(/\D/g, '').slice(0, 10);
+      if (cleanPhone.length > 0 && cleanPhone.length !== 10) {
+        return res.status(400).json({ success: false, message: 'Phone number must be exactly 10 digits' });
+      }
+      sanitizedPhone = cleanPhone;
+    }
+
+    // Check email uniqueness if email changed
+    if (email && email.trim().toLowerCase() !== (doctor.email || '').toLowerCase()) {
+      const targetEmail = email.trim().toLowerCase();
+      const existingUser = await User.findOne({
+        email: targetEmail,
+        _id: { $ne: doctor.userId },
+        ...(doctor.hospitalId ? { hospitalId: doctor.hospitalId } : {})
+      });
+      if (existingUser) {
+        return res.status(400).json({ success: false, message: 'Email is already in use by another user' });
+      }
+      doctor.email = targetEmail;
+    }
+
+    // Update doctor fields
+    if (name) doctor.name = name.trim();
+    if (sanitizedPhone !== undefined && sanitizedPhone !== '') doctor.phone = sanitizedPhone;
+    if (specialty !== undefined) doctor.specialty = specialty;
+    if (experience !== undefined) doctor.experience = experience;
+    if (education !== undefined) doctor.education = education;
+    if (services !== undefined) doctor.services = Array.isArray(services) ? services : [];
+    if (departments !== undefined) doctor.departments = Array.isArray(departments) ? departments : [];
+    if (availability !== undefined) {
+      const defaultAvailability = {
+        monday: { available: false, startTime: '09:00', endTime: '17:00' },
+        tuesday: { available: false, startTime: '09:00', endTime: '17:00' },
+        wednesday: { available: false, startTime: '09:00', endTime: '17:00' },
+        thursday: { available: false, startTime: '09:00', endTime: '17:00' },
+        friday: { available: false, startTime: '09:00', endTime: '17:00' },
+        saturday: { available: false, startTime: '09:00', endTime: '17:00' },
+        sunday: { available: false, startTime: '09:00', endTime: '17:00' }
+      };
+      const mergedAvailability = { ...defaultAvailability };
+      if (availability && typeof availability === 'object') {
+        Object.keys(availability).forEach(day => {
+          if (defaultAvailability[day]) {
+            mergedAvailability[day] = {
+              available: availability[day].available !== undefined ? availability[day].available : false,
+              startTime: availability[day].startTime || defaultAvailability[day].startTime,
+              endTime: availability[day].endTime || defaultAvailability[day].endTime
+            };
+          }
+        });
+      }
+      doctor.availability = mergedAvailability;
+    }
+    if (successRate !== undefined) doctor.successRate = successRate;
+    if (patientsCount !== undefined) doctor.patientsCount = patientsCount;
+    if (image !== undefined) doctor.image = image;
+    if (bio !== undefined) doctor.bio = bio;
+    
+    // Safely cast consultationFee to Number to avoid CastError with empty string or invalid input
+    if (consultationFee !== undefined && consultationFee !== null && consultationFee !== '') {
+      doctor.consultationFee = Number(consultationFee) || 0;
+    } else if (consultationFee === '' || consultationFee === null) {
+      doctor.consultationFee = 0;
+    }
+
+    await doctor.save();
+
+    // Update user if exists
+    if (doctor.userId) {
+      const user = await User.findById(doctor.userId);
+      if (user) {
+        if (name) user.name = name.trim();
+        if (doctor.email) user.email = doctor.email;
+        if (sanitizedPhone !== undefined && sanitizedPhone !== '') user.phone = sanitizedPhone;
+        if (services !== undefined) user.services = Array.isArray(services) ? services : [];
+        if (departments !== undefined) user.departments = Array.isArray(departments) ? departments : [];
+        if (gender !== undefined) user.gender = gender;
+        if (password && typeof password === 'string' && password.trim().length >= 6) {
+          user.password = password.trim();
+        }
+        await user.save();
+      }
+    }
+
+    const populatedDoctor = await Doctor.findById(doctor._id).populate('userId', 'name email phone role dob gender address avatar createdAt');
+    res.json({ success: true, message: 'Doctor updated successfully', doctor: populatedDoctor });
+  } catch (error) {
+    console.error('Update doctor error:', error);
+    res.status(500).json({ success: false, message: error.message || 'Error updating doctor' });
+  }
+});
+
+// Delete doctor
+router.delete('/doctors/:id', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const doctor = await Doctor.findById(req.params.id);
+    if (!doctor) {
+      return res.status(404).json({ success: false, message: 'Doctor not found' });
+    }
+
+    // Optionally delete associated user
+    if (doctor.userId) {
+      await User.findByIdAndDelete(doctor.userId);
+    }
+
+    await Doctor.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Doctor deleted successfully' });
+  } catch (error) {
+    console.error('Delete doctor error:', error);
+    res.status(500).json({ success: false, message: 'Error deleting doctor' });
+  }
+});
+
+// Labs routes
+router.post('/labs', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const { name, email, phone, address, services, facilities, availability, description, password } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({ success: false, message: 'Name and email are required' });
+    }
+
+    // Check if email already exists in User collection for this hospital
+    const targetHospitalId = getHospitalId(req);
+    const checkUserQuery = { email: email.toLowerCase() };
+    if (targetHospitalId) checkUserQuery.hospitalId = targetHospitalId;
+    const existingUser = await User.findOne(checkUserQuery);
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'User with this email already exists' });
+    }
+
+    // Check if lab already exists
+    const existingLab = await Lab.findOne({ email: email.toLowerCase() });
+    if (existingLab) {
+      return res.status(400).json({ success: false, message: 'Lab with this email already exists' });
+    }
+
+    // Create user account for the lab
+    const defaultPassword = password || nanoid(12); // Generate password if not provided
+    // Don't hash password here - User model's pre-save hook will handle it
+
+    const user = new User({
+      name,
+      email: email.toLowerCase(),
+      password: defaultPassword,
+      phone: phone || '',
+      role: 'lab',
+      hospitalId: getHospitalId(req)
+    });
+
+    await user.save();
+
+    // --- SEND WELCOME EMAIL (Dispatched asynchronously in background so response returns instantly) ---
+    (async () => {
+        try {
+            let loginUrl = 'https://medical365.in/login';
+            let hName = 'Medical 365';
+            const emailHospId = getHospitalId(req);
+            if (emailHospId) {
+                const emailHosp = await mongoose.model('Hospital').findById(emailHospId).select('name slug customDomain').lean();
+                if (emailHosp) {
+                    hName = emailHosp.name || 'Medical 365';
+                    loginUrl = emailHosp.customDomain ? `https://${emailHosp.customDomain}/login` : `https://${emailHosp.slug}.medical365.in/login`;
+                }
+            }
+            await sendStaffWelcomeEmail({ email: user.email, password: defaultPassword, name: user.name, role: 'Lab Technician', hospitalName: hName, loginUrl });
+        } catch (emailErr) { console.error('[admin-entities] Failed to send lab email in background:', emailErr.message); }
+    })();
+    // --------------------------
+
+    // Ensure availability has proper structure
+    const defaultAvailability = {
+      monday: { available: false, startTime: '09:00', endTime: '17:00' },
+      tuesday: { available: false, startTime: '09:00', endTime: '17:00' },
+      wednesday: { available: false, startTime: '09:00', endTime: '17:00' },
+      thursday: { available: false, startTime: '09:00', endTime: '17:00' },
+      friday: { available: false, startTime: '09:00', endTime: '17:00' },
+      saturday: { available: false, startTime: '09:00', endTime: '17:00' },
+      sunday: { available: false, startTime: '09:00', endTime: '17:00' }
+    };
+
+    const mergedAvailability = { ...defaultAvailability };
+    if (availability && typeof availability === 'object') {
+      Object.keys(availability).forEach(day => {
+        if (defaultAvailability[day]) {
+          mergedAvailability[day] = {
+            available: availability[day].available !== undefined ? availability[day].available : false,
+            startTime: availability[day].startTime || defaultAvailability[day].startTime,
+            endTime: availability[day].endTime || defaultAvailability[day].endTime
+          };
+        }
+      });
+    }
+
+    const lab = new Lab({
+      name,
+      email: email.toLowerCase(),
+      phone: phone || '',
+      address: address || '',
+      services: services || [],
+      facilities: facilities || [],
+      availability: mergedAvailability,
+      description: description || '',
+      hospitalId: getHospitalId(req)
+    });
+
+    await lab.save();
+    res.status(201).json({
+      success: true,
+      message: 'Lab created successfully',
+      lab,
+      generatedPassword: !password ? defaultPassword : undefined // Return generated password if not provided
+    });
+  } catch (error) {
+    console.error('Create lab error:', error);
+    res.status(500).json({ success: false, message: 'Error creating lab' });
+  }
+});
+
+router.get('/labs', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const filter = getHospitalFilter(req);
+    const labs = await Lab.find(filter).sort({ createdAt: -1 });
+    res.json({ success: true, labs });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error fetching labs' });
+  }
+});
+
+router.put('/labs/:id', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const lab = await Lab.findById(req.params.id);
+    if (!lab) {
+      return res.status(404).json({ success: false, message: 'Lab not found' });
+    }
+
+    Object.assign(lab, req.body);
+    await lab.save();
+    res.json({ success: true, message: 'Lab updated successfully', lab });
+  } catch (error) {
+    console.error('Update lab error:', error);
+    res.status(500).json({ success: false, message: 'Error updating lab' });
+  }
+});
+
+router.delete('/labs/:id', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const lab = await Lab.findById(req.params.id);
+    if (!lab) {
+      return res.status(404).json({ success: false, message: 'Lab not found' });
+    }
+
+    // Delete associated user account
+    if (lab.email) {
+      await User.findOneAndDelete({ email: lab.email });
+    }
+
+    await Lab.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Lab deleted successfully' });
+  } catch (error) {
+    console.error('Delete lab error:', error);
+    res.status(500).json({ success: false, message: 'Error deleting lab' });
+  }
+});
+
+// Pharmacy routes
+router.post('/pharmacies', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const { name, email, phone, address, medications, availability, description, password } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({ success: false, message: 'Name and email are required' });
+    }
+
+    // Check if email already exists in User collection for this hospital
+    const targetHospitalId = getHospitalId(req);
+    const checkUserQuery = { email: email.toLowerCase() };
+    if (targetHospitalId) checkUserQuery.hospitalId = targetHospitalId;
+    const existingUser = await User.findOne(checkUserQuery);
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'User with this email already exists' });
+    }
+
+    // Check if pharmacy already exists
+    const existingPharmacy = await Pharmacy.findOne({ email: email.toLowerCase() });
+    if (existingPharmacy) {
+      return res.status(400).json({ success: false, message: 'Pharmacy with this email already exists' });
+    }
+
+    // Create user account for the pharmacy
+    const defaultPassword = password || nanoid(12); // Generate password if not provided
+    // Don't hash password here - User model's pre-save hook will handle it
+
+    const user = new User({
+      name,
+      email: email.toLowerCase(),
+      password: defaultPassword,
+      phone: phone || '',
+      role: 'pharmacy',
+      hospitalId: getHospitalId(req)
+    });
+
+    await user.save();
+
+    // --- SEND WELCOME EMAIL (Dispatched asynchronously in background so response returns instantly) ---
+    (async () => {
+        try {
+            let loginUrl = 'https://medical365.in/login';
+            let hName = 'Medical 365';
+            const emailHospId = getHospitalId(req);
+            if (emailHospId) {
+                const emailHosp = await mongoose.model('Hospital').findById(emailHospId).select('name slug customDomain').lean();
+                if (emailHosp) {
+                    hName = emailHosp.name || 'Medical 365';
+                    loginUrl = emailHosp.customDomain ? `https://${emailHosp.customDomain}/login` : `https://${emailHosp.slug}.medical365.in/login`;
+                }
+            }
+            await sendStaffWelcomeEmail({ email: user.email, password: defaultPassword, name: user.name, role: 'Pharmacist', hospitalName: hName, loginUrl });
+        } catch (emailErr) { console.error('[admin-entities] Failed to send pharmacy email in background:', emailErr.message); }
+    })();
+    // --------------------------
+
+    // Ensure availability has proper structure
+    const defaultAvailability = {
+      monday: { available: false, startTime: '09:00', endTime: '17:00' },
+      tuesday: { available: false, startTime: '09:00', endTime: '17:00' },
+      wednesday: { available: false, startTime: '09:00', endTime: '17:00' },
+      thursday: { available: false, startTime: '09:00', endTime: '17:00' },
+      friday: { available: false, startTime: '09:00', endTime: '17:00' },
+      saturday: { available: false, startTime: '09:00', endTime: '17:00' },
+      sunday: { available: false, startTime: '09:00', endTime: '17:00' }
+    };
+
+    const mergedAvailability = { ...defaultAvailability };
+    if (availability && typeof availability === 'object') {
+      Object.keys(availability).forEach(day => {
+        if (defaultAvailability[day]) {
+          mergedAvailability[day] = {
+            available: availability[day].available !== undefined ? availability[day].available : false,
+            startTime: availability[day].startTime || defaultAvailability[day].startTime,
+            endTime: availability[day].endTime || defaultAvailability[day].endTime
+          };
+        }
+      });
+    }
+
+    const pharmacy = new Pharmacy({
+      name,
+      email: email.toLowerCase(),
+      phone: phone || '',
+      address: address || '',
+      medications: medications || [],
+      availability: mergedAvailability,
+      description: description || '',
+      hospitalId: getHospitalId(req)
+    });
+
+    await pharmacy.save();
+    res.status(201).json({
+      success: true,
+      message: 'Pharmacy created successfully',
+      pharmacy,
+      generatedPassword: !password ? defaultPassword : undefined // Return generated password if not provided
+    });
+  } catch (error) {
+    console.error('Create pharmacy error:', error);
+    res.status(500).json({ success: false, message: 'Error creating pharmacy' });
+  }
+});
+
+router.get('/pharmacies', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const filter = getHospitalFilter(req);
+    const pharmacies = await Pharmacy.find(filter).sort({ createdAt: -1 });
+    res.json({ success: true, pharmacies });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error fetching pharmacies' });
+  }
+});
+
+router.put('/pharmacies/:id', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const pharmacy = await Pharmacy.findById(req.params.id);
+    if (!pharmacy) {
+      return res.status(404).json({ success: false, message: 'Pharmacy not found' });
+    }
+
+    Object.assign(pharmacy, req.body);
+    await pharmacy.save();
+    res.json({ success: true, message: 'Pharmacy updated successfully', pharmacy });
+  } catch (error) {
+    console.error('Update pharmacy error:', error);
+    res.status(500).json({ success: false, message: 'Error updating pharmacy' });
+  }
+});
+
+router.delete('/pharmacies/:id', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const pharmacy = await Pharmacy.findById(req.params.id);
+    if (!pharmacy) {
+      return res.status(404).json({ success: false, message: 'Pharmacy not found' });
+    }
+
+    // Delete associated user account
+    if (pharmacy.email) {
+      await User.findOneAndDelete({ email: pharmacy.email });
+    }
+
+    await Pharmacy.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Pharmacy deleted successfully' });
+  } catch (error) {
+    console.error('Delete pharmacy error:', error);
+    res.status(500).json({ success: false, message: 'Error deleting pharmacy' });
+  }
+});
+
+// Reception routes
+router.post('/receptions', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const { name, email, phone, services, availability, description, password } = req.body;
+
+    if (!name || !email) {
+      return res.status(400).json({ success: false, message: 'Name and email are required' });
+    }
+
+    // Check if email already exists in User collection for this hospital
+    const targetHospitalId = getHospitalId(req);
+    const checkUserQuery = { email: email.toLowerCase() };
+    if (targetHospitalId) checkUserQuery.hospitalId = targetHospitalId;
+    const existingUser = await User.findOne(checkUserQuery);
+    if (existingUser) {
+      return res.status(400).json({ success: false, message: 'User with this email already exists' });
+    }
+
+    // Check if reception already exists
+    const existingReception = await Reception.findOne({ email: email.toLowerCase() });
+    if (existingReception) {
+      return res.status(400).json({ success: false, message: 'Reception with this email already exists' });
+    }
+
+    // Create user account for the reception
+    const defaultPassword = password || nanoid(12); // Generate password if not provided
+    // Don't hash password here - User model's pre-save hook will handle it
+
+    const user = new User({
+      name,
+      email: email.toLowerCase(),
+      password: defaultPassword,
+      phone: phone || '',
+      role: 'reception',
+      hospitalId: getHospitalId(req)
+    });
+
+    await user.save();
+
+    // --- SEND WELCOME EMAIL ---
+    // --- SEND WELCOME EMAIL (Dispatched asynchronously in background so response returns instantly) ---
+    (async () => {
+        try {
+            let loginUrl = 'https://medical365.in/login';
+            let hName = 'Medical 365';
+            const emailHospId = getHospitalId(req);
+            if (emailHospId) {
+                const emailHosp = await mongoose.model('Hospital').findById(emailHospId).select('name slug customDomain').lean();
+                if (emailHosp) {
+                    hName = emailHosp.name || 'Medical 365';
+                    loginUrl = emailHosp.customDomain ? `https://${emailHosp.customDomain}/login` : `https://${emailHosp.slug}.medical365.in/login`;
+                }
+            }
+            await sendStaffWelcomeEmail({ email: user.email, password: defaultPassword, name: user.name, role: 'Receptionist', hospitalName: hName, loginUrl });
+        } catch (emailErr) { console.error('[admin-entities] Failed to send reception email in background:', emailErr.message); }
+    })();
+    // --------------------------
+
+    // Ensure availability has proper structure
+    const defaultAvailability = {
+      monday: { available: false, startTime: '09:00', endTime: '17:00' },
+      tuesday: { available: false, startTime: '09:00', endTime: '17:00' },
+      wednesday: { available: false, startTime: '09:00', endTime: '17:00' },
+      thursday: { available: false, startTime: '09:00', endTime: '17:00' },
+      friday: { available: false, startTime: '09:00', endTime: '17:00' },
+      saturday: { available: false, startTime: '09:00', endTime: '17:00' },
+      sunday: { available: false, startTime: '09:00', endTime: '17:00' }
+    };
+
+    const mergedAvailability = { ...defaultAvailability };
+    if (availability && typeof availability === 'object') {
+      Object.keys(availability).forEach(day => {
+        if (defaultAvailability[day]) {
+          mergedAvailability[day] = {
+            available: availability[day].available !== undefined ? availability[day].available : false,
+            startTime: availability[day].startTime || defaultAvailability[day].startTime,
+            endTime: availability[day].endTime || defaultAvailability[day].endTime
+          };
+        }
+      });
+    }
+
+    const reception = new Reception({
+      name,
+      email: email.toLowerCase(),
+      phone: phone || '',
+      services: services || [],
+      availability: mergedAvailability,
+      description: description || ''
+    });
+
+    await reception.save();
+    res.status(201).json({
+      success: true,
+      message: 'Reception created successfully',
+      reception,
+      generatedPassword: !password ? defaultPassword : undefined // Return generated password if not provided
+    });
+  } catch (error) {
+    console.error('Create reception error:', error);
+    res.status(500).json({ success: false, message: 'Error creating reception' });
+  }
+});
+
+router.get('/receptions', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const filter = getHospitalFilter(req);
+    const receptions = await Reception.find(filter).populate('userId', 'name email phone').sort({ createdAt: -1 });
+    res.json({ success: true, receptions });
+  } catch (error) {
+    res.status(500).json({ success: false, message: 'Error fetching receptions' });
+  }
+});
+
+router.put('/receptions/:id', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const reception = await Reception.findById(req.params.id);
+    if (!reception) {
+      return res.status(404).json({ success: false, message: 'Reception not found' });
+    }
+
+    Object.assign(reception, req.body);
+    await reception.save();
+    res.json({ success: true, message: 'Reception updated successfully', reception });
+  } catch (error) {
+    console.error('Update reception error:', error);
+    res.status(500).json({ success: false, message: 'Error updating reception' });
+  }
+});
+
+router.delete('/receptions/:id', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const reception = await Reception.findById(req.params.id);
+    if (!reception) {
+      return res.status(404).json({ success: false, message: 'Reception not found' });
+    }
+
+    // Delete associated user account
+    if (reception.email) {
+      await User.findOneAndDelete({ email: reception.email });
+    }
+
+    await Reception.findByIdAndDelete(req.params.id);
+    res.json({ success: true, message: 'Reception deleted successfully' });
+  } catch (error) {
+    console.error('Delete reception error:', error);
+    res.status(500).json({ success: false, message: 'Error deleting reception' });
+  }
+});
+
+// Services routes
+router.post('/services', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const { id, title, description, icon, color, price, duration, isActive } = req.body;
+
+    if (!id || !title || !description) {
+      return res.status(400).json({ success: false, message: 'ID, title, and description are required' });
+    }
+
+    const existingService = await Service.findOne({ id });
+    if (existingService) {
+      return res.status(400).json({ success: false, message: 'Service with this ID already exists' });
+    }
+
+    const service = new Service({
+      id,
+      title,
+      description,
+      icon: icon || '✨',
+      color: color || '#14C38E',
+      price: price || 0,
+      duration: duration || '30min',
+      isActive: isActive !== undefined ? isActive : true
+    });
+
+    await service.save();
+    res.status(201).json({ success: true, message: 'Service created successfully', service });
+  } catch (error) {
+    console.error('Create service error:', error);
+    res.status(500).json({ success: false, message: 'Error creating service' });
+  }
+});
+
+router.get('/services', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const services = await Service.find().sort({ title: 1 });
+    res.json({ success: true, services });
+  } catch (error) {
+    console.error('Get services error:', error);
+    res.status(500).json({ success: false, message: 'Error fetching services' });
+  }
+});
+
+router.put('/services/:id', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const service = await Service.findById(req.params.id);
+    if (!service) {
+      return res.status(404).json({ success: false, message: 'Service not found' });
+    }
+
+    Object.assign(service, req.body);
+    await service.save();
+    res.json({ success: true, message: 'Service updated successfully', service });
+  } catch (error) {
+    console.error('Update service error:', error);
+    res.status(500).json({ success: false, message: 'Error updating service' });
+  }
+});
+
+router.delete('/services/:id', verifyAdminOrSuperAdmin, async (req, res) => {
+  try {
+    const service = await Service.findByIdAndDelete(req.params.id);
+    if (!service) {
+      return res.status(404).json({ success: false, message: 'Service not found' });
+    }
+    res.json({ success: true, message: 'Service deleted successfully' });
+  } catch (error) {
+    console.error('Delete service error:', error);
+    res.status(500).json({ success: false, message: 'Error deleting service' });
+  }
+});
+
+module.exports = router;

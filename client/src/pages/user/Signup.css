@@ -1,0 +1,5 @@
+/* ==========================================================================
+   Signup.css — Legacy Stylesheet Redirected to AuthPortalForms.css
+   All signup screens now use the shared MedMatrix 360 AuthPortalForms system.
+   ========================================================================== */
+@import './AuthPortalForms.css';

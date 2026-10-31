@@ -1,0 +1,4554 @@
+import React, { useState, useEffect, useCallback, useRef } from 'react';
+import { useNavigate } from 'react-router-dom';
+import toast from 'react-hot-toast';
+import { confirmToast } from '../../utils/confirmToast';
+import { clinicAPI, uploadAPI, medicineAPI } from '../../utils/api';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { 
+    FiActivity, 
+    FiHome, 
+    FiPlus, 
+    FiRefreshCw, 
+    FiSearch, 
+    FiSliders, 
+    FiCalendar, 
+    FiUsers, 
+    FiDollarSign, 
+    FiSettings, 
+    FiCheckCircle, 
+    FiAlertCircle, 
+    FiClock, 
+    FiDownload, 
+    FiPackage, 
+    FiCpu, 
+    FiEdit, 
+    FiTrash2, 
+    FiExternalLink, 
+    FiPhone, 
+    FiMail, 
+    FiMapPin, 
+    FiGlobe, 
+    FiChevronRight, 
+    FiTrendingUp, 
+    FiLayers,
+    FiHelpCircle,
+    FiFileText,
+    FiTool,
+    FiAlertTriangle,
+    FiCheck,
+    FiShield,
+    FiClipboard,
+    FiPlusCircle,
+    FiKey,
+    FiBarChart2,
+    FiEye,
+    FiPaperclip
+} from 'react-icons/fi';
+import './ClinicDashboard.css';
+import MobileDatePicker from '../../components/MobileDatePicker';
+
+// ─── PDF HELPERS ──────────────────────────────────────────────────────────────
+const getClinicInfo = () => {
+    try {
+        const h = JSON.parse(localStorage.getItem('hospitalContext') || 'null');
+        const u = JSON.parse(localStorage.getItem('user') || '{}');
+        return { hName: h?.name || u?.hospitalName || 'Clinic', hAddr: [h?.address, h?.city, h?.state].filter(Boolean).join(', '), hPhone: h?.phone || '', issuedBy: u?.name || 'Staff' };
+    } catch { return { hName: 'Clinic', hAddr: '', hPhone: '', issuedBy: 'Staff' }; }
+};
+
+const pdfHeader = (doc, title, color = [41, 128, 185]) => {
+    const { hName, hAddr, hPhone } = getClinicInfo();
+    let y = 18;
+    doc.setFontSize(18); doc.setFont('helvetica', 'bold'); doc.setTextColor(0);
+    doc.text(hName, 105, y, { align: 'center' }); y += 7;
+    if (hAddr) { doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(100); doc.text(hAddr, 105, y, { align: 'center' }); y += 5; }
+    if (hPhone) { doc.text(`Ph: ${hPhone}`, 105, y, { align: 'center' }); y += 5; }
+    doc.setFontSize(12); doc.setFont('helvetica', 'bold'); doc.setTextColor(...color);
+    doc.text(title, 105, y, { align: 'center' }); y += 5;
+    doc.setDrawColor(...color); doc.setLineWidth(0.5); doc.line(14, y, 196, y); y += 8;
+    doc.setTextColor(0); doc.setFont('helvetica', 'normal');
+    return y;
+};
+
+const generateRegistrationSlipPDF = (patient) => {
+    const doc = new jsPDF();
+    let y = pdfHeader(doc, 'Patient Registration Slip', [16, 163, 74]);
+    autoTable(doc, {
+        startY: y,
+        body: [
+            ['Patient Name', patient.name || '-'],
+            ['Patient ID', patient.patientUid || patient._id || 'N/A'],
+            ['Phone', patient.phone || '-'],
+            ['Gender', patient.gender || '-'],
+            ['Date of Birth', patient.dob ? new Date(patient.dob).toLocaleDateString('en-IN') : '-'],
+            ['Blood Group', patient.bloodGroup || '-'],
+            ['Address', patient.address || '-'],
+            ['Registered On', new Date().toLocaleString('en-IN')],
+        ],
+        theme: 'grid',
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 52 } },
+        bodyStyles: { fontSize: 10 },
+        alternateRowStyles: { fillColor: [245, 249, 255] },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+    const { issuedBy, hName } = getClinicInfo();
+    doc.setFontSize(8); doc.setTextColor(120);
+    doc.text(`Issued by: ${issuedBy}  |  Generated: ${new Date().toLocaleString('en-IN')}`, 105, y, { align: 'center' }); y += 5;
+    doc.text(`Welcome to ${hName}`, 105, y, { align: 'center' });
+    return { doc, filename: `Registration_${patient.patientUid || patient._id}.pdf` };
+};
+
+const generateTokenReceiptPDF = (patient, appointment) => {
+    const doc = new jsPDF();
+    let y = pdfHeader(doc, 'Consultation Token Receipt', [41, 128, 185]);
+    autoTable(doc, {
+        startY: y,
+        body: [
+            ['Patient Name', patient.name || '-'],
+            ['Patient ID', patient.patientUid || '-'],
+            ['Phone', patient.phone || '-'],
+            ['Token #', String(appointment.tokenNumber || '-')],
+            ['Service', appointment.serviceName || 'General Consultation'],
+            ['Date', new Date(appointment.appointmentDate || Date.now()).toLocaleDateString('en-IN')],
+            ['Consultation Fee', `Rs. ${Number(appointment.amount || 0).toLocaleString('en-IN')}`],
+            ['Payment Status', 'PAID \u2713'],
+        ],
+        theme: 'grid',
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 52 } },
+        bodyStyles: { fontSize: 10 },
+        alternateRowStyles: { fillColor: [245, 249, 255] },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+    const { issuedBy, hName } = getClinicInfo();
+    doc.setFontSize(8); doc.setTextColor(120);
+    doc.text(`Issued by: ${issuedBy}  |  ${new Date().toLocaleString('en-IN')}`, 105, y, { align: 'center' }); y += 5;
+    doc.text(`Thank you for choosing ${hName}`, 105, y, { align: 'center' });
+    return { doc, filename: `Receipt_Token${appointment.tokenNumber}_${patient.patientUid || patient._id}.pdf` };
+};
+
+const generatePrescriptionSlipPDF = (consulting, rx, vitalsData) => {
+    const pt = consulting.clinicPatientId || {};
+    const doc = new jsPDF();
+    let y = pdfHeader(doc, 'Prescription Slip', [76, 175, 80]);
+    autoTable(doc, {
+        startY: y,
+        body: [
+            ['Patient', pt.name || '-', 'ID', pt.patientUid || '-'],
+            ['Gender', pt.gender || '-', 'Blood Grp', pt.bloodGroup || '-'],
+            ['Token #', String(consulting.tokenNumber || '-'), 'Date', new Date().toLocaleDateString('en-IN')],
+            ['Diagnosis', rx.diagnosis || '-', '', ''],
+        ],
+        theme: 'grid',
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 30 }, 2: { fontStyle: 'bold', cellWidth: 24 } },
+        bodyStyles: { fontSize: 10 },
+    });
+    y = doc.lastAutoTable.finalY + 8;
+
+    // Vitals (only if any field is filled)
+    const v = vitalsData || {};
+    const hasVitals = Object.values(v).some(val => val);
+    if (hasVitals) {
+        doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(33, 37, 41);
+        doc.text('Vitals', 14, y); y += 5;
+        const vitalsRow = [
+            v.weight ? `Wt: ${v.weight} kg` : '',
+            v.height ? `Ht: ${v.height} cm` : '',
+            v.bmi ? `BMI: ${v.bmi}` : '',
+            v.bp ? `BP: ${v.bp} mmHg` : '',
+            v.temperature ? `Temp: ${v.temperature}°F` : '',
+            v.pulse ? `Pulse: ${v.pulse} bpm` : '',
+            v.spo2 ? `SpO₂: ${v.spo2}%` : '',
+            v.rr ? `RR: ${v.rr}/min` : '',
+        ].filter(Boolean);
+        autoTable(doc, {
+            startY: y,
+            body: [vitalsRow],
+            theme: 'grid',
+            bodyStyles: { fontSize: 9, cellPadding: 3 },
+            headStyles: { fillColor: [14, 165, 233], textColor: 255 },
+        });
+        y = doc.lastAutoTable.finalY + 8;
+    }
+
+    // Medicines
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(33, 37, 41);
+    doc.text('Medicines Prescribed', 14, y); y += 6;
+    if (rx.medicines.length > 0) {
+        autoTable(doc, {
+            startY: y,
+            head: [['#', 'Medicine Name', 'Salt / Generic', 'Dose / Frequency', 'Days']],
+            body: rx.medicines.map((m, i) => [i + 1, m.name || m.medicineName || '-', m.saltName || '-', m.dose || m.dosage || m.frequency || '-', m.days || m.duration || '-']),
+            theme: 'striped',
+            headStyles: { fillColor: [76, 175, 80], textColor: 255 },
+            bodyStyles: { fontSize: 10 },
+            columnStyles: { 0: { cellWidth: 10 }, 1: { cellWidth: 55 }, 2: { cellWidth: 50 }, 3: { cellWidth: 40 }, 4: { cellWidth: 20 } },
+        });
+        y = doc.lastAutoTable.finalY + 10;
+    } else {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(100);
+        doc.text('No medicines prescribed.', 16, y); y += 8;
+    }
+
+    // Lab Tests
+    const labArr = typeof rx.labTests === 'string' ? rx.labTests.split(',').map(t => t.trim()).filter(Boolean) : (rx.labTests || []);
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(33, 37, 41);
+    doc.text('Lab Tests Ordered', 14, y); y += 6;
+    if (labArr.length > 0) {
+        autoTable(doc, {
+            startY: y,
+            head: [['#', 'Test Name']],
+            body: labArr.map((t, i) => [i + 1, t]),
+            theme: 'striped',
+            headStyles: { fillColor: [33, 150, 243], textColor: 255 },
+            bodyStyles: { fontSize: 10 },
+        });
+        y = doc.lastAutoTable.finalY + 10;
+    } else {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(100);
+        doc.text('No lab tests ordered.', 16, y); y += 8;
+    }
+
+    // Notes
+    if (rx.notes) {
+        if (y > 250) { doc.addPage(); y = 20; }
+        doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(33, 37, 41);
+        doc.text('Doctor Notes', 14, y); y += 6;
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(60);
+        const wrapped = doc.splitTextToSize(rx.notes, 170);
+        doc.text(wrapped, 16, y); y += wrapped.length * 5 + 6;
+    }
+
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.setDrawColor(200); doc.line(14, y, 196, y); y += 6;
+    doc.setFontSize(9); doc.setTextColor(120);
+    doc.text(`Generated: ${new Date().toLocaleString('en-IN')}`, 196, y, { align: 'right' });
+    y += 5; doc.setFontSize(8);
+    doc.text('This prescription is valid for 30 days from the date of issue.', 105, y, { align: 'center' });
+    return { doc, filename: `Prescription_${pt.patientUid || pt._id}_Token${consulting.tokenNumber}.pdf` };
+};
+
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+const fmt = (n) => `₹${Number(n || 0).toLocaleString('en-IN')}`;
+const fmtDate = (d) => d ? new Date(d).toLocaleDateString('en-IN') : '—';
+const fmtTime = (d) => d ? new Date(d).toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit' }) : '—';
+const todayStr = () => new Date().toISOString().split('T')[0];
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+const downloadTreatmentPlanPDF = (plan) => {
+    const doc = new jsPDF();
+    const { hName, hAddr, hPhone, issuedBy } = getClinicInfo();
+    const pt = plan.clinicPatientId || {};
+    const planIdShort = (plan._id || '').slice(-6).toUpperCase();
+    const invoiceNo = `INV-${planIdShort}-${Date.now().toString(36).toUpperCase()}`;
+    
+    // ── Header ──
+    let y = 16;
+    doc.setFontSize(18); doc.setFont('helvetica', 'bold'); doc.setTextColor(0);
+    doc.text(hName, 105, y, { align: 'center' }); y += 7;
+    if (hAddr) { doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(100); doc.text(hAddr, 105, y, { align: 'center' }); y += 5; }
+    if (hPhone) { doc.text(`Ph: ${hPhone}`, 105, y, { align: 'center' }); y += 5; }
+    
+    doc.setFontSize(13); doc.setFont('helvetica', 'bold'); doc.setTextColor(8, 145, 178);
+    doc.text('TREATMENT PLAN INVOICE', 105, y + 3, { align: 'center' });
+    y += 8;
+    doc.setDrawColor(8, 145, 178); doc.setLineWidth(0.5); doc.line(14, y, 196, y); y += 6;
+
+    // ── Invoice & Date Row ──
+    doc.setFontSize(9); doc.setTextColor(100); doc.setFont('helvetica', 'normal');
+    doc.text(`Invoice #: ${invoiceNo}`, 14, y);
+    doc.text(`Print Date: ${new Date().toLocaleDateString('en-IN')}`, 196, y, { align: 'right' });
+    y += 8;
+
+    // ── Patient Info + Plan Info (two columns) ──
+    doc.setTextColor(33, 37, 41); doc.setFontSize(10);
+    doc.setFont('helvetica', 'bold'); doc.text('Patient Information', 14, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Name: ${pt.name || '—'}`, 14, y + 6);
+    doc.text(`Patient ID / MRN: ${pt.patientUid || '—'}`, 14, y + 12);
+    doc.text(`Phone: ${pt.phone || '—'}`, 14, y + 18);
+    
+    doc.setFont('helvetica', 'bold'); doc.text('Treatment Plan', 110, y);
+    doc.setFont('helvetica', 'normal');
+    doc.text(`Title: ${plan.title || '—'}`, 110, y + 6);
+    doc.text(`Total Visits: ${plan.visits?.length || 0}`, 110, y + 12);
+    const startDate = plan.visits?.length > 0 ? new Date(plan.visits[0].scheduledDate).toLocaleDateString('en-IN') : '—';
+    doc.text(`Start Date: ${startDate}`, 110, y + 18);
+    if (plan.description) {
+        doc.text(`Notes: ${plan.description.substring(0, 50)}${plan.description.length > 50 ? '...' : ''}`, 110, y + 24);
+        y += 6;
+    }
+    y += 26;
+
+    // ── Doctor / Staff ──
+    if (issuedBy) {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(9); doc.setTextColor(100);
+        doc.text(`Attending Doctor / Staff: ${issuedBy}`, 14, y);
+        y += 8;
+    }
+    
+    // ── Financial Summary Box ──
+    doc.setFillColor(248, 250, 252); doc.rect(14, y, 182, 20, 'F');
+    doc.setDrawColor(226, 232, 240); doc.rect(14, y, 182, 20);
+    doc.setFontSize(10); doc.setTextColor(33, 37, 41);
+    doc.setFont('helvetica', 'bold'); doc.text('Total Treatment Cost:', 18, y + 8);
+    doc.setFont('helvetica', 'normal'); doc.text(`Rs. ${plan.totalAmount?.toLocaleString('en-IN') || 0}`, 65, y + 8);
+    doc.setFont('helvetica', 'bold'); doc.text('Total Paid:', 100, y + 8);
+    doc.setTextColor(22, 163, 74); doc.setFont('helvetica', 'normal'); doc.text(`Rs. ${plan.totalPaid?.toLocaleString('en-IN') || 0}`, 125, y + 8);
+    doc.setFont('helvetica', 'bold'); doc.setTextColor(0); doc.text('Balance Due:', 150, y + 8);
+    doc.setTextColor(plan.pendingBalance > 0 ? 220 : 22, plan.pendingBalance > 0 ? 38 : 163, plan.pendingBalance > 0 ? 38 : 74);
+    doc.setFont('helvetica', 'normal');
+    doc.text(plan.pendingBalance > 0 ? `Rs. ${plan.pendingBalance.toLocaleString('en-IN')}` : 'Cleared', 178, y + 8);
+    
+    doc.setTextColor(100); doc.setFontSize(8);
+    doc.text(`Status: ${(plan.status || 'active').toUpperCase()}`, 18, y + 16);
+    y += 28;
+    
+    // ── Payment History Table ──
+    doc.setTextColor(33, 37, 41); doc.setFontSize(11); doc.setFont('helvetica', 'bold');
+    doc.text('Payment History', 14, y); y += 4;
+    
+    const allPayments = [];
+    (plan.visits || []).forEach(v => {
+        if (v.paymentHistory && v.paymentHistory.length > 0) {
+            v.paymentHistory.forEach(ph => {
+                allPayments.push({
+                    visitNumber: v.visitNumber,
+                    visitDate: v.scheduledDate,
+                    amount: ph.amount,
+                    date: ph.date,
+                    method: ph.method,
+                    upiRef: ph.upiRef
+                });
+            });
+        } else if (v.amountPaid > 0) {
+            // Fallback for legacy visits before paymentHistory existed
+            allPayments.push({
+                visitNumber: v.visitNumber,
+                visitDate: v.scheduledDate,
+                amount: v.amountPaid,
+                date: v.paidAt || v.completedAt || v.scheduledDate,
+                method: v.paymentMethod || 'Cash',
+                upiRef: v.upiRef || ''
+            });
+        }
+    });
+
+    // Sort chronologically
+    allPayments.sort((a, b) => new Date(a.date) - new Date(b.date));
+
+    if (allPayments.length > 0) {
+        let runningBalance = plan.totalAmount;
+        const paymentRows = allPayments.map(p => {
+            const balBefore = runningBalance;
+            runningBalance = Math.max(0, runningBalance - (p.amount || 0));
+            return [
+                `Visit ${p.visitNumber}`,
+                new Date(p.visitDate).toLocaleDateString('en-IN'),
+                p.date ? new Date(p.date).toLocaleDateString('en-IN') : '—',
+                p.method || 'Cash',
+                p.method === 'UPI' && p.upiRef ? p.upiRef : '—',
+                `Rs. ${p.amount.toLocaleString('en-IN')}`,
+                `Rs. ${balBefore.toLocaleString('en-IN')}`,
+                `Rs. ${runningBalance.toLocaleString('en-IN')}`,
+            ];
+        });
+        
+        autoTable(doc, {
+            startY: y,
+            head: [['Visit', 'Visit Date', 'Payment Date', 'Method', 'Txn Ref', 'Amount', 'Before', 'After']],
+            body: paymentRows,
+            theme: 'striped',
+            headStyles: { fillColor: [22, 163, 74], textColor: 255, fontSize: 7.5 },
+            bodyStyles: { fontSize: 8 },
+            columnStyles: { 4: { cellWidth: 22 }, 5: { fontStyle: 'bold' } },
+        });
+        y = doc.lastAutoTable.finalY + 10;
+    } else {
+        doc.setFontSize(9); doc.setFont('helvetica', 'normal'); doc.setTextColor(150);
+        doc.text('No payments recorded yet.', 14, y + 4);
+        y += 12;
+    }
+    
+    // ── Visit Schedule Table ──
+    doc.setTextColor(33, 37, 41); doc.setFontSize(11); doc.setFont('helvetica', 'bold');
+    doc.text('Visit Schedule', 14, y); y += 4;
+    
+    const visitRows = (plan.visits || []).map((v, i) => [
+        i + 1,
+        new Date(v.scheduledDate).toLocaleDateString('en-IN'),
+        v.scheduledTime || '—',
+        v.procedure || '—',
+        v.status === 'completed' && v.completedAt ? new Date(v.completedAt).toLocaleDateString('en-IN') : (v.status || '—').toUpperCase()
+    ]);
+    
+    autoTable(doc, {
+        startY: y,
+        head: [['#', 'Scheduled Date', 'Time', 'Procedure', 'Status / Completed']],
+        body: visitRows,
+        theme: 'striped',
+        headStyles: { fillColor: [8, 145, 178], textColor: 255, fontSize: 8 },
+        bodyStyles: { fontSize: 8.5 },
+    });
+    y = doc.lastAutoTable.finalY + 12;
+    
+    // ── Footer ──
+    doc.setDrawColor(200); doc.setLineWidth(0.3); doc.line(14, y, 196, y); y += 6;
+    doc.setFontSize(8); doc.setTextColor(150); doc.setFont('helvetica', 'italic');
+    doc.text('This is a computer-generated invoice and does not require a signature.', 105, y, { align: 'center' }); y += 4;
+    doc.text(`Generated on ${new Date().toLocaleString('en-IN')} by ${issuedBy || 'System'}`, 105, y, { align: 'center' });
+    
+    doc.save(`${(pt.name || 'patient').replace(/\s+/g, '_')}_Treatment_Invoice_${planIdShort}.pdf`);
+};
+
+const filterValidVisits = (items) => {
+    if (!Array.isArray(items) || items.length === 0) return [];
+
+    const isUnassignedPlaceholder = (item) => {
+        const d = item.data || item;
+        const rawDoc = (d.doctorName || d.doctorSeen || d.doctorId?.name || d.assignedDoctor || '').toString().trim();
+        const docClean = rawDoc.replace(/^dr\.\s*/i, '').toLowerCase();
+        const isDocUnassigned = !docClean || docClean === 'not assigned' || docClean === 'pending' || docClean === 'unassigned' || docClean === 'none';
+
+        const status = (d.status || '').toString().toLowerCase();
+        const isStatusUnassigned = status === 'active' || status === 'pending' || !status;
+
+        const hasDoctorActions = Boolean(
+            (d.diagnosis && d.diagnosis !== '—' && d.diagnosis !== 'Processing' && d.diagnosis !== 'No diagnosis logged') ||
+            (d.doctorNotes && d.doctorNotes.trim()) ||
+            (d.notes && d.notes.trim() && d.notes !== '—') ||
+            (d.prescriptions && d.prescriptions.length > 0) ||
+            (d.medicines && d.medicines.length > 0) ||
+            (d.pharmacy && d.pharmacy.length > 0)
+        );
+
+        return isDocUnassigned && isStatusUnassigned && !hasDoctorActions;
+    };
+
+    const hasValidConsultation = items.some(item => !isUnassignedPlaceholder(item));
+
+    if (hasValidConsultation) {
+        return items.filter(item => !isUnassignedPlaceholder(item));
+    }
+    return items;
+};
+
+const generatePatientProfilePDF = (patient, historyAppointments = []) => {
+    const doc = new jsPDF();
+    let y = pdfHeader(doc, 'Patient Profile Summary', [99, 102, 241]);
+
+    autoTable(doc, {
+        startY: y,
+        body: [
+            ['Patient Name', patient.name || '-'],
+            ['Patient ID (MRN)', patient.patientUid || patient._id || 'N/A'],
+            ['Phone', patient.phone || '-'],
+            ['Gender / DOB', `${patient.gender || '-'} / ${patient.dob ? new Date(patient.dob).toLocaleDateString('en-IN') : '-'}`],
+            ['Blood Group', patient.bloodGroup || '-'],
+            ['Allergies', patient.allergies || 'None'],
+            ['Chronic Conditions', patient.chronicConditions || 'None'],
+            ['Address', patient.address || '-'],
+        ],
+        theme: 'grid',
+        columnStyles: { 0: { fontStyle: 'bold', cellWidth: 52 } },
+        bodyStyles: { fontSize: 10 },
+        alternateRowStyles: { fillColor: [245, 249, 255] },
+    });
+    y = doc.lastAutoTable.finalY + 10;
+
+    // Filter valid visits
+    const validAppts = filterValidVisits(historyAppointments);
+
+    // Visit History Table
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(33, 37, 41);
+    doc.text('Consultation Visit History', 14, y); y += 6;
+
+    if (validAppts.length > 0) {
+        autoTable(doc, {
+            startY: y,
+            head: [['Date', 'Token / Slot', 'Doctor', 'Diagnosis', 'Notes', 'Status']],
+            body: validAppts.map(a => [
+                fmtDate(a.appointmentDate),
+                a.tokenNumber ? `#${a.tokenNumber}` : a.appointmentTime || '—',
+                a.doctorName || 'Doctor',
+                a.diagnosis || '—',
+                a.doctorNotes || a.notes || '—',
+                a.status || 'Completed'
+            ]),
+            theme: 'striped',
+            headStyles: { fillColor: [99, 102, 241], textColor: 255 },
+            bodyStyles: { fontSize: 9 },
+        });
+        y = doc.lastAutoTable.finalY + 10;
+    } else {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(100);
+        doc.text('No valid consultation visits recorded.', 16, y); y += 8;
+    }
+
+    if (y > 240) { doc.addPage(); y = 20; }
+
+    // Prescribed Medicines Section
+    doc.setFontSize(11); doc.setFont('helvetica', 'bold'); doc.setTextColor(16, 185, 129);
+    doc.text('Prescribed Medicines Summary', 14, y); y += 6;
+
+    const allMedicines = [];
+    validAppts.forEach(a => {
+        const medList = a.medicines || a.pharmacy || a.prescriptions || [];
+        if (Array.isArray(medList) && medList.length > 0) {
+            medList.forEach(m => {
+                allMedicines.push({
+                    date: fmtDate(a.appointmentDate),
+                    name: m.name || m.medicineName || '—',
+                    dosage: m.dosage || m.dose || m.frequency || '—',
+                    frequency: m.frequency || '—',
+                    duration: m.duration || (m.days ? `${m.days} days` : '—'),
+                    instructions: m.instructions || m.notes || '—'
+                });
+            });
+        }
+    });
+
+    if (allMedicines.length > 0) {
+        autoTable(doc, {
+            startY: y,
+            head: [['#', 'Date', 'Medicine Name', 'Dosage / Frequency', 'Duration', 'Instructions']],
+            body: allMedicines.map((m, i) => [
+                i + 1,
+                m.date,
+                m.name,
+                `${m.dosage} ${m.frequency !== '—' && m.frequency !== m.dosage ? `(${m.frequency})` : ''}`.trim(),
+                m.duration,
+                m.instructions
+            ]),
+            theme: 'striped',
+            headStyles: { fillColor: [16, 185, 129], textColor: 255 },
+            bodyStyles: { fontSize: 9 },
+        });
+        y = doc.lastAutoTable.finalY + 10;
+    } else {
+        doc.setFont('helvetica', 'normal'); doc.setFontSize(10); doc.setTextColor(100);
+        doc.text('No prescribed medicines recorded for these visits.', 16, y); y += 8;
+    }
+
+    const { issuedBy, hName } = getClinicInfo();
+    if (y > 260) { doc.addPage(); y = 20; }
+    doc.setFontSize(8); doc.setTextColor(120);
+    doc.text(`Issued by: ${issuedBy}  |  Generated: ${new Date().toLocaleString('en-IN')}`, 105, y, { align: 'center' }); y += 5;
+    doc.text(`Patient Profile from ${hName}`, 105, y, { align: 'center' });
+    return { doc, filename: `PatientProfile_${patient.patientUid || patient._id}.pdf` };
+};
+
+// ─────────────────────────────────────────────
+// Role Modes
+// ─────────────────────────────────────────────
+const MODES = [
+    { id: 'overview', icon: <FiBarChart2 />, label: 'Overview' },
+    { id: 'patients', icon: <FiUsers />, label: 'Patients' },
+    { id: 'doctor', icon: <FiActivity />, label: 'Doctor' },
+    { id: 'reception', icon: <FiCalendar />, label: 'Reception' },
+    { id: 'pharmacy', icon: <FiPlusCircle />, label: 'Pharmacy' },
+    { id: 'billing', icon: <FiDollarSign />, label: 'Billing' },
+    { id: 'plans', icon: <FiFileText />, label: 'Treatment Plans' },
+];
+
+// ─────────────────────────────────────────────
+// Root Component
+// ─────────────────────────────────────────────
+const ClinicDashboard = () => {
+    const navigate = useNavigate();
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    const getInitialMode = () => {
+        const role = (currentUser?.role || '').toLowerCase();
+        if (role === 'doctor' || role === 'clinic doctor') return 'doctor';
+        if (role === 'reception' || role === 'receptionist') return 'reception';
+        return 'overview';
+    };
+    const [mode, setMode] = useState(getInitialMode());
+    const [preselectedPatient, setPreselectedPatient] = useState(null);
+    const [pendingDownload, setPendingDownload] = useState(null);
+
+    useEffect(() => {
+        if (pendingDownload) {
+            const timer = setTimeout(() => {
+                setPendingDownload(null);
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [pendingDownload]);
+
+    useEffect(() => {
+        const allowed = ['hospitaladmin', 'doctor', 'clinic doctor', 'reception', 'receptionist'];
+        if (!allowed.includes((currentUser?.role || '').toLowerCase())) navigate('/login');
+    }, []);
+ 
+    const goToReception = (patient) => {
+        setPreselectedPatient(patient);
+        setMode('reception');
+    };
+ 
+    const isClinicDoctorUser = (currentUser?.role || '').toLowerCase().includes('doctor');
+
+    return (
+        <div className="clinic-dashboard">
+            {/* Role Switcher */}
+            {!isClinicDoctorUser && (
+                <div className="clinic-role-switcher">
+                    <div className="switcher-label">Mode:</div>
+                    <div className="switcher-buttons">
+                        {MODES.filter(m => {
+                            const role = (currentUser?.role || '').toLowerCase();
+                            if (role === 'doctor' || role === 'clinic doctor') return ['doctor', 'patients', 'overview'].includes(m.id);
+                            if (role === 'reception' || role === 'receptionist') return ['reception', 'patients', 'overview', 'billing', 'plans'].includes(m.id);
+                            return true;
+                        }).map(m => (
+                            <button key={m.id}
+                                className={`switcher-btn ${mode === m.id ? 'active' : ''}`}
+                                onClick={() => setMode(m.id)}>
+                                <span className="switcher-icon">{m.icon}</span> {m.label}
+                            </button>
+                        ))}
+                    </div>
+                    {currentUser?.subscriptionPlan !== 'starter' && (
+                        <div className="switcher-user">
+                            <div className="switcher-avatar">{currentUser?.name?.charAt(0)?.toUpperCase()}</div>
+                            <span>{currentUser?.name}</span>
+                        </div>
+                    )}
+                </div>
+            )}
+            {isClinicDoctorUser && (
+                <div className="clinic-role-switcher" style={{ justifyContent: 'flex-end' }}>
+                    {currentUser?.subscriptionPlan !== 'starter' && (
+                        <div className="switcher-user">
+                            <div className="switcher-avatar">{currentUser?.name?.charAt(0)?.toUpperCase()}</div>
+                            <span>Dr. {currentUser?.name}</span>
+                        </div>
+                    )}
+                </div>
+            )}
+ 
+            {pendingDownload && (
+                <div style={{
+                    margin: '0 0 20px 0',
+                    padding: '12px 20px',
+                    background: '#ecfdf5',
+                    border: '1.5px solid #a7f3d0',
+                    borderRadius: '12px',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'space-between',
+                    boxShadow: '0 4px 12px rgba(16, 185, 129, 0.05)'
+                }}>
+                    <span style={{ color: '#065f46', fontWeight: 600, fontSize: '0.95rem' }}>
+                        ✅ {pendingDownload.title || 'Document Generated'} — {pendingDownload.filename} is ready
+                    </span>
+                </div>
+            )}
+
+            <div className="clinic-mode-content">
+                {mode === 'overview' && <OverviewMode />}
+                {mode === 'patients' && <PatientsMode onBookToken={goToReception} setPendingDownload={setPendingDownload} />}
+                {mode === 'doctor' && <DoctorMode setPendingDownload={setPendingDownload} />}
+                {mode === 'reception' && <ReceptionMode preselectedPatient={preselectedPatient} clearPreselected={() => setPreselectedPatient(null)} setPendingDownload={setPendingDownload} />}
+                {mode === 'pharmacy' && <PharmacyMode />}
+                {mode === 'billing' && <BillingMode />}
+                {mode === 'plans' && <TreatmentPlanMode />}
+            </div>
+        </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════
+// OVERVIEW MODE
+// ═══════════════════════════════════════════════════
+const OverviewMode = () => {
+    const [stats, setStats] = useState(null);
+    const [appointments, setAppointments] = useState([]);
+    const [treatmentPlans, setTreatmentPlans] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [config, setConfig] = useState({ defaultFee: 0, followUpDays: 0, defaultServiceName: 'General Consultation', appointmentMode: 'token' });
+    const [cfgSaving, setCfgSaving] = useState(false);
+    const [cfgMsg, setCfgMsg] = useState('');
+    const [overviewMonthStr, setOverviewMonthStr] = useState(`${new Date().getFullYear()}-${String(new Date().getMonth() + 1).padStart(2, '0')}`);
+    const [showAllKpis, setShowAllKpis] = useState(false);
+    const [showMonthDropdown, setShowMonthDropdown] = useState(false);
+    const [showApptModeDropdown, setShowApptModeDropdown] = useState(false);
+
+    useEffect(() => {
+        Promise.all([
+            clinicAPI.getStats(),
+            clinicAPI.getAppointments(),
+            clinicAPI.getTreatmentPlans(),
+            clinicAPI.getConfig()
+        ]).then(([statsR, apptR, plansR, cfgR]) => {
+            if (statsR.success) setStats(statsR.stats);
+            if (apptR.success) setAppointments(apptR.appointments || []);
+            if (plansR.success) setTreatmentPlans(plansR.plans || []);
+            if (cfgR.success) setConfig({ defaultFee: cfgR.defaultFee ?? 0, followUpDays: cfgR.followUpDays ?? 0, defaultServiceName: cfgR.defaultServiceName || 'General Consultation', appointmentMode: cfgR.appointmentMode || 'token' });
+        }).catch(console.error).finally(() => setLoading(false));
+    }, []);
+    const saveConfig = async (e) => {
+        e.preventDefault();
+        setCfgSaving(true);
+        try {
+            const r = await clinicAPI.updateConfig(config);
+            setCfgMsg(r.success ? '✓ Saved' : (r.message || 'Error'));
+        } catch { setCfgMsg('Error saving'); }
+        finally { setCfgSaving(false); setTimeout(() => setCfgMsg(''), 3000); }
+    };
+
+    if (loading) return <Spinner text="Loading overview..." />;
+
+    const getLocalYYYYMMDD = (d) => {
+        const tzOffset = d.getTimezoneOffset() * 60000;
+        return new Date(d - tzOffset).toISOString().split('T')[0];
+    };
+    const localTodayStr = getLocalYYYYMMDD(new Date());
+    const currentMonth = new Date().getMonth();
+    const currentYear = new Date().getFullYear();
+
+    let todayApptRev = 0, todayTreatRev = 0;
+    let monthApptRev = 0, monthTreatRev = 0;
+    let totalApptRev = 0, totalTreatRev = 0;
+    let todayCompletedVisits = 0;
+
+    appointments.forEach(a => {
+        if (a.status === 'completed') {
+            const aDateStr = getLocalYYYYMMDD(new Date(a.appointmentDate));
+            if (aDateStr === localTodayStr) todayCompletedVisits++;
+        }
+        if (a.amount > 0 && (a.paymentStatus === 'paid' || a.status === 'completed' || a.status === 'consulted')) {
+            totalApptRev += a.amount;
+            const d = new Date(a.appointmentDate);
+            if (getLocalYYYYMMDD(d) === localTodayStr) todayApptRev += a.amount;
+            if (d.getMonth() === currentMonth && d.getFullYear() === currentYear) monthApptRev += a.amount;
+        }
+    });
+
+    treatmentPlans.forEach(p => {
+        if (Array.isArray(p.visits)) {
+            p.visits.forEach(v => {
+                if (v.status === 'completed') {
+                    const vDate = v.completedAt ? new Date(v.completedAt) : new Date(v.scheduledDate);
+                    if (getLocalYYYYMMDD(vDate) === localTodayStr) todayCompletedVisits++;
+                }
+                if (Array.isArray(v.paymentHistory) && v.paymentHistory.length > 0) {
+                    v.paymentHistory.forEach(ph => {
+                        if (ph.amount > 0) {
+                            totalTreatRev += ph.amount;
+                            const pd = new Date(ph.date);
+                            if (getLocalYYYYMMDD(pd) === localTodayStr) todayTreatRev += ph.amount;
+                            if (pd.getMonth() === currentMonth && pd.getFullYear() === currentYear) monthTreatRev += ph.amount;
+                        }
+                    });
+                } else if (v.amountPaid > 0) {
+                    totalTreatRev += v.amountPaid;
+                    const fallbackDateStr = v.paidAt || v.completedAt || v.dueDate || p.createdAt;
+                    if (fallbackDateStr) {
+                        const fd = new Date(fallbackDateStr);
+                        if (getLocalYYYYMMDD(fd) === localTodayStr) todayTreatRev += v.amountPaid;
+                        if (fd.getMonth() === currentMonth && fd.getFullYear() === currentYear) monthTreatRev += v.amountPaid;
+                    }
+                }
+            });
+        }
+    });
+
+    const monthTotalRev = monthApptRev + monthTreatRev;
+    const overallTotalRev = totalApptRev + totalTreatRev;
+
+    const chartData = [];
+    const selectedDate = new Date(overviewMonthStr + '-01T00:00:00');
+    const m = selectedDate.getMonth();
+    const y = selectedDate.getFullYear();
+    
+    let mAppt = 0;
+    let mTreat = 0;
+        
+        appointments.forEach(a => {
+            if (a.amount > 0 && (a.paymentStatus === 'paid' || a.status === 'completed' || a.status === 'consulted')) {
+                const ad = new Date(a.appointmentDate);
+                if (ad.getMonth() === m && ad.getFullYear() === y) mAppt += a.amount;
+            }
+        });
+        
+        treatmentPlans.forEach(p => {
+            if (Array.isArray(p.visits)) {
+                p.visits.forEach(v => {
+                    if (Array.isArray(v.paymentHistory) && v.paymentHistory.length > 0) {
+                        v.paymentHistory.forEach(ph => {
+                            if (ph.amount > 0) {
+                                const pd = new Date(ph.date);
+                                if (pd.getMonth() === m && pd.getFullYear() === y) mTreat += ph.amount;
+                            }
+                        });
+                    } else if (v.amountPaid > 0) {
+                        const fallbackDateStr = v.paidAt || v.completedAt || v.dueDate || p.createdAt;
+                        if (fallbackDateStr) {
+                            const fd = new Date(fallbackDateStr);
+                            if (fd.getMonth() === m && fd.getFullYear() === y) mTreat += v.amountPaid;
+                        }
+                    }
+                });
+            }
+        });
+        
+        chartData.push({ month: m, year: y, appt: mAppt, treat: mTreat, total: mAppt + mTreat });
+
+
+    const kpis = [
+        { label: "Today's Patients", value: stats?.todayPatients ?? 0, sub: 'Total visited today', icon: <FiUsers /> },
+        { label: "Today's Visits", value: todayCompletedVisits, sub: 'Total completed today', icon: <FiClock /> },
+        { label: "Today's Appointment Collection", value: fmt(todayApptRev), sub: 'Appointments only', icon: <FiActivity /> },
+        { label: "Today's Treatment Collection", value: fmt(todayTreatRev), sub: 'Treatment plans only', icon: <FiClipboard /> },
+        { label: "Selected Month Appointment Collection", value: fmt(monthApptRev), sub: `${MONTHS[currentMonth]} ${currentYear}`, icon: <FiActivity /> },
+        { label: "Selected Month Treatment Collection", value: fmt(monthTreatRev), sub: `${MONTHS[currentMonth]} ${currentYear}`, icon: <FiClipboard /> },
+        { label: "Selected Month Total Collection", value: fmt(monthTotalRev), sub: `${MONTHS[currentMonth]} ${currentYear}`, icon: <FiCalendar /> },
+        { label: "Overall Collection", value: fmt(overallTotalRev), sub: 'Lifetime total revenue', icon: <FiDollarSign /> },
+    ];
+
+    return (
+        <div>
+            {/* Filter Row */}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h2 style={{ margin: 0, fontSize: '1.5rem', color: '#0f172a' }}>Dashboard Overview</h2>
+            </div>
+
+            {/* KPI Row */}
+            <div className={`clinic-kpi-grid${showAllKpis ? ' clinic-kpi-expanded' : ''}`} style={{ gridTemplateColumns: 'repeat(4, 1fr)' }}>
+                {kpis.map((k, i) => (
+                    <div key={i} className={`clinic-kpi-card clinic-kpi-item-${i}`}>
+                        <div className="clinic-kpi-icon-box">{k.icon}</div>
+                        <div>
+                            <div className="clinic-kpi-val">{k.value}</div>
+                            <div className="clinic-kpi-label">{k.label}</div>
+                            {k.sub && <div className="clinic-kpi-sub">{k.sub}</div>}
+                        </div>
+                    </div>
+                ))}
+            </div>
+            {/* Mobile-only: View All Overview toggle */}
+            <button
+                className="clinic-kpi-toggle-btn"
+                onClick={() => setShowAllKpis(v => !v)}
+            >
+                {showAllKpis ? '▲ Show Less' : '▼ View All Overview'}
+            </button>
+
+            {/* Monthly Revenue Chart */}
+            <div className="clinic-card" style={{ marginBottom: '16px' }}>
+                <div className="clinic-revenue-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '12px' }}>
+                    <h3 style={{ margin: 0 }}>Monthly Revenue</h3>
+                    
+                    <div className="clinic-revenue-controls" style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div className="clinic-revenue-legend" style={{ display: 'flex', gap: '12px', fontSize: '11px', fontWeight: '600', color: '#64748b' }}>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#3b82f6' }}></div> Appointment Revenue</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#10b981' }}></div> Treatment Revenue</div>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: '4px' }}><div style={{ width: '12px', height: '12px', borderRadius: '3px', background: '#6366f1' }}></div> Total Revenue</div>
+                        </div>
+                        <div className="clinic-month-select-container">
+                            {/* Custom Dropdown for All Devices */}
+                            <div className="clinic-custom-month-dropdown">
+                                <div className="custom-dropdown-selected" onClick={() => setShowMonthDropdown(!showMonthDropdown)}>
+                                    {MONTHS[parseInt(overviewMonthStr.split('-')[1]) - 1]} {overviewMonthStr.split('-')[0]} <span>▼</span>
+                                </div>
+                                {showMonthDropdown && (
+                                    <div className="custom-dropdown-options">
+                                        {['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'].map((m, i) => {
+                                            const val = `${new Date().getFullYear()}-${String(i + 1).padStart(2, '0')}`;
+                                            return (
+                                                <div key={val} className="custom-dropdown-option" onClick={() => { setOverviewMonthStr(val); setShowMonthDropdown(false); }}>
+                                                    {m}
+                                                </div>
+                                            );
+                                        })}
+                                    </div>
+                                )}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div className="clinic-revenue-chart" style={{ display: 'flex', alignItems: 'stretch', justifyContent: 'flex-start', height: '180px' }}>
+                    {chartData.map((m, i) => {
+                        const maxTotal = Math.max(...chartData.map(x => x.total));
+                        const apptPct = maxTotal > 0 ? (m.appt / maxTotal) * 100 : 0;
+                        const treatPct = maxTotal > 0 ? (m.treat / maxTotal) * 100 : 0;
+                        const totalPct = maxTotal > 0 ? (m.total / maxTotal) * 100 : 0;
+                        return (
+                            <div key={i} style={{ flex: '0 0 16.666%', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-end', gap: '8px' }}>
+                                <div style={{ display: 'flex', alignItems: 'flex-end', justifyContent: 'center', gap: '4px', width: '100%', height: '100%' }}>
+                                    <div style={{ width: '30%', height: `${apptPct}%`, minHeight: '4px', background: '#3b82f6', borderRadius: '4px 4px 0 0', transition: 'height 0.3s' }} title={`Appointment: ${fmt(m.appt)}`} />
+                                    <div style={{ width: '30%', height: `${treatPct}%`, minHeight: '4px', background: '#10b981', borderRadius: '4px 4px 0 0', transition: 'height 0.3s' }} title={`Treatment: ${fmt(m.treat)}`} />
+                                    <div style={{ width: '30%', height: `${totalPct}%`, minHeight: '4px', background: '#6366f1', borderRadius: '4px 4px 0 0', transition: 'height 0.3s' }} title={`Total: ${fmt(m.total)}`} />
+                                </div>
+                                <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>{MONTHS[m.month]}</div>
+                            </div>
+                        );
+                    })}
+                </div>
+            </div>
+
+            {/* Recent Appointments */}
+            {stats?.recentAppointments?.length > 0 && (
+                <div className="clinic-card" style={{ marginBottom: '16px' }}>
+                    <h3 style={{ marginBottom: '12px' }}>Recent Appointments</h3>
+                    <table className="clinic-table">
+                        <thead><tr><th>Token</th><th>Patient</th><th>Date</th><th>Status</th><th>Fee</th><th>Method</th></tr></thead>
+                        <tbody>
+                            {stats.recentAppointments.map(a => (
+                                <tr key={a._id}>
+                                    <td><strong style={{ color: '#6366f1' }}>#{a.tokenNumber || '—'}</strong></td>
+                                    <td>
+                                        <div style={{ fontWeight: 600 }}>{a.clinicPatientId?.name || '—'}</div>
+                                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>{a.clinicPatientId?.patientUid || a.patientId}</div>
+                                    </td>
+                                    <td style={{ fontSize: '12px' }}>{fmtDate(a.appointmentDate)}</td>
+                                    <td><StatusBadge status={a.status} /></td>
+                                    <td><strong style={{ color: '#16a34a' }}>{fmt(a.amount)}</strong></td>
+                                    <td><span style={{ fontSize: '11px', color: '#64748b' }}>{a.paymentMethod || 'Cash'}</span></td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+
+            {/* Low Stock Alert */}
+            {stats?.lowStockItems?.length > 0 && (
+                <div className="clinic-card" style={{ border: '1px solid #fecaca' }}>
+                    <h3 style={{ color: '#dc2626', marginBottom: '12px' }}>Low Stock Alert</h3>
+                    <div className="clinic-lowstock-list" style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                        {stats.lowStockItems.map(item => (
+                            <div key={item._id} style={{ background: '#fee2e2', borderRadius: '6px', padding: '6px 12px', fontSize: '13px' }}>
+                                <strong>{item.name}</strong> — only <strong style={{ color: '#dc2626' }}>{item.stock}</strong> {item.unit} left
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            {/* Clinic Settings */}
+            <div className="clinic-card" style={{ marginTop: '16px' }}>
+                <h3 style={{ marginBottom: '14px' }}>Clinic Settings</h3>
+                <form className="clinic-settings-form" onSubmit={saveConfig} style={{ display: 'flex', gap: '16px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                    <div style={{ flex: '0 1 280px', minWidth: '200px' }}>
+                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '4px', whiteSpace: 'nowrap' }}>Default Service Name</label>
+                        <input className="clinic-input" value={config.defaultServiceName}
+                            onChange={e => {
+                                let val = e.target.value;
+                                if (val.length > 50) val = val.slice(0, 50);
+                                setConfig(c => ({ ...c, defaultServiceName: val }));
+                            }}
+                            placeholder="General Consultation" maxLength={50} />
+                    </div>
+                    <div style={{ flex: '0 0 120px' }}>
+                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '4px', whiteSpace: 'nowrap' }}>Default Fee (₹)</label>
+                        <input className="clinic-input" type="number" min="0" max="99999999" value={config.defaultFee}
+                            onChange={e => {
+                                let val = e.target.value;
+                                if (val.length > 8) val = val.slice(0, 8);
+                                setConfig(c => ({ ...c, defaultFee: val }));
+                            }} />
+                    </div>
+                    <div style={{ flex: '0 0 160px' }}>
+                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '4px', whiteSpace: 'nowrap' }}>Follow-up Validity (Days)</label>
+                        <input className="clinic-input" type="number" min="0" max="999" value={config.followUpDays} placeholder="0"
+                            onChange={e => {
+                                let val = e.target.value;
+                                if (val.length > 3) val = val.slice(0, 3);
+                                setConfig(c => ({ ...c, followUpDays: val }));
+                            }} />
+                    </div>
+                    <div style={{ flex: '0 0 200px', position: 'relative' }}>
+                        <label style={{ fontSize: '12px', color: '#64748b', display: 'block', marginBottom: '4px', whiteSpace: 'nowrap' }}>Appointment Mode</label>
+                        <div className="clinic-custom-month-dropdown" style={{ width: '100%' }}>
+                            <div className="custom-dropdown-selected" onClick={() => setShowApptModeDropdown(!showApptModeDropdown)}>
+                                {config.appointmentMode === 'slot' ? 'Time Slot' : 'Token (walk-in queue)'} <span>▼</span>
+                            </div>
+                            {showApptModeDropdown && (
+                                <div className="custom-dropdown-options" style={{ width: '100%' }}>
+                                    <div className="custom-dropdown-option" onClick={() => { setConfig(c => ({ ...c, appointmentMode: 'token' })); setShowApptModeDropdown(false); }}>
+                                        Token (walk-in queue)
+                                    </div>
+                                    <div className="custom-dropdown-option" onClick={() => { setConfig(c => ({ ...c, appointmentMode: 'slot' })); setShowApptModeDropdown(false); }}>
+                                        Time Slot
+                                    </div>
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                        <button type="submit" className="clinic-btn-primary" disabled={cfgSaving} style={{ padding: '8px 18px' }}>
+                            {cfgSaving ? 'Saving…' : 'Save Settings'}
+                        </button>
+                        {cfgMsg && <span style={{ fontSize: '13px', color: cfgMsg.startsWith('✓') ? '#16a34a' : '#dc2626' }}>{cfgMsg}</span>}
+                    </div>
+                </form>
+            </div>
+        </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════
+// REPORT VIEWER — inline PDF/image panel
+// ═══════════════════════════════════════════════════
+const baseURL = import.meta.env.VITE_API_URL || '';
+const reportURL = (filename) => (filename || '').startsWith('http://') || (filename || '').startsWith('https://')
+    ? filename
+    : `${baseURL}/api/patients/reports/${encodeURIComponent(filename)}`;
+
+const ReportViewerModal = ({ report, onClose }) => {
+    const url = reportURL(report.filename);
+    const isPDF = report.mimetype === 'application/pdf' || 
+                  (report.filename || '').toLowerCase().endsWith('.pdf') || 
+                  (report.name || '').toLowerCase().endsWith('.pdf');
+    return (
+        <div style={{ position: 'fixed', inset: 0, background: 'rgba(0,0,0,0.7)', zIndex: 9000, display: 'flex', flexDirection: 'column' }}>
+            <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', background: '#1e293b', padding: '10px 20px', color: '#fff' }}>
+                <span style={{ fontWeight: 700, fontSize: '14px' }}>{report.name}</span>
+                <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
+                    <a href={url} target="_blank" rel="noopener noreferrer"
+                        style={{ fontSize: '12px', color: '#7dd3fc', textDecoration: 'none' }}>Open in new tab ↗</a>
+                    <button onClick={onClose}
+                        style={{ background: '#ef4444', border: 'none', color: '#fff', borderRadius: '6px', padding: '4px 12px', cursor: 'pointer', fontWeight: 700 }}>✕ Close</button>
+                </div>
+            </div>
+            <div style={{ flex: 1, overflow: 'hidden' }}>
+                {isPDF ? (
+                    <iframe src={url} title={report.name} style={{ width: '100%', height: '100%', border: 'none' }} />
+                ) : (
+                    <div data-lenis-prevent="true" style={{ height: '100%', display: 'flex', alignItems: 'center', justifyContent: 'center', background: '#000', overflow: 'auto' }}>
+                        <img src={url} alt={report.name} style={{ maxWidth: '100%', maxHeight: '100%', objectFit: 'contain' }} />
+                    </div>
+                )}
+            </div>
+        </div>
+    );
+};
+
+// ─── Compact report panel used inside DoctorMode ─────────────────────────────
+const PatientReportPanel = ({ patientId, patientName }) => {
+    const [reports, setReports] = useState([]);
+    const [viewReport, setViewReport] = useState(null);
+    const [open, setOpen] = useState(false);
+    const [uploading, setUploading] = useState(false);
+    const [reportName, setReportName] = useState('');
+    const [msg, setMsg] = useState({ type: '', text: '' });
+    const fileInputRef = useRef(null);
+
+    const flash = (type, text) => {
+        setMsg({ type, text });
+        setTimeout(() => setMsg({ type: '', text: '' }), 4000);
+    };
+
+    const loadReports = useCallback(() => {
+        if (!patientId) return;
+        clinicAPI.getPatientHistory(patientId)
+            .then(r => { if (r.success) setReports(r.patient?.reports || []); })
+            .catch(() => { });
+    }, [patientId]);
+
+    useEffect(() => {
+        loadReports();
+    }, [loadReports]);
+
+    const handleUploadReport = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file || !patientId) return;
+
+        // Frontend validation
+        const allowedTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+        if (!allowedTypes.includes(file.type)) {
+            flash('error', 'Only JPG, PNG, WEBP, and PDF files are allowed.');
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
+        if (file.size > 20 * 1024 * 1024) {
+            flash('error', 'File size exceeds 20 MB limit.');
+            if (fileInputRef.current) fileInputRef.current.value = '';
+            return;
+        }
+
+        setUploading(true);
+        try {
+            const name = reportName.trim() || file.name;
+            const r = await clinicAPI.uploadPatientReport(patientId, file, name);
+            if (r.success) {
+                setReports(prev => [...prev, r.report]);
+                setReportName('');
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                flash('success', 'Report uploaded successfully');
+            } else {
+                flash('error', r.message || 'Upload failed');
+            }
+        } catch (e) {
+            flash('error', e.response?.data?.message || e.message);
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleDeleteReport = async (reportId) => {
+        if (!patientId) return;
+        if (!(await confirmToast('Delete this report?', { title: 'Delete Report' }))) return;
+        try {
+            const r = await clinicAPI.deletePatientReport(patientId, reportId);
+            if (r.success) {
+                setReports(prev => prev.filter(rp => rp._id !== reportId));
+                flash('success', 'Report deleted');
+            } else {
+                flash('error', r.message);
+            }
+        } catch (e) {
+            flash('error', e.response?.data?.message || e.message);
+        }
+    };
+
+    const handleDownloadReport = async (report) => {
+        const url = reportURL(report.filename);
+        try {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = report.name || 'report';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(blobUrl);
+        } catch (error) {
+            console.error("Download failed:", error);
+            window.open(url, '_blank', 'noreferrer');
+        }
+    };
+
+    if (!patientId) return null;
+
+    return (
+        <>
+            {viewReport && <ReportViewerModal report={viewReport} onClose={() => setViewReport(null)} />}
+            <div className="clinic-reports-container" style={{ marginBottom: '20px', border: '1px solid #e2e8f0', borderRadius: '10px', overflow: 'hidden', background: '#fff' }}>
+                <button
+                    onClick={() => setOpen(o => !o)}
+                    style={{ width: '100%', background: '#f8fafc', border: 'none', padding: '12px 16px', textAlign: 'left', cursor: 'pointer', fontWeight: 700, fontSize: '13px', color: '#1e293b', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: open ? '1px solid #e2e8f0' : 'none' }}>
+                    <span style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>Previous Reports ({reports.length})</span>
+                    <span>{open ? '▲' : '▼'}</span>
+                </button>
+                {open && (
+                    <div style={{ padding: '16px', background: '#fff' }}>
+                        {msg.text && <div className={`clinic-msg clinic-msg-${msg.type}`} style={{ marginBottom: '12px', fontSize: '12px', padding: '8px 12px' }}>{msg.text}</div>}
+                        
+                        {/* Upload area */}
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '16px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '12px' }}>
+                            <input
+                                className="clinic-input"
+                                style={{ flex: 1, minWidth: '140px', background: '#fff' }}
+                                placeholder="Report name (optional)"
+                                value={reportName}
+                                onChange={e => setReportName(e.target.value)}
+                            />
+                            <label style={{ cursor: 'pointer', background: uploading ? '#cbd5e1' : '#6366f1', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 16px', fontWeight: 600, fontSize: '12px', display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                                {uploading ? 'Uploading...' : '⬆ Upload PDF / Image'}
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".pdf,image/jpeg,image/png,image/webp"
+                                    style={{ display: 'none' }}
+                                    disabled={uploading}
+                                    onChange={handleUploadReport}
+                                />
+                            </label>
+                            <div style={{ width: '100%', fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>Supports PDF, JPG, PNG, WEBP · max 20 MB</div>
+                        </div>
+
+                        {reports.length === 0 ? (
+                            <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0, textAlign: 'center', padding: '12px 0' }}>No reports uploaded for {patientName || 'this patient'}.</p>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {reports.map(r => {
+                                    const isPdf = r.mimetype === 'application/pdf' || (r.filename || '').toLowerCase().endsWith('.pdf') || (r.name || '').toLowerCase().endsWith('.pdf');
+                                    return (
+                                        <div key={r._id} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '10px 14px' }}>
+                                            <span style={{ fontSize: '20px' }}>{isPdf ? <FiFileText /> : <FiPaperclip />}</span>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, fontSize: '13px', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                                                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                                                    {isPdf ? 'PDF Document' : 'Image'} · {r.uploadedAt ? new Date(r.uploadedAt).toLocaleDateString('en-IN') : ''}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '6px', flexShrink: 0 }}>
+                                                <button
+                                                    onClick={() => setViewReport(r)}
+                                                    style={{ background: '#e0e7ff', color: '#4f46e5', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}>
+                                                    View
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDownloadReport(r)}
+                                                    style={{ background: '#dcfce7', color: '#16a34a', border: 'none', borderRadius: '6px', padding: '4px 10px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}>
+                                                    Download
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteReport(r._id)}
+                                                    style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', padding: '4px 8px', fontSize: '11px', cursor: 'pointer', fontWeight: 600 }}>
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )}
+                    </div>
+                )}
+            </div>
+        </>
+    );
+};
+
+// ═══════════════════════════════════════════════════
+// PATIENTS MODE
+// ═══════════════════════════════════════════════════
+const PatientsMode = ({ onBookToken, setPendingDownload }) => {
+    const [tab, setTab] = useState('list');
+    const [patients, setPatients] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [searching, setSearching] = useState(false);
+    const [selectedPatient, setSelectedPatient] = useState(null);
+    const [patientHistory, setPatientHistory] = useState(null);
+    const [loadingHistory, setLoadingHistory] = useState(false);
+    const [form, setForm] = useState({ name: '', phone: '', email: '', dob: '', gender: 'Male', address: '', bloodGroup: '', allergies: '', chronicConditions: '', relatives: [], age: '', aadhaarNumber: '' });
+    const [saving, setSaving] = useState(false);
+    const [msg, setMsg] = useState({ type: '', text: '' });
+    const [justRegistered, setJustRegistered] = useState(null);
+    // Reports state
+    const [patientReports, setPatientReports] = useState([]);
+    const [viewReport, setViewReport] = useState(null);
+    const [uploading, setUploading] = useState(false);
+    const [reportName, setReportName] = useState('');
+    const fileInputRef = useRef(null);
+    const [reportsTab, setReportsTab] = useState('upload'); // 'upload' | 'view'
+    
+    // Custom dropdown states for mobile
+    const [showGenderDropdown, setShowGenderDropdown] = useState(false);
+    const [showBloodGroupDropdown, setShowBloodGroupDropdown] = useState(false);
+    const [openRelationIdx, setOpenRelationIdx] = useState(null);
+
+    const flash = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 6000); };
+
+    useEffect(() => {
+        clinicAPI.getPatients()
+            .then(r => {
+                if (r.success) setPatients(r.patients);
+                else flash('error', r.message || 'Failed to load patients');
+            })
+            .catch(e => flash('error', e.response?.data?.message || e.message))
+            .finally(() => setLoading(false));
+    }, []);
+
+    const handleSearch = async () => {
+        if (!search.trim()) {
+            setSearching(true);
+            clinicAPI.getPatients().then(r => { if (r.success) setPatients(r.patients); }).finally(() => setSearching(false));
+            return;
+        }
+        setSearching(true);
+        clinicAPI.getPatients(search).then(r => { if (r.success) setPatients(r.patients); }).finally(() => setSearching(false));
+    };
+
+    const openHistory = async (p) => {
+        setSelectedPatient(p);
+        setLoadingHistory(true);
+        setPatientHistory(null);
+        setPatientReports([]);
+        clinicAPI.getPatientHistory(p._id)
+            .then(r => {
+                if (r.success) {
+                    const cleanedAppts = filterValidVisits(r.appointments || []);
+                    setPatientHistory({ ...r, appointments: cleanedAppts });
+                    setPatientReports(r.patient?.reports || []);
+                }
+            })
+            .catch(console.error)
+            .finally(() => setLoadingHistory(false));
+    };
+
+    const handleUploadReport = async (e) => {
+        const file = e.target.files?.[0];
+        if (!file || !selectedPatient) return;
+        setUploading(true);
+        try {
+            const name = reportName.trim() || file.name;
+            const r = await clinicAPI.uploadPatientReport(selectedPatient._id, file, name);
+            if (r.success) {
+                setPatientReports(prev => [...prev, r.report]);
+                setReportName('');
+                if (fileInputRef.current) fileInputRef.current.value = '';
+                flash('success', 'Report uploaded successfully');
+            } else flash('error', r.message);
+        } catch (e) { flash('error', e.response?.data?.message || e.message); }
+        finally { setUploading(false); }
+    };
+
+    const handleDeleteReport = async (reportId) => {
+        if (!selectedPatient) return;
+        if (!(await confirmToast('Delete this report?', { title: 'Delete Report' }))) return;
+        try {
+            const r = await clinicAPI.deletePatientReport(selectedPatient._id, reportId);
+            if (r.success) setPatientReports(prev => prev.filter(rp => rp._id !== reportId));
+            else flash('error', r.message);
+        } catch (e) { flash('error', e.response?.data?.message || e.message); }
+    };
+
+    const handleDownloadReport = async (report) => {
+        const url = reportURL(report.filename);
+        try {
+            const response = await fetch(url);
+            const blob = await response.blob();
+            const blobUrl = window.URL.createObjectURL(blob);
+            const link = document.createElement('a');
+            link.href = blobUrl;
+            link.download = report.name || 'report';
+            document.body.appendChild(link);
+            link.click();
+            document.body.removeChild(link);
+            window.URL.revokeObjectURL(blobUrl);
+        } catch (error) {
+            console.error("Download failed:", error);
+            window.open(url, '_blank', 'noreferrer');
+        }
+    };
+
+    const handleRegister = async (e) => {
+        e.preventDefault();
+        if (form.name.trim().length < 2) return flash('error', 'Name must be at least 2 characters');
+        if (!/^\d{10}$/.test(form.phone)) return flash('error', 'Phone number must be exactly 10 digits');
+        if (!form.age || form.age < 1) return flash('error', 'Age is required and must be greater than 0');
+        if (!form.aadhaarNumber || !/^\d{12}$/.test(form.aadhaarNumber)) return flash('error', 'Aadhaar Number is required and must be exactly 12 digits');
+        setSaving(true);
+        try {
+            const r = await clinicAPI.registerPatient(form);
+            if (r.success) {
+                if (!r.existing) setPatients(prev => [r.patient, ...prev]);
+                setJustRegistered(r.patient);
+                setForm({ name: '', phone: '', email: '', dob: '', gender: 'Male', address: '', bloodGroup: '', allergies: '', chronicConditions: '', relatives: [], age: '', aadhaarNumber: '' });
+                try {
+                    const pdf = generateRegistrationSlipPDF(r.patient);
+                    if (setPendingDownload) {
+                        setPendingDownload({ doc: pdf.doc, filename: pdf.filename, title: 'Registration Slip' });
+                    }
+                } catch (pdfErr) { console.error('PDF generation error:', pdfErr); }
+            } else flash('error', r.message);
+        } catch (e) { flash('error', e.response?.data?.message || e.message); }
+        finally { setSaving(false); }
+    };
+
+    // Patient detail view
+    if (selectedPatient) {
+        return (
+            <div>
+                <button className="clinic-back-btn" onClick={() => { setSelectedPatient(null); setPatientHistory(null); }}>← Back to Patients</button>
+                <div className="clinic-card" style={{ marginTop: '12px', marginBottom: '16px' }}>
+                    <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                        <div className="clinic-avatar-lg">{selectedPatient.name?.charAt(0)?.toUpperCase()}</div>
+                        <div>
+                            <h2 style={{ margin: 0 }}>{selectedPatient.name}</h2>
+                            <div style={{ color: '#64748b', fontSize: '14px', marginTop: '4px' }}>
+                                <span style={{ background: '#eef2ff', color: '#6366f1', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '12px', marginRight: '8px' }}>{selectedPatient.patientUid}</span>
+                                {selectedPatient.phone && selectedPatient.phone}
+                                {selectedPatient.gender && ` · ${selectedPatient.gender}`}
+                                {selectedPatient.dob && ` · DOB: ${fmtDate(selectedPatient.dob)}`}
+                            </div>
+                            {selectedPatient.address && <div style={{ color: '#94a3b8', fontSize: '13px', marginTop: '4px' }}>{selectedPatient.address}</div>}
+                            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap', marginTop: '6px', fontSize: '12px' }}>
+                                {selectedPatient.bloodGroup && <span style={{ background: '#fee2e2', color: '#dc2626', padding: '2px 8px', borderRadius: '4px', fontWeight: 600 }}>🩸 {selectedPatient.bloodGroup}</span>}
+                                {selectedPatient.allergies && <span style={{ background: '#fef3c7', color: '#92400e', padding: '2px 8px', borderRadius: '4px' }}>Allergies: {selectedPatient.allergies}</span>}
+                                {selectedPatient.chronicConditions && <span style={{ background: '#f0f9ff', color: '#0369a1', padding: '2px 8px', borderRadius: '4px' }}>{selectedPatient.chronicConditions}</span>}
+                            </div>
+                        </div>
+                        <div style={{ marginLeft: 'auto', textAlign: 'right', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '8px' }}>
+                            <div style={{ fontSize: '12px', color: '#94a3b8' }}>
+                                Registered: {fmtDate(selectedPatient.createdAt)}
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                                <button
+                                    onClick={() => {
+                                        try {
+                                            const pdf = generateRegistrationSlipPDF(selectedPatient);
+                                            pdf.doc.save(pdf.filename);
+                                        } catch (pdfErr) {
+                                            console.error('PDF generation error:', pdfErr);
+                                            toast.error('Failed to generate registration slip PDF');
+                                        }
+                                    }}
+                                    style={{
+                                        padding: '6px 12px',
+                                        background: '#e0f2fe',
+                                        color: '#0369a1',
+                                        border: '1.5px solid #bae6fd',
+                                        borderRadius: '8px',
+                                        fontWeight: 700,
+                                        fontSize: '12px',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                    }}
+                                >
+                                    Registration Slip
+                                </button>
+                                <button
+                                    onClick={() => {
+                                        try {
+                                            const pdf = generatePatientProfilePDF(selectedPatient, patientHistory?.appointments || []);
+                                            pdf.doc.save(pdf.filename);
+                                        } catch (pdfErr) {
+                                            console.error('Profile PDF generation error:', pdfErr);
+                                            toast.error('Failed to generate patient profile PDF');
+                                        }
+                                    }}
+                                    style={{
+                                        padding: '6px 12px',
+                                        background: '#ecfdf5',
+                                        color: '#059669',
+                                        border: '1.5px solid #a7f3d0',
+                                        borderRadius: '8px',
+                                        fontWeight: 700,
+                                        fontSize: '12px',
+                                        cursor: 'pointer',
+                                        display: 'inline-flex',
+                                        alignItems: 'center',
+                                        gap: '6px'
+                                    }}
+                                >
+                                    Download Profile PDF
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Relatives */}
+                    {selectedPatient.relatives?.length > 0 && (
+                        <div style={{ marginTop: '16px', paddingTop: '14px', borderTop: '1px solid #f1f5f9' }}>
+                            <div style={{ fontSize: '12px', fontWeight: '700', color: '#64748b', marginBottom: '8px' }}>Emergency Contacts</div>
+                            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                {selectedPatient.relatives.map((rel, i) => (
+                                    <div key={i} style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '8px', padding: '8px 14px', fontSize: '12px' }}>
+                                        <div style={{ fontWeight: '700', color: '#0f172a' }}>{rel.name}</div>
+                                        {rel.relation && <div style={{ color: '#0369a1', fontSize: '11px' }}>{rel.relation}</div>}
+                                        {rel.phone && <div style={{ color: '#475569', marginTop: '2px' }}>{rel.phone}</div>}
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                {/* ── Medical Reports ────────────────────────────────────────── */}
+                {viewReport && <ReportViewerModal report={viewReport} onClose={() => setViewReport(null)} />}
+                <div className="clinic-card" style={{ marginTop: '12px', marginBottom: '12px' }}>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                        <h3 style={{ margin: 0 }}>Medical Reports ({patientReports.length})</h3>
+                    </div>
+
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '14px', borderBottom: '1px solid #e2e8f0', paddingBottom: '10px' }}>
+                        <button
+                            type="button"
+                            onClick={() => setReportsTab('upload')}
+                            style={{
+                                padding: '6px 14px',
+                                background: reportsTab === 'upload' ? '#6366f1' : '#f1f5f9',
+                                color: reportsTab === 'upload' ? '#fff' : '#475569',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '13px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            Upload Reports
+                        </button>
+                        <button
+                            type="button"
+                            onClick={() => setReportsTab('view')}
+                            style={{
+                                padding: '6px 14px',
+                                background: reportsTab === 'view' ? '#6366f1' : '#f1f5f9',
+                                color: reportsTab === 'view' ? '#fff' : '#475569',
+                                border: 'none',
+                                borderRadius: '6px',
+                                fontSize: '13px',
+                                fontWeight: 700,
+                                cursor: 'pointer',
+                                transition: 'all 0.2s'
+                            }}
+                        >
+                            View Reports ({patientReports.length})
+                        </button>
+                    </div>
+
+                    {/* Upload area */}
+                    {reportsTab === 'upload' && (
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '14px', background: '#f8fafc', border: '1px dashed #cbd5e1', borderRadius: '8px', padding: '12px' }}>
+                            <input
+                                className="clinic-input"
+                                style={{ flex: 1, minWidth: '140px' }}
+                                placeholder="Report name (optional)"
+                                value={reportName}
+                                onChange={e => setReportName(e.target.value)}
+                            />
+                            <label style={{ cursor: 'pointer', background: uploading ? '#e2e8f0' : '#6366f1', color: '#fff', border: 'none', borderRadius: '8px', padding: '8px 16px', fontWeight: 600, fontSize: '13px', display: 'inline-flex', alignItems: 'center', gap: '6px', whiteSpace: 'nowrap' }}>
+                                {uploading ? 'Uploading...' : '⬆ Upload PDF / Image'}
+                                <input
+                                    ref={fileInputRef}
+                                    type="file"
+                                    accept=".pdf,image/jpeg,image/png,image/webp"
+                                    style={{ display: 'none' }}
+                                    disabled={uploading}
+                                    onChange={handleUploadReport}
+                                />
+                            </label>
+                            <div style={{ width: '100%', fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>Supports PDF, JPG, PNG · max 20 MB</div>
+                        </div>
+                    )}
+
+                    {/* Report list */}
+                    {reportsTab === 'view' && (
+                        patientReports.length === 0 ? (
+                            <p style={{ color: '#94a3b8', fontSize: '13px', textAlign: 'center', padding: '12px 0' }}>No reports uploaded yet.</p>
+                        ) : (
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                {patientReports.map(r => {
+                                    const isPdf = r.mimetype === 'application/pdf' || (r.filename || '').toLowerCase().endsWith('.pdf') || (r.name || '').toLowerCase().endsWith('.pdf');
+                                    return (
+                                        <div key={r._id} style={{ display: 'flex', alignItems: 'center', gap: '10px', background: '#fff', border: '1px solid #e0e7ff', borderRadius: '8px', padding: '10px 14px' }}>
+                                            <span style={{ fontSize: '22px' }}>{isPdf ? <FiFileText /> : <FiPaperclip />}</span>
+                                            <div style={{ flex: 1, minWidth: 0 }}>
+                                                <div style={{ fontWeight: 600, fontSize: '14px', color: '#1e293b', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.name}</div>
+                                                <div style={{ fontSize: '11px', color: '#94a3b8', marginTop: '2px' }}>
+                                                    {isPdf ? 'PDF Document' : 'Image'} · {r.uploadedAt ? new Date(r.uploadedAt).toLocaleDateString('en-IN') : ''}
+                                                </div>
+                                            </div>
+                                            <div style={{ display: 'flex', gap: '8px' }}>
+                                                <button
+                                                    onClick={() => setViewReport(r)}
+                                                    style={{ background: '#6366f1', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 14px', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}>
+                                                    View
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDownloadReport(r)}
+                                                    style={{ background: '#10b981', color: '#fff', border: 'none', borderRadius: '6px', padding: '5px 12px', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}>
+                                                    Download
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDeleteReport(r._id)}
+                                                    style={{ background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', padding: '5px 10px', fontSize: '12px', cursor: 'pointer', fontWeight: 600 }}>
+                                                    ✕
+                                                </button>
+                                            </div>
+                                        </div>
+                                    );
+                                })}
+                            </div>
+                        )
+                    )}
+                </div>
+
+                {loadingHistory ? <Spinner text="Loading history..." /> : patientHistory ? (
+                    <div className="clinic-card">
+                        <h3 style={{ marginBottom: '16px' }}>Visit History ({patientHistory.appointments?.length || 0} visits)</h3>
+                        {patientHistory.appointments?.length === 0 ? (
+                            <p style={{ color: '#94a3b8', textAlign: 'center', padding: '20px 0' }}>No visits yet.</p>
+                        ) : (
+                            <table className="clinic-table">
+                                <thead><tr><th>Date</th><th>Token</th><th>Diagnosis</th><th>Medicines</th><th>Status</th><th>Fee</th></tr></thead>
+                                <tbody>
+                                    {patientHistory.appointments.map(a => (
+                                        <tr key={a._id}>
+                                            <td style={{ fontSize: '12px' }}>{fmtDate(a.appointmentDate)}<br /><span style={{ color: '#94a3b8' }}>{fmtTime(a.appointmentDate)}</span></td>
+                                            <td><strong style={{ color: '#6366f1' }}>#{a.tokenNumber || '—'}</strong></td>
+                                            <td style={{ maxWidth: '160px', fontSize: '12px' }}>{a.diagnosis || '—'}</td>
+                                            <td style={{ fontSize: '11px', color: '#64748b' }}>
+                                                {(a.pharmacy || []).slice(0, 2).map((m, i) => <div key={i}>{m.medicineName || m.name}</div>)}
+                                                {(a.pharmacy || []).length > 2 && <div>+{a.pharmacy.length - 2} more</div>}
+                                            </td>
+                                            <td><StatusBadge status={a.status} /></td>
+                                            <td><strong style={{ color: '#16a34a' }}>{fmt(a.amount)}</strong></td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        )}
+                    </div>
+                ) : null}
+            </div>
+        );
+    }
+
+    return (
+        <div>
+            <div className="clinic-sub-tabs">
+                {[{ id: 'list', label: `All Patients (${patients.length})` }, { id: 'register', label: '+ Register New' }].map(t => (
+                    <button key={t.id} className={`clinic-sub-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>
+                ))}
+            </div>
+
+            {msg.text && <div className={`clinic-msg clinic-msg-${msg.type}`}>{msg.text}</div>}
+
+            {tab === 'list' && (
+                <div className="clinic-card">
+                    <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                        <input className="clinic-input" style={{ flex: 1 }} placeholder="Search by name, phone, patient ID or Aadhaar..."
+                            value={search} onChange={e => setSearch(e.target.value)}
+                            onKeyDown={e => e.key === 'Enter' && handleSearch()} />
+                        <button className="clinic-btn-secondary" onClick={handleSearch} disabled={searching}>
+                            {searching ? '...' : 'Search'}
+                        </button>
+                    </div>
+
+                    {loading ? <Spinner /> : patients.length === 0 ? (
+                        <Empty text="No patients yet. Register your first patient." />
+                    ) : (
+                        <table className="clinic-table">
+                            <thead><tr><th>Patient ID</th><th>Name</th><th>Phone</th><th>Gender</th><th>Registered</th><th></th></tr></thead>
+                            <tbody>
+                                {patients.map(p => (
+                                    <tr key={p._id} style={{ cursor: 'pointer' }} onClick={() => openHistory(p)}>
+                                        <td><span style={{ background: '#eef2ff', color: '#6366f1', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '12px' }}>{p.patientUid}</span></td>
+                                        <td>
+                                            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                                                <div className="clinic-avatar-sm">{p.name?.charAt(0)?.toUpperCase()}</div>
+                                                <strong>{p.name}</strong>
+                                            </div>
+                                        </td>
+                                        <td>{p.phone}</td>
+                                        <td>{p.gender || '—'}</td>
+                                        <td style={{ fontSize: '12px', color: '#94a3b8' }}>{fmtDate(p.createdAt)}</td>
+                                        <td><button className="clinic-btn-secondary" style={{ fontSize: '12px', padding: '4px 10px' }}>View →</button></td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+            )}
+
+            {tab === 'register' && (
+                <div className="clinic-card">
+                    {justRegistered ? (
+                        /* ── Success state ── */
+                        <div style={{ textAlign: 'center', padding: '24px 0' }}>
+                            <div style={{ fontSize: '48px', marginBottom: '8px' }}>✅</div>
+                            <h3 style={{ margin: '0 0 4px' }}>Patient Registered!</h3>
+                            <p style={{ color: '#64748b', margin: '0 0 20px' }}>
+                                <strong>{justRegistered.name}</strong> · <span style={{ background: '#eef2ff', color: '#6366f1', padding: '2px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '13px' }}>{justRegistered.patientUid}</span> · {justRegistered.phone}
+                            </p>
+                            <div style={{ display: 'flex', gap: '10px', justifyContent: 'center', flexWrap: 'wrap' }}>
+                                <button className="clinic-btn-primary" style={{ fontSize: '15px', padding: '10px 24px' }}
+                                    onClick={() => { onBookToken(justRegistered); }}>
+                                    Book Token Now
+                                </button>
+                                <button className="clinic-btn-secondary" onClick={() => { setJustRegistered(null); }}>
+                                    + Register Another
+                                </button>
+                                <button className="clinic-btn-secondary" onClick={() => { setJustRegistered(null); setTab('list'); }}>
+                                    View All Patients
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        <>
+                            <h3 style={{ marginBottom: '16px' }}>Register New Patient</h3>
+                            {/* Added paddingBottom so native DatePicker popup isn't clipped by the bottom of screen/emulator */}
+                            <form onSubmit={handleRegister} className="clinic-form-grid" style={{ paddingBottom: '120px' }}>
+                                <div className="clinic-form-group">
+                                    <label>Full Name *</label>
+                                    <input className="clinic-input" placeholder="Patient's full name" value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} required minLength={2} maxLength={50} />
+                                </div>
+                                <div className="clinic-form-group">
+                                    <label>Phone *</label>
+                                    <input className="clinic-input" type="tel" placeholder="10-digit mobile number" maxLength={10}
+                                        value={form.phone}
+                                        onChange={e => setForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))} required  pattern="\d{10}"  title="Phone number must be exactly 10 digits" />
+                                </div>
+                                <div className="clinic-form-group">
+                                    <label>Age *</label>
+                                    <input className="clinic-input" type="text" placeholder="Age" maxLength={3}
+                                        value={form.age} 
+                                        onChange={e => setForm(f => ({ ...f, age: e.target.value.replace(/\D/g, '').slice(0, 3) }))} 
+                                        required pattern="^[1-9]\d{0,2}$" title="Age must be a positive number up to 3 digits" />
+                                </div>
+                                <div className="clinic-form-group">
+                                    <label>Aadhaar Number *</label>
+                                    <input className="clinic-input" type="text" placeholder="12-digit Aadhaar" maxLength={12}
+                                        value={form.aadhaarNumber} 
+                                        onChange={e => setForm(f => ({ ...f, aadhaarNumber: e.target.value.replace(/\D/g, '').slice(0, 12) }))} 
+                                        required pattern="^\d{12}$" title="Aadhaar number must be exactly 12 digits" />
+                                </div>
+                                <div className="clinic-form-group">
+                                    <label>Email *</label>
+                                    <input className="clinic-input" type="email" placeholder="Enter Email" 
+                                        value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} required />
+                                </div>
+                                <div className="clinic-form-group">
+                                    <label>Date of Birth *</label>
+                                    <MobileDatePicker className="clinic-input" value={form.dob} onChange={e => setForm(f => ({ ...f, dob: e.target.value }))} required placeholder="Select DOB" />
+                                </div>
+                                <div className="clinic-form-group">
+                                    <label>Gender *</label>
+                                    <select className="clinic-input hide-on-mobile" value={form.gender} onChange={e => setForm(f => ({ ...f, gender: e.target.value }))} required>
+                                        <option value="">Select Gender</option>
+                                        <option>Male</option><option>Female</option><option>Other</option>
+                                    </select>
+                                    <div className="clinic-custom-month-dropdown show-on-mobile" style={{ width: '100%' }}>
+                                        <div className="custom-dropdown-selected" onClick={() => setShowGenderDropdown(!showGenderDropdown)}>
+                                            {form.gender || 'Select Gender'} <span>▼</span>
+                                        </div>
+                                        {showGenderDropdown && (
+                                            <div className="custom-dropdown-options" style={{ width: '100%' }}>
+                                                {['Male', 'Female', 'Other'].map(g => (
+                                                    <div key={g} className="custom-dropdown-option" onClick={() => { setForm(f => ({ ...f, gender: g })); setShowGenderDropdown(false); }}>
+                                                        {g}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="clinic-form-group">
+                                    <label>Blood Group</label>
+                                    <select className="clinic-input hide-on-mobile" value={form.bloodGroup} onChange={e => setForm(f => ({ ...f, bloodGroup: e.target.value }))}>
+                                        <option value=''>Unknown</option>
+                                        {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(g => <option key={g}>{g}</option>)}
+                                    </select>
+                                    <div className="clinic-custom-month-dropdown show-on-mobile" style={{ width: '100%' }}>
+                                        <div className="custom-dropdown-selected" onClick={() => setShowBloodGroupDropdown(!showBloodGroupDropdown)}>
+                                            {form.bloodGroup || 'Unknown'} <span>▼</span>
+                                        </div>
+                                        {showBloodGroupDropdown && (
+                                            <div className="custom-dropdown-options" style={{ width: '100%' }}>
+                                                <div className="custom-dropdown-option" onClick={() => { setForm(f => ({ ...f, bloodGroup: '' })); setShowBloodGroupDropdown(false); }}>
+                                                    Unknown
+                                                </div>
+                                                {['A+', 'A-', 'B+', 'B-', 'AB+', 'AB-', 'O+', 'O-'].map(g => (
+                                                    <div key={g} className="custom-dropdown-option" onClick={() => { setForm(f => ({ ...f, bloodGroup: g })); setShowBloodGroupDropdown(false); }}>
+                                                        {g}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div style={{ gridColumn: '1/-1', display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
+                                    <div className="clinic-form-group" style={{ flex: '2', minWidth: '200px' }}>
+                                        <label>Address *</label>
+                                        <input className="clinic-input" placeholder="Enter Address" value={form.address || ''} onChange={e => setForm(f => ({ ...f, address: e.target.value }))} required maxLength={50} />
+                                    </div>
+                                    <div className="clinic-form-group" style={{ flex: '1', minWidth: '120px' }}>
+                                        <label>City *</label>
+                                        <input className="clinic-input" placeholder="Enter City" value={form.city || ''} onChange={e => setForm(f => ({ ...f, city: e.target.value.replace(/[0-9]/g, '') }))} required maxLength={20} />
+                                    </div>
+                                    <div className="clinic-form-group" style={{ flex: '1', minWidth: '120px' }}>
+                                        <label>State *</label>
+                                        <input className="clinic-input" placeholder="Enter State" value={form.state || ''} onChange={e => setForm(f => ({ ...f, state: e.target.value.replace(/[0-9]/g, '') }))} required maxLength={15} />
+                                    </div>
+                                    <div className="clinic-form-group" style={{ flex: '1', minWidth: '100px' }}>
+                                        <label>Pincode</label>
+                                        <input className="clinic-input" placeholder="Enter Pincode" value={form.pincode || ''} onChange={e => setForm(f => ({ ...f, pincode: e.target.value.replace(/\D/g, '') }))} maxLength={6} />
+                                    </div>
+                                </div>
+                                <div className="clinic-form-group" style={{ gridColumn: '1/-1' }}>
+                                    <label>Known Allergies</label>
+                                    <input className="clinic-input" placeholder="e.g. Penicillin, Dust (optional)" value={form.allergies || ''} onChange={e => setForm(f => ({ ...f, allergies: e.target.value }))} maxLength={100} />
+                                </div>
+                                <div className="clinic-form-group" style={{ gridColumn: '1/-1' }}>
+                                    <label>Chronic Conditions</label>
+                                    <input className="clinic-input" placeholder="e.g. Diabetes, Hypertension (optional)" value={form.chronicConditions || ''} onChange={e => setForm(f => ({ ...f, chronicConditions: e.target.value }))} maxLength={100} />
+                                </div>
+
+                                {/* Relatives / Emergency Contacts */}
+                                <div style={{ gridColumn: '1/-1', marginTop: '4px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                                        <label style={{ fontWeight: '700', fontSize: '13px', color: '#374151' }}>Relatives / Emergency Contacts</label>
+                                        <button type="button"
+                                            onClick={() => setForm(f => ({ ...f, relatives: [...f.relatives, { name: '', relation: '', phone: '' }] }))}
+                                            style={{ fontSize: '12px', padding: '4px 12px', background: '#f0fdf4', border: '1px dashed #86efac', borderRadius: '6px', color: '#16a34a', cursor: 'pointer', fontWeight: '600' }}>
+                                            + Add Contact
+                                        </button>
+                                    </div>
+                                    {form.relatives.length === 0 ? (
+                                        <div style={{ fontSize: '12px', color: '#94a3b8', padding: '10px 14px', background: '#f8fafc', borderRadius: '8px', border: '1px dashed #e2e8f0' }}>
+                                            No contacts added. Click "+ Add Contact" to add a relative or emergency contact.
+                                        </div>
+                                    ) : (
+                                        <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'visible' }}>
+                                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                                <thead>
+                                                    <tr style={{ background: '#f1f5f9' }}>
+                                                        <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: '700', color: '#374151', borderBottom: '1px solid #e2e8f0' }}>Name</th>
+                                                        <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: '700', color: '#374151', borderBottom: '1px solid #e2e8f0' }}>Relation</th>
+                                                        <th style={{ padding: '7px 10px', textAlign: 'left', fontWeight: '700', color: '#374151', borderBottom: '1px solid #e2e8f0' }}>Phone</th>
+                                                        <th style={{ padding: '7px 10px', textAlign: 'center', borderBottom: '1px solid #e2e8f0', width: '40px' }}></th>
+                                                    </tr>
+                                                </thead>
+                                                <tbody>
+                                                    {form.relatives.map((rel, idx) => (
+                                                        <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                                                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                                                                <input value={rel.name} onChange={e => setForm(f => { const r = [...f.relatives]; r[idx] = { ...r[idx], name: e.target.value }; return { ...f, relatives: r }; })}
+                                                                    placeholder="e.g. Ramesh Kumar"
+                                                                    style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '5px', padding: '5px 7px', fontSize: '12px', boxSizing: 'border-box' }} />
+                                                            </td>
+                                                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                                                                <select className="hide-on-mobile" value={rel.relation} onChange={e => setForm(f => { const r = [...f.relatives]; r[idx] = { ...r[idx], relation: e.target.value }; return { ...f, relatives: r }; })}
+                                                                    style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '5px', padding: '5px 7px', fontSize: '12px', boxSizing: 'border-box', background: '#fff' }}>
+                                                                    <option value=''>Select...</option>
+                                                                    {['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', 'Sister', 'Guardian', 'Friend', 'Other'].map(r => <option key={r}>{r}</option>)}
+                                                                </select>
+                                                                <div className="clinic-custom-month-dropdown show-on-mobile" style={{ width: '100%' }}>
+                                                                    <div className="custom-dropdown-selected" style={{ fontSize: '12px', padding: '5px 7px' }} onClick={() => setOpenRelationIdx(openRelationIdx === idx ? null : idx)}>
+                                                                        {rel.relation || 'Select...'} <span>▼</span>
+                                                                    </div>
+                                                                    {openRelationIdx === idx && (
+                                                                        <div className="custom-dropdown-options" style={{ width: '100%' }}>
+                                                                            <div className="custom-dropdown-option" onClick={() => { setForm(f => { const r = [...f.relatives]; r[idx] = { ...r[idx], relation: '' }; return { ...f, relatives: r }; }); setOpenRelationIdx(null); }}>
+                                                                                Select...
+                                                                            </div>
+                                                                            {['Father', 'Mother', 'Spouse', 'Son', 'Daughter', 'Brother', 'Sister', 'Guardian', 'Friend', 'Other'].map(r => (
+                                                                                <div key={r} className="custom-dropdown-option" onClick={() => { setForm(f => { const rels = [...f.relatives]; rels[idx] = { ...rels[idx], relation: r }; return { ...f, relatives: rels }; }); setOpenRelationIdx(null); }}>
+                                                                                    {r}
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    )}
+                                                                </div>
+                                                            </td>
+                                                            <td style={{ padding: '5px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                                                                <input value={rel.phone} onChange={e => setForm(f => { const r = [...f.relatives]; r[idx] = { ...r[idx], phone: e.target.value.replace(/\D/g, '').slice(0, 10) }; return { ...f, relatives: r }; })}
+                                                                    placeholder="10-digit number" maxLength={10} type="tel"
+                                                                    style={{ width: '100%', border: '1px solid #e2e8f0', borderRadius: '5px', padding: '5px 7px', fontSize: '12px', boxSizing: 'border-box' }}  pattern="\d{10}"  title="Phone number must be exactly 10 digits" />
+                                                            </td>
+                                                            <td style={{ padding: '5px 8px', textAlign: 'center', borderBottom: '1px solid #f1f5f9' }}>
+                                                                <button type="button" onClick={() => setForm(f => ({ ...f, relatives: f.relatives.filter((_, i) => i !== idx) }))}
+                                                                    style={{ background: '#fee2e2', border: 'none', borderRadius: '4px', color: '#dc2626', width: '24px', height: '24px', cursor: 'pointer', fontSize: '14px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}>×</button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div style={{ gridColumn: '1/-1' }}>
+                                    <button type="submit" className="clinic-btn-primary" disabled={saving}>
+                                        {saving ? 'Registering...' : '✅ Register Patient'}
+                                    </button>
+                                </div>
+                            </form>
+                        </>
+                    )}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════
+// ── Inline booking form (supports token and slot modes) ────────────────────
+const BookTokenForm = ({ patient, onBook, onCancel, flash, mode = 'token', defaultFee = 0, defaultServiceName = 'General Consultation', setPendingDownload }) => {
+    const isSlotMode = mode === 'slot';
+    
+    const getTodayString = () => {
+        const d = new Date();
+        const month = String(d.getMonth() + 1).padStart(2, '0');
+        const day = String(d.getDate()).padStart(2, '0');
+        return `${d.getFullYear()}-${month}-${day}`;
+    };
+
+    const [form, setForm] = useState({ 
+        amount: defaultFee > 0 ? String(defaultFee) : '', 
+        serviceName: defaultServiceName, 
+        notes: '', 
+        appointmentDate: getTodayString(),
+        appointmentTime: '', 
+        paymentMethod: 'Cash', 
+        upiScreenshot: null, 
+        cardRef: '' 
+    });
+    const [booking, setBooking] = useState(false);
+    const [feeWaived, setFeeWaived] = useState(false);
+    const [waiverMessage, setWaiverMessage] = useState('');
+    const [bookedSlots, setBookedSlots] = useState([]);
+    const [showPaymentDropdown, setShowPaymentDropdown] = useState(false);
+    const [showTimeDropdown, setShowTimeDropdown] = useState(false);
+
+    useEffect(() => {
+        if (!patient?._id) return;
+
+        console.log("Frontend Selected Date Value:", form.appointmentDate);
+
+        clinicAPI.checkFeeWaiver(patient._id, form.appointmentDate)
+            .then(r => {
+                console.log("Waiver API Response:", r);
+                if (r.success && r.waived) {
+                    setFeeWaived(true);
+                    setWaiverMessage(r.message || 'Registration fee waived');
+                    setForm(f => ({ ...f, amount: '0', paymentMethod: 'Free' }));
+                } else {
+                    setFeeWaived(false);
+                    setWaiverMessage('');
+                    // Forcefully reset the fee back to the clinic's default if waiver is false
+                    setForm(prev => ({ 
+                        ...prev, 
+                        amount: String(defaultFee || 0), 
+                        paymentMethod: 'Cash' 
+                    }));
+                }
+            })
+            .catch(err => {
+                console.error('Waiver check error:', err);
+            });
+    }, [patient, form.appointmentDate, defaultFee]);
+
+    // Fetch appointments for selected date to find booked time slots
+    useEffect(() => {
+        const dateStr = form.appointmentDate || getTodayString();
+        clinicAPI.getAppointments(dateStr)
+            .then(r => {
+                if (r.success) {
+                    const booked = r.appointments
+                        .filter(a => a.status !== 'cancelled' && a.appointmentTime)
+                        .map(a => a.appointmentTime);
+                    setBookedSlots(booked);
+                }
+            })
+            .catch(err => console.error('Error fetching booked slots:', err));
+    }, [form.appointmentDate]);
+
+    const isSlotDisabled = (time) => {
+        if (bookedSlots.includes(time)) return true;
+        const selectedDate = form.appointmentDate || getTodayString();
+        const todayDate = getTodayString();
+        if (selectedDate === todayDate) {
+            const now = new Date();
+            const currentHour = now.getHours();
+            const currentMinute = now.getMinutes();
+            const [sh, sm] = time.split(':').map(Number);
+            if (sh < currentHour || (sh === currentHour && sm <= currentMinute)) {
+                return true;
+            }
+        }
+        return false;
+    };
+
+    const fee = Number(form.amount) || 0;
+    const isUpi = form.paymentMethod === 'UPI';
+    const isCard = form.paymentMethod === 'Card';
+    // Date and time slot are required (time slot only for slot mode)
+    const canSubmit = !booking && (fee === 0 || form.paymentMethod) && form.appointmentDate && (!isSlotMode || form.appointmentTime);
+
+    const normalizedService = (form.serviceName || '').toLowerCase().replace(/[\s-]/g, '');
+    const isFollowUp = normalizedService.includes('followup');
+    const isFixedFee = isFollowUp || feeWaived;
+    
+    console.log("DEBUG: feeWaived variable is currently:", feeWaived);
+
+    const submit = async (e) => {
+        e.preventDefault();
+        if (!form.appointmentDate) { flash('error', 'Please select an appointment date'); return; }
+        if (isSlotMode && !form.appointmentTime) { flash('error', 'Please select an appointment time'); return; }
+        if (fee > 0 && !form.paymentMethod) { flash('error', 'Select a payment method to collect the fee'); return; }
+        setBooking(true);
+        try {
+            // If UPI screenshot selected, upload it first
+            let upiScreenshotUrl = null;
+            if (isUpi && form.upiScreenshot) {
+                const fd = new FormData();
+                fd.append('images', form.upiScreenshot);
+                try {
+                    const ur = await uploadAPI.uploadImages(fd);
+                    if (ur.success && ur.urls?.length) upiScreenshotUrl = ur.urls[0];
+                } catch (_) { /* screenshot upload is optional; proceed without it */ }
+            }
+
+            const payload = {
+                patientId: patient._id,
+                amount: fee,
+                serviceName: form.serviceName,
+                notes: form.notes,
+                paymentMethod: fee > 0 ? form.paymentMethod : 'Free',
+                appointmentDate: form.appointmentDate || getTodayString(),
+                ...(isSlotMode && { appointmentTime: form.appointmentTime }),
+                ...(form.cardRef && { cardRef: form.cardRef }),
+                ...(upiScreenshotUrl && { upiScreenshotUrl }),
+            };
+
+            const r = await clinicAPI.bookAppointment(payload);
+            if (r.success) {
+                if (isSlotMode) {
+                    flash('success', `✅ Payment collected. Appointment at ${form.appointmentTime} confirmed for ${patient.name}`);
+                } else {
+                    flash('success', `✅ Payment collected. Token #${r.appointment.tokenNumber} assigned to ${patient.name}`);
+                    try {
+                        const pdf = generateTokenReceiptPDF(patient, r.appointment);
+                        if (setPendingDownload) {
+                            setPendingDownload({ doc: pdf.doc, filename: pdf.filename, title: 'Token Receipt' });
+                        }
+                    } catch (pdfErr) { console.error('PDF generation error:', pdfErr); }
+                }
+                onBook();
+            } else flash('error', r.message);
+        } catch (e) { flash('error', e.response?.data?.message || e.message); }
+        finally { setBooking(false); }
+    };
+
+    // Generate 30-minute time slots 07:00–20:00
+    const timeSlots = [];
+    for (let h = 7; h <= 20; h++) {
+        timeSlots.push(`${String(h).padStart(2, '0')}:00`);
+        if (h < 20) timeSlots.push(`${String(h).padStart(2, '0')}:30`);
+    }
+
+    const borderColor = isSlotMode ? '#bfdbfe' : '#bbf7d0';
+    const bgColor = isSlotMode ? '#eff6ff' : '#f0fdf4';
+
+    console.log("DEBUG: Raw Service Name from form object:", form.serviceName);
+    console.log("DEBUG: Normalized Service Name:", (form.serviceName || '').toLowerCase().replace(/[\s-]/g, ''));
+    console.log("DEBUG: Entire Form Object:", form);
+    console.log('Is Fee Fixed?', isFixedFee);
+
+    return (
+        <form onSubmit={submit} style={{ background: bgColor, border: `1px solid ${borderColor}`, borderRadius: '10px', padding: '14px 16px', marginTop: '8px' }}>
+            {/* Payment notice */}
+            <div style={{ fontSize: '12px', color: '#0369a1', background: '#e0f2fe', border: '1px solid #bae6fd', borderRadius: '6px', padding: '6px 10px', marginBottom: '10px', display: 'flex', alignItems: 'center', gap: '6px' }}>
+                
+                <span><strong>Payment is collected upfront.</strong> Token / appointment is confirmed only after fee is paid.</span>
+            </div>
+
+            {feeWaived && (
+                <div style={{ fontSize: '12.5px', color: '#16a34a', background: '#f0fdf4', border: '1.5px solid #bbf7d0', borderRadius: '6px', padding: '8px 12px', marginBottom: '12px', display: 'flex', alignItems: 'center', gap: '8px', fontWeight: 'bold' }}>
+                    
+                    <span>{waiverMessage}</span>
+                </div>
+            )}
+
+            <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                <div style={{ flex: '2', minWidth: '150px' }}>
+                    <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Service</label>
+                    <input className="clinic-input" placeholder="General Consultation" value={form.serviceName}
+                        disabled={true} style={{ opacity: 0.7, cursor: 'not-allowed', background: '#f1f5f9' }} />
+                </div>
+
+                <div style={{ flex: '1', minWidth: '160px' }}>
+                    <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Date *</label>
+                    <MobileDatePicker className="clinic-input" min={getTodayString()} value={form.appointmentDate}
+                        onChange={e => setForm(f => ({ ...f, appointmentDate: e.target.value, appointmentTime: '' }))} required placeholder="Select Date" />
+                </div>
+
+                {isSlotMode && (
+                    <div style={{ flex: '1', minWidth: '120px' }}>
+                        <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Time Slot *</label>
+                        <select className="clinic-input hide-on-mobile" value={form.appointmentTime} onChange={e => setForm(f => ({ ...f, appointmentTime: e.target.value }))} required>
+                            <option value="">Select time…</option>
+                            {timeSlots.map(t => {
+                                const disabled = isSlotDisabled(t);
+                                return (
+                                    <option key={t} value={t} disabled={disabled}>
+                                        {t} {disabled ? ' (Unavailable)' : ''}
+                                    </option>
+                                );
+                            })}
+                        </select>
+                        <div className="clinic-custom-month-dropdown show-on-mobile" style={{ width: '100%' }}>
+                            <div className="custom-dropdown-selected" onClick={() => setShowTimeDropdown(!showTimeDropdown)}>
+                                {form.appointmentTime || 'Select time…'} <span>▼</span>
+                            </div>
+                            {showTimeDropdown && (
+                                <div className="custom-dropdown-options" style={{ width: '100%', zIndex: 100, maxHeight: '200px', overflowY: 'auto' }}>
+                                    {timeSlots.map(t => {
+                                        const disabled = isSlotDisabled(t);
+                                        return (
+                                            <div 
+                                                key={t} 
+                                                className="custom-dropdown-option" 
+                                                style={{ opacity: disabled ? 0.5 : 1, cursor: disabled ? 'not-allowed' : 'pointer', background: disabled ? '#f8fafc' : '' }}
+                                                onClick={() => {
+                                                    if (!disabled) {
+                                                        setForm(f => ({ ...f, appointmentTime: t })); 
+                                                        setShowTimeDropdown(false);
+                                                    }
+                                                }}>
+                                                {t} {disabled ? ' (Unavailable)' : ''}
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    </div>
+                )}
+
+                <div style={{ flex: '1', minWidth: '90px' }}>
+                    <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Fee (₹) *</label>
+                    <input className="clinic-input bg-gray-100 cursor-not-allowed" type="number" min="0" placeholder="0" 
+                        value={form.amount}
+                        disabled={true}
+                        style={{ opacity: 0.7, cursor: 'not-allowed' }} />
+                </div>
+
+                <div style={{ flex: '1', minWidth: '100px' }}>
+                    <label style={{ fontSize: '11px', color: fee > 0 ? '#dc2626' : '#64748b', display: 'block', marginBottom: '3px', fontWeight: fee > 0 ? 700 : 400 }}>
+                        Payment Method {fee > 0 ? '*' : ''}
+                    </label>
+                    <select className="clinic-input hide-on-mobile" value={form.paymentMethod}
+                        disabled={feeWaived}
+                        onChange={e => setForm(f => ({ ...f, paymentMethod: e.target.value, upiScreenshot: null, cardRef: '' }))}
+                        style={{ borderColor: fee > 0 && !form.paymentMethod ? '#dc2626' : '' }}>
+                        <option value="Cash">Cash</option>
+                        <option value="UPI">UPI</option>
+                        <option value="Card">Card</option>
+                        {feeWaived && <option value="Free">Free</option>}
+                    </select>
+                    
+                    <div className="clinic-custom-month-dropdown show-on-mobile" style={{ width: '100%' }}>
+                        <div className="custom-dropdown-selected" 
+                            onClick={() => !feeWaived && setShowPaymentDropdown(!showPaymentDropdown)}
+                            style={{ 
+                                borderColor: fee > 0 && !form.paymentMethod ? '#dc2626' : '',
+                                background: feeWaived ? '#f1f5f9' : '#fff',
+                                cursor: feeWaived ? 'not-allowed' : 'pointer',
+                                opacity: feeWaived ? 0.7 : 1
+                            }}>
+                            {form.paymentMethod || 'Select Payment'} <span>▼</span>
+                        </div>
+                        {showPaymentDropdown && !feeWaived && (
+                            <div className="custom-dropdown-options" style={{ width: '100%', zIndex: 100 }}>
+                                {['Cash', 'UPI', 'Card'].map(m => (
+                                    <div key={m} className="custom-dropdown-option" onClick={() => { setForm(f => ({ ...f, paymentMethod: m, upiScreenshot: null, cardRef: '' })); setShowPaymentDropdown(false); }}>
+                                        {m}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* UPI screenshot upload */}
+                {fee > 0 && isUpi && (
+                    <div style={{ flex: '2', minWidth: '160px' }}>
+                        <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>UPI Screenshot (optional)</label>
+                        <input type="file" accept="image/*" className="clinic-input" style={{ padding: '4px 6px' }}
+                            onChange={e => setForm(f => ({ ...f, upiScreenshot: e.target.files[0] || null }))} />
+                        {form.upiScreenshot && <span style={{ fontSize: '11px', color: '#16a34a' }}>✓ {form.upiScreenshot.name}</span>}
+                    </div>
+                )}
+
+                {/* Card reference number */}
+                {fee > 0 && isCard && (
+                    <div style={{ flex: '1', minWidth: '130px' }}>
+                        <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Card Last 4 / Reference</label>
+                        <input className="clinic-input" placeholder="e.g. 4242" maxLength={20} value={form.cardRef}
+                            onChange={e => setForm(f => ({ ...f, cardRef: e.target.value }))} />
+                    </div>
+                )}
+
+
+                <div style={{ display: 'flex', gap: '6px' }}>
+                    <button type="submit" className="clinic-btn-primary" disabled={!canSubmit}
+                        style={{ whiteSpace: 'nowrap', padding: '8px 16px', opacity: canSubmit ? 1 : 0.6 }}>
+                        {booking ? '...' : isSlotMode
+                            ? `Pay${fee > 0 ? ` ₹${fee}` : ''} & Book Slot`
+                            : `Pay${fee > 0 ? ` ₹${fee}` : ''} & Assign Token`}
+                    </button>
+                    <button type="button" className="clinic-btn-secondary" onClick={onCancel} style={{ padding: '8px 12px' }}>✕</button>
+                </div>
+            </div>
+        </form>
+    );
+};
+
+const ReceptionMode = ({ preselectedPatient, clearPreselected, setPendingDownload }) => {
+    const [appointments, setAppointments] = useState([]);
+    const [patients, setPatients] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [search, setSearch] = useState('');
+    const [searching, setSearching] = useState(false);
+    const [assigningFor, setAssigningFor] = useState(preselectedPatient?._id || null);
+    const [msg, setMsg] = useState({ type: '', text: '' });
+    // Clinic appointment mode and defaults (fetched from config)
+    const [appointmentMode, setAppointmentMode] = useState('token');
+    const [defaultFee, setDefaultFee] = useState(0);
+    const [defaultServiceName, setDefaultServiceName] = useState('General Consultation');
+    // Quick register state
+    const [showQuickReg, setShowQuickReg] = useState(false);
+    const [qrForm, setQrForm] = useState({ name: '', phone: '', email: '', age: '', gender: 'Male' });
+    const [qrSaving, setQrSaving] = useState(false);
+    const [showQRGender, setShowQRGender] = useState(false);
+
+    const flash = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 4000); };
+    const today = todayStr();
+    const isSlotMode = appointmentMode === 'slot';
+
+    const loadAll = useCallback(() => {
+        setLoading(true);
+        Promise.all([
+            clinicAPI.getPatients(search),
+            clinicAPI.getAppointments(today),
+        ]).then(([pr, ar]) => {
+            if (pr.success) setPatients(pr.patients);
+            if (ar.success) setAppointments(ar.appointments);
+        }).catch(console.error).finally(() => setLoading(false));
+    }, [today]); // eslint-disable-line
+
+    useEffect(() => {
+        clinicAPI.getConfig().then(r => {
+            if (r.success) {
+                setAppointmentMode(r.appointmentMode || 'token');
+                setDefaultFee(r.defaultFee ?? 0);
+                setDefaultServiceName(r.defaultServiceName || 'General Consultation');
+            }
+        }).catch(() => { });
+    }, []);
+
+    useEffect(() => { loadAll(); }, [loadAll]);
+
+    useEffect(() => {
+        if (preselectedPatient) setAssigningFor(preselectedPatient._id);
+    }, [preselectedPatient]);
+
+    useEffect(() => {
+        const timer = setTimeout(() => {
+            setSearching(true);
+            clinicAPI.getPatients(search)
+                .then(r => { if (r.success) setPatients(r.patients); })
+                .finally(() => setSearching(false));
+        }, 200);
+        return () => clearTimeout(timer);
+    }, [search]);
+
+    const handleSearch = () => {
+        setSearching(true);
+        clinicAPI.getPatients(search)
+            .then(r => { if (r.success) setPatients(r.patients); })
+            .finally(() => setSearching(false));
+    };
+
+    const handleQuickRegister = async (e) => {
+        e.preventDefault();
+        setQrSaving(true);
+        try {
+            const r = await clinicAPI.registerPatient(qrForm);
+            if (r.success) {
+                setPatients(prev => r.existing ? prev : [r.patient, ...prev]);
+                setAssigningFor(r.patient._id);
+                setShowQuickReg(false);
+                setQrForm({ name: '', phone: '', email: '', age: '', gender: 'Male' });
+                if (clearPreselected) clearPreselected();
+                flash('success', `${r.existing ? 'Found' : 'Registered'}: ${r.patient.patientUid} — ${isSlotMode ? 'book an appointment below.' : 'assign a token below.'}`);
+            } else flash('error', r.message);
+        } catch (e) { flash('error', e.response?.data?.message || e.message); }
+        finally { setQrSaving(false); }
+    };
+
+    const cancelAppt = async (id) => {
+        if (!(await confirmToast(isSlotMode ? 'Cancel this appointment?' : 'Cancel this token?', { title: 'Cancel Appointment' }))) return;
+        try {
+            await clinicAPI.cancelAppointment(id);
+            setAppointments(prev => prev.map(a => a._id === id ? { ...a, status: 'cancelled' } : a));
+        } catch (e) { flash('error', e.message); }
+    };
+
+    // Map clinicPatientId._id → today's appointment (any status)
+    const todayApptMap = {};
+    appointments.forEach(a => {
+        const pid = a.clinicPatientId?._id || a.clinicPatientId;
+        if (pid) todayApptMap[pid.toString()] = a;
+    });
+
+    const activeTokens = appointments.filter(a => a.status === 'confirmed' || a.status === 'pending');
+    const doneToday = appointments.filter(a => a.status === 'completed');
+
+    // Merge: patients with active token shown first, followed by all other matching patients (so no patient is hidden)
+    const withToken = patients.filter(p => todayApptMap[p._id] && ['confirmed', 'pending'].includes(todayApptMap[p._id]?.status));
+    const withoutToken = patients.filter(p => !todayApptMap[p._id] || !['confirmed', 'pending'].includes(todayApptMap[p._id]?.status));
+    const displayList = [...withToken, ...withoutToken];
+
+    return (
+        <div>
+            {msg.text && <div className={`clinic-msg clinic-msg-${msg.type}`}>{msg.text}</div>}
+
+            {/* ── Header + search ── */}
+            <div className="clinic-card" style={{ marginBottom: '14px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                    <div>
+                        <h3 style={{ margin: 0 }}>Reception — {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'short' })}</h3>
+                        <p style={{ color: '#64748b', fontSize: '12px', margin: '3px 0 0' }}>
+                            {activeTokens.length} {isSlotMode ? 'scheduled' : 'in queue'} · {doneToday.length} done today · {patients.length} total patients
+                            <span style={{ marginLeft: '8px', background: isSlotMode ? '#dbeafe' : '#fef3c7', color: isSlotMode ? '#1d4ed8' : '#92400e', padding: '1px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 700 }}>
+                                {isSlotMode ? 'Time Slots' : 'Tokens'}
+                            </span>
+                        </p>
+                    </div>
+                    <button className="clinic-btn-secondary" style={{ fontSize: '12px' }} onClick={loadAll}>↻ Refresh</button>
+                </div>
+                <div style={{ display: 'flex', gap: '8px' }}>
+                    <input className="clinic-input" style={{ flex: 1 }} placeholder="Search patient by name, phone, patient ID or Aadhaar..."
+                        value={search} onChange={e => setSearch(e.target.value)} onKeyDown={e => e.key === 'Enter' && handleSearch()} />
+                    <button className="clinic-btn-secondary" onClick={handleSearch} disabled={searching}>{searching ? '...' : 'Search'}</button>
+                    <button className="clinic-btn-primary" onClick={() => { setShowQuickReg(!showQuickReg); }}
+                        style={{ whiteSpace: 'nowrap', padding: '8px 14px', fontSize: '13px' }}>
+                        + New Patient
+                    </button>
+                </div>
+
+                {/* Quick register inline */}
+                {showQuickReg && (
+                    <div style={{ marginTop: '12px', border: '1px solid #c7d2fe', borderRadius: '10px', padding: '14px 16px', background: '#fafbff' }}>
+                        <div style={{ fontWeight: 700, fontSize: '13px', marginBottom: '10px', color: '#6366f1' }}>Quick Register New Patient</div>
+                        <form onSubmit={handleQuickRegister} style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', alignItems: 'flex-end' }}>
+                            <div style={{ flex: '2', minWidth: '140px' }}>
+                                <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Full Name *</label>
+                                <input className="clinic-input" placeholder="Patient name" value={qrForm.name}
+                                    onChange={e => setQrForm(f => ({ ...f, name: e.target.value }))} required />
+                            </div>
+                            <div style={{ flex: '1', minWidth: '130px' }}>
+                                <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Phone *</label>
+                                <input className="clinic-input" type="tel" placeholder="10-digit number" maxLength={10}
+                                    value={qrForm.phone}
+                                    onChange={e => setQrForm(f => ({ ...f, phone: e.target.value.replace(/\D/g, '').slice(0, 10) }))} required  pattern="\d{10}"  title="Phone number must be exactly 10 digits" />
+                            </div>
+                            <div style={{ flex: '1', minWidth: '60px' }}>
+                                <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Age *</label>
+                                <input className="clinic-input" type="text" placeholder="Age" maxLength={3}
+                                    value={qrForm.age || ''}
+                                    onChange={e => setQrForm(f => ({ ...f, age: e.target.value.replace(/\D/g, '').slice(0, 3) }))} required pattern="^[1-9]\d{0,2}$" title="Age must be a positive number up to 3 digits" />
+                            </div>
+                            <div style={{ flex: '1', minWidth: '120px' }}>
+                                <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Email *</label>
+                                <input className="clinic-input" type="email" placeholder="Email" value={qrForm.email || ''}
+                                    onChange={e => setQrForm(f => ({ ...f, email: e.target.value }))} required />
+                            </div>
+                            <div style={{ flex: '1', minWidth: '100px' }}>
+                                <label style={{ fontSize: '11px', color: '#64748b', display: 'block', marginBottom: '3px' }}>Gender</label>
+                                <select className="clinic-input hide-on-mobile" value={qrForm.gender} onChange={e => setQrForm(f => ({ ...f, gender: e.target.value }))}>
+                                    <option>Male</option><option>Female</option><option>Other</option>
+                                </select>
+                                
+                                <div className="clinic-custom-month-dropdown show-on-mobile" style={{ width: '100%' }}>
+                                    <div className="custom-dropdown-selected" onClick={() => setShowQRGender(!showQRGender)}>
+                                        {qrForm.gender || 'Select'} <span>▼</span>
+                                    </div>
+                                    {showQRGender && (
+                                        <div className="custom-dropdown-options" style={{ width: '100%', zIndex: 100 }}>
+                                            {['Male', 'Female', 'Other'].map(g => (
+                                                <div key={g} className="custom-dropdown-option" onClick={() => { setQrForm(f => ({ ...f, gender: g })); setShowQRGender(false); }}>
+                                                    {g}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            <div style={{ display: 'flex', gap: '6px' }}>
+                                <button type="submit" className="clinic-btn-primary" disabled={qrSaving} style={{ whiteSpace: 'nowrap' }}>
+                                    {qrSaving ? '...' : isSlotMode ? '✅ Register & Book' : '✅ Register & Assign Token'}
+                                </button>
+                                <button type="button" className="clinic-btn-secondary" onClick={() => setShowQuickReg(false)}>Cancel</button>
+                            </div>
+                        </form>
+                    </div>
+                )}
+            </div>
+
+            {/* ── Patient list with inline token assignment ── */}
+            {loading ? <Spinner /> : displayList.length === 0 ? (
+                <Empty text="No patients found. Register your first patient." />
+            ) : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    {displayList.map(p => {
+                        const appt = todayApptMap[p._id];
+                        const hasToken = appt && (appt.status === 'confirmed' || appt.status === 'pending');
+                        const isDone = appt && appt.status === 'completed';
+                        const isExpanding = assigningFor === p._id;
+
+                        return (
+                            <div key={p._id} style={{
+                                border: hasToken ? '1px solid #bbf7d0' : '1px solid #e2e8f0',
+                                borderRadius: '10px',
+                                padding: '12px 16px',
+                                background: hasToken ? '#f0fdf4' : isDone ? '#f8fafc' : '#fff',
+                            }}>
+                                <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                    <div className="clinic-avatar-sm" style={{ flexShrink: 0 }}>{p.name?.charAt(0)?.toUpperCase()}</div>
+                                    <div style={{ flex: 1, minWidth: 0 }}>
+                                        <div style={{ fontWeight: 700, fontSize: '14px' }}>{p.name}</div>
+                                        <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                            <span style={{ background: '#eef2ff', color: '#6366f1', padding: '1px 6px', borderRadius: '4px', fontWeight: 700, fontSize: '11px', marginRight: '6px' }}>{p.patientUid}</span>
+                                            {p.phone}
+                                            {p.gender && ` · ${p.gender}`}
+                                            {p.bloodGroup && <span style={{ marginLeft: '6px', background: '#fee2e2', color: '#dc2626', padding: '1px 5px', borderRadius: '3px', fontSize: '11px', fontWeight: 600 }}>🩸 {p.bloodGroup}</span>}
+                                        </div>
+                                    </div>
+                                    <div style={{ display: 'flex', gap: '6px', alignItems: 'center', flexShrink: 0 }}>
+                                        {hasToken && (
+                                            <>
+                                                {isSlotMode ? (
+                                                    <span style={{ background: '#3b82f6', color: '#fff', fontWeight: 800, padding: '4px 12px', borderRadius: '6px', fontSize: '13px' }}>
+                                                        {appt.appointmentTime}
+                                                    </span>
+                                                ) : (
+                                                    <span style={{ background: '#6366f1', color: '#fff', fontWeight: 800, padding: '4px 12px', borderRadius: '6px', fontSize: '14px' }}>
+                                                        #{appt.tokenNumber}
+                                                    </span>
+                                                )}
+                                                <StatusBadge status={appt.status} />
+                                                <button className="clinic-btn-remove" onClick={() => cancelAppt(appt._id)}>✕</button>
+                                            </>
+                                        )}
+                                        {isDone && <span style={{ background: '#dcfce7', color: '#16a34a', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 600 }}>✅ Visited Today</span>}
+                                        {!hasToken && (
+                                            <button className="clinic-btn-primary" style={{ fontSize: '12px', padding: '6px 14px', whiteSpace: 'nowrap' }}
+                                                onClick={() => setAssigningFor(isExpanding ? null : p._id)}>
+                                                {isExpanding ? '✕ Cancel' : isDone ? 'Rebook / Assign Token' : isSlotMode ? 'Book Slot' : 'Assign Token'}
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+                                {isExpanding && !hasToken && (
+                                    <BookTokenForm
+                                        patient={p}
+                                        mode={appointmentMode}
+                                        flash={flash}
+                                        defaultFee={defaultFee}
+                                        defaultServiceName={defaultServiceName}
+                                        setPendingDownload={setPendingDownload}
+                                        onBook={() => { setAssigningFor(null); if (clearPreselected) clearPreselected(); loadAll(); }}
+                                        onCancel={() => { setAssigningFor(null); if (clearPreselected) clearPreselected(); }}
+                                    />
+                                )}
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════
+// MEDICINE TABLE — prescription editor with per-row autocomplete
+// ═══════════════════════════════════════════════════
+const MedicineTable = ({ rx, setRx, inventory }) => {
+    // Track which row has an open suggestion dropdown, and the live search per row
+    const [activeRow, setActiveRow] = useState(null); // index of focused row
+    const [rowSearch, setRowSearch] = useState({}); // { [idx]: searchString }
+
+    const getSuggestions = (idx) => {
+        const q = (rowSearch[idx] ?? (rx.medicines[idx]?.name || rx.medicines[idx]?.medicineName) ?? '').trim().toLowerCase();
+        if (!q || q.length < 1) return [];
+        return inventory.filter(inv => inv.name.toLowerCase().includes(q)).slice(0, 8);
+    };
+
+    const selectSuggestion = (idx, med) => {
+        setRx(r => {
+            const ms = [...r.medicines];
+            ms[idx] = { ...ms[idx], name: med.name, medicineName: med.name };
+            return { ...r, medicines: ms };
+        });
+        setRowSearch(prev => ({ ...prev, [idx]: med.name }));
+        setActiveRow(null);
+    };
+
+    const handleNameChange = (idx, value) => {
+        setRowSearch(prev => ({ ...prev, [idx]: value }));
+        setRx(r => { const ms = [...r.medicines]; ms[idx] = { ...ms[idx], name: value }; return { ...r, medicines: ms }; });
+        setActiveRow(idx);
+    };
+
+    const handleNameBlur = (idx) => {
+        // Small delay so click on suggestion registers first
+        setTimeout(() => setActiveRow(prev => prev === idx ? null : prev), 150);
+    };
+
+    const inputStyle = { width: '100%', border: '1px solid #e2e8f0', borderRadius: '5px', padding: '5px 7px', fontSize: '12px', boxSizing: 'border-box' };
+
+    return (
+        <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'visible' }}>
+            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                <thead>
+                    <tr style={{ background: '#f1f5f9' }}>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: '#374151', borderBottom: '1px solid #e2e8f0', width: '32%' }}>Medicine Name</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: '#374151', borderBottom: '1px solid #e2e8f0', width: '23%' }}>Salt / Generic</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: '#374151', borderBottom: '1px solid #e2e8f0', width: '25%' }}>Dose / Frequency</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'left', fontWeight: 700, color: '#374151', borderBottom: '1px solid #e2e8f0', width: '12%' }}>Days</th>
+                        <th style={{ padding: '8px 10px', textAlign: 'center', fontWeight: 700, color: '#374151', borderBottom: '1px solid #e2e8f0', width: '8%' }}></th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {rx.medicines.map((m, idx) => {
+                        const displayVal = rowSearch[idx] !== undefined ? rowSearch[idx] : (m.name || m.medicineName || '');
+                        const suggestions = getSuggestions(idx);
+                        const showDropdown = activeRow === idx && suggestions.length > 0;
+                        return (
+                            <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                                {/* Medicine Name with autocomplete dropdown */}
+                                <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', position: 'relative', overflow: 'visible' }}>
+                                    <input
+                                        value={displayVal}
+                                        onChange={e => handleNameChange(idx, e.target.value)}
+                                        onFocus={() => { setActiveRow(idx); }}
+                                        onBlur={() => handleNameBlur(idx)}
+                                        placeholder="Type to search medicine…"
+                                        style={{ ...inputStyle, borderColor: showDropdown ? '#6366f1' : '#e2e8f0' }}
+                                        autoComplete="off"
+                                    />
+                                    {showDropdown && (
+                                        <div style={{
+                                            position: 'absolute', top: '100%', left: '8px', right: '8px', zIndex: 999,
+                                            background: '#fff', border: '1px solid #6366f1', borderRadius: '6px',
+                                            boxShadow: '0 4px 16px rgba(99,102,241,0.15)', overflow: 'hidden',
+                                        }}>
+                                            {suggestions.map((med, si) => (
+                                                <div
+                                                    key={med._id}
+                                                    onMouseDown={() => selectSuggestion(idx, med)}
+                                                    style={{
+                                                        padding: '8px 12px', cursor: 'pointer', fontSize: '13px',
+                                                        borderBottom: si < suggestions.length - 1 ? '1px solid #f1f5f9' : 'none',
+                                                        background: 'transparent',
+                                                        display: 'flex', alignItems: 'center', gap: '8px',
+                                                    }}
+                                                    onMouseEnter={e => e.currentTarget.style.background = '#eff6ff'}
+                                                    onMouseLeave={e => e.currentTarget.style.background = 'transparent'}
+                                                >
+                                                    
+                                                    <div>
+                                                        <div style={{ fontWeight: 600, color: '#1e293b' }}>{med.name}</div>
+                                                        {med.category && <div style={{ fontSize: '11px', color: '#94a3b8' }}>{med.category} · {med.unit || ''}</div>}
+                                                    </div>
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </td>
+                                <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                                    <input
+                                        value={m.saltName || ''}
+                                        onChange={e => setRx(r => { const ms = [...r.medicines]; ms[idx] = { ...ms[idx], saltName: e.target.value }; return { ...r, medicines: ms }; })}
+                                        placeholder="e.g. Paracetamol"
+                                        style={inputStyle}
+                                    />
+                                </td>
+                                <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                                    <input
+                                        value={m.dose || m.dosage || ''}
+                                        onChange={e => setRx(r => { const ms = [...r.medicines]; ms[idx] = { ...ms[idx], dose: e.target.value }; return { ...r, medicines: ms }; })}
+                                        placeholder="e.g. 1 OD / 1 BD"
+                                        style={inputStyle}
+                                    />
+                                </td>
+                                <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                                    <input
+                                        value={m.days || m.duration || ''}
+                                        onChange={e => setRx(r => { const ms = [...r.medicines]; ms[idx] = { ...ms[idx], days: e.target.value }; return { ...r, medicines: ms }; })}
+                                        placeholder="e.g. 5"
+                                        style={inputStyle}
+                                    />
+                                </td>
+                                <td style={{ padding: '6px 8px', textAlign: 'center', borderBottom: '1px solid #f1f5f9' }}>
+                                    <button
+                                        type="button"
+                                        onClick={() => {
+                                            setRx(r => ({ ...r, medicines: r.medicines.filter((_, i) => i !== idx) }));
+                                            setRowSearch(prev => {
+                                                const next = { ...prev };
+                                                delete next[idx];
+                                                return next;
+                                            });
+                                        }}
+                                        style={{ background: '#fee2e2', border: 'none', borderRadius: '4px', color: '#dc2626', width: '24px', height: '24px', cursor: 'pointer', fontSize: '14px', display: 'inline-flex', alignItems: 'center', justifyContent: 'center' }}
+                                    >×</button>
+                                </td>
+                            </tr>
+                        );
+                    })}
+                    {rx.medicines.length === 0 && (
+                        <tr>
+                            <td colSpan={5} style={{ padding: '16px', textAlign: 'center', color: '#94a3b8', fontSize: '13px' }}>
+                                No medicines added. Click "+ Add Row" to start prescribing.
+                            </td>
+                        </tr>
+                    )}
+                </tbody>
+            </table>
+        </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════
+// DOCTOR MODE
+// ═══════════════════════════════════════════════════
+const DoctorMode = ({ setPendingDownload }) => {
+    const [tab, setTab] = useState('staff'); // 'staff' | 'queue'
+    const [staff, setStaff] = useState([]);
+    const [staffLoading, setStaffLoading] = useState(true);
+    const [appointments, setAppointments] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [consulting, setConsulting] = useState(null);
+    const [rx, setRx] = useState({ diagnosis: '', notes: '', labTests: '', medicines: [] });
+    const [vitals, setVitals] = useState({ weight: '', height: '', bmi: '', bp: '', temperature: '', pulse: '', spo2: '', rr: '' });
+    const [showVitals, setShowVitals] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [msg, setMsg] = useState({ type: '', text: '' });
+    const [inventory, setInventory] = useState([]);
+    const [analytics, setAnalytics] = useState(null);
+    const [patientHistory, setPatientHistory] = useState([]);
+    const [historyLoading, setHistoryLoading] = useState(false);
+    const [showHistory, setShowHistory] = useState(false);
+
+    const flash = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 4000); };
+
+    const loadToday = () => {
+        setLoading(true);
+        clinicAPI.getAppointments(todayStr())
+            .then(r => { if (r.success) setAppointments(r.appointments); })
+            .catch(console.error)
+            .finally(() => setLoading(false));
+    };
+
+    useEffect(() => {
+        clinicAPI.getStaff().then(r => { if (r.success) setStaff(r.staff || []); }).catch(() => {}).finally(() => setStaffLoading(false));
+        loadToday();
+        
+        clinicAPI.getInventory()
+            .then(invRes => {
+                const localList = invRes.success ? (invRes.inventory || []) : [];
+                setInventory(localList);
+            })
+            .catch(() => {});
+
+        clinicAPI.getStats().then(r => { if (r.success) setAnalytics(r.stats); }).catch(() => { });
+    }, []);
+
+    const openConsult = (appt) => {
+        setConsulting(appt);
+        setShowHistory(false);
+        setPatientHistory([]);
+        setShowVitals(true);
+        setRx({
+            diagnosis: appt.diagnosis || '',
+            notes: appt.doctorNotes || '',
+            labTests: (appt.labTests || []).join(', '),
+            medicines: appt.pharmacy || [],
+        });
+        setVitals({
+            weight: appt.vitals?.weight || '',
+            height: appt.vitals?.height || '',
+            bmi: appt.vitals?.bmi || '',
+            bp: appt.vitals?.bp || '',
+            temperature: appt.vitals?.temperature || '',
+            pulse: appt.vitals?.pulse || '',
+            spo2: appt.vitals?.spo2 || '',
+            rr: appt.vitals?.rr || '',
+        });
+        if (appt.clinicPatientId?._id) {
+            setHistoryLoading(true);
+            clinicAPI.getPatientHistory(appt.clinicPatientId._id)
+                .then(r => { if (r.success) setPatientHistory(r.appointments || []); })
+                .catch(() => { })
+                .finally(() => setHistoryLoading(false));
+        }
+    };
+
+
+    const handleVitalChange = (field, value) => {
+        setVitals(prev => {
+            const updated = { ...prev, [field]: value };
+            if ((field === 'weight' || field === 'height') && updated.weight && updated.height) {
+                const hM = parseFloat(updated.height) / 100;
+                if (hM > 0) updated.bmi = (parseFloat(updated.weight) / (hM * hM)).toFixed(1);
+            }
+            return updated;
+        });
+    };
+
+    const saveConsult = async () => {
+        setSaving(true);
+        try {
+            const labArr = rx.labTests.split(',').map(t => t.trim()).filter(Boolean);
+            const isEditing = consulting.status === 'completed';
+            
+            const payload = {
+                diagnosis: rx.diagnosis,
+                notes: rx.notes,
+                vitals,
+                medicines: rx.medicines.filter(m => (m.name || m.medicineName)?.trim()).map(m => ({
+                    name: (m.name || m.medicineName || '').trim(),
+                    saltName: (m.saltName || '').trim(),
+                    dose: (m.dose || m.dosage || '').trim(),
+                    days: (m.days || m.duration || '').trim(),
+                    medicineName: (m.name || m.medicineName || '').trim(),
+                    frequency: (m.dose || m.dosage || '').trim(),
+                    duration: (m.days || m.duration || '').trim(),
+                })),
+                labTests: labArr,
+            };
+
+            const r = isEditing
+                ? await clinicAPI.updateConsultation(consulting._id, payload)
+                : await clinicAPI.completeAppointment(consulting._id, payload);
+
+            if (r.success) {
+                flash('success', isEditing ? 'Consultation updated successfully.' : 'Consultation saved. Prescription generated.');
+                setConsulting(null);
+                loadToday();
+                try {
+                    const pdf = generatePrescriptionSlipPDF(consulting, rx, vitals);
+                    if (setPendingDownload) {
+                        setPendingDownload({ doc: pdf.doc, filename: pdf.filename, title: 'Prescription Slip' });
+                    }
+                } catch (pdfErr) { console.error('PDF generation error:', pdfErr); }
+            } else flash('error', r.message);
+        } catch (e) { flash('error', e.response?.data?.message || e.message); }
+        finally { setSaving(false); }
+    };
+
+    const pending = appointments.filter(a => a.status === 'confirmed' || a.status === 'pending');
+    const done = appointments.filter(a => a.status === 'completed');
+    const pastVisits = patientHistory.filter(h => h._id !== consulting?._id && h.status === 'completed');
+
+    if (consulting) return (
+        <div className="clinic-doctor-consult">
+            <button className="clinic-back-btn" onClick={() => setConsulting(null)}>← Back to Queue</button>
+            {msg.text && <div className={`clinic-msg clinic-msg-${msg.type}`} style={{ marginTop: '10px' }}>{msg.text}</div>}
+            <div className="clinic-card" style={{ marginTop: '12px' }}>
+                {/* Patient header */}
+                <div className="clinic-consult-header">
+                    <div className="clinic-avatar-lg">{(consulting.clinicPatientId?.name || '?').charAt(0)}</div>
+                    <div>
+                        <h3 style={{ margin: 0 }}>{consulting.clinicPatientId?.name || 'Patient'}</h3>
+                        <div style={{ fontSize: '13px', color: '#64748b' }}>
+                            {consulting.clinicPatientId?.patientUid || consulting.patientId} · Token #{consulting.tokenNumber} · {consulting.serviceName || 'General'}
+                            {consulting.clinicPatientId?.gender && ` · ${consulting.clinicPatientId.gender}`}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginTop: '4px', fontSize: '12px' }}>
+                            {consulting.clinicPatientId?.bloodGroup && <span style={{ background: '#fee2e2', color: '#dc2626', padding: '1px 7px', borderRadius: '4px', fontWeight: 600 }}>🩸 {consulting.clinicPatientId.bloodGroup}</span>}
+                            {consulting.clinicPatientId?.allergies && <span style={{ background: '#fef3c7', color: '#92400e', padding: '1px 7px', borderRadius: '4px' }}>Allergies: {consulting.clinicPatientId.allergies}</span>}
+                        </div>
+                        {consulting.notes && <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>Chief complaint: {consulting.notes}</div>}
+                        {consulting.clinicPatientId?.relatives?.length > 0 && (
+                            <div style={{ display: 'flex', gap: '6px', flexWrap: 'wrap', marginTop: '4px' }}>
+                                {consulting.clinicPatientId.relatives.map((rel, i) => (
+                                    <span key={i} style={{ fontSize: '11px', background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '4px', padding: '1px 8px', color: '#0369a1' }}>
+                                        {rel.name}{rel.relation ? ` (${rel.relation})` : ''}{rel.phone ? ` · ${rel.phone}` : ''}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                </div>
+
+                {/* Past Visits */}
+                {historyLoading ? (
+                    <div style={{ fontSize: '13px', color: '#94a3b8', marginBottom: '16px' }}>Loading visit history...</div>
+                ) : pastVisits.length > 0 && (
+                    <div style={{ marginBottom: '20px', border: '1px solid #e0e7ff', borderRadius: '10px', overflow: 'hidden' }}>
+                        <button
+                            onClick={() => setShowHistory(h => !h)}
+                            style={{ width: '100%', background: '#eef2ff', border: 'none', padding: '10px 16px', textAlign: 'left', cursor: 'pointer', fontWeight: 600, fontSize: '13px', color: '#4338ca', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                            <span>Past Visits ({pastVisits.length})</span>
+                            <span>{showHistory ? '▲' : '▼'}</span>
+                        </button>
+                        {showHistory && (
+                            <div style={{ background: '#f8faff', padding: '12px 16px', display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                                {pastVisits.map(v => (
+                                    <div key={v._id} style={{ borderLeft: '3px solid #a5b4fc', paddingLeft: '12px' }}>
+                                        <div style={{ fontSize: '12px', fontWeight: 700, color: '#6366f1' }}>{fmtDate(v.appointmentDate || v.createdAt)}</div>
+                                        {v.vitals && Object.values(v.vitals).some(x => x) && (
+                                            <div style={{ fontSize: '11px', color: '#0369a1', marginTop: '2px', display: 'flex', gap: '8px', flexWrap: 'wrap' }}>
+                                                {v.vitals.weight && <span>Wt: <b>{v.vitals.weight}kg</b></span>}
+                                                {v.vitals.bp && <span>BP: <b>{v.vitals.bp}</b></span>}
+                                                {v.vitals.temperature && <span>Temp: <b>{v.vitals.temperature}°F</b></span>}
+                                                {v.vitals.pulse && <span>Pulse: <b>{v.vitals.pulse}bpm</b></span>}
+                                                {v.vitals.spo2 && <span>SpO₂: <b>{v.vitals.spo2}%</b></span>}
+                                            </div>
+                                        )}
+                                        {v.diagnosis && <div style={{ fontSize: '13px', color: '#1e293b', marginTop: '2px' }}><strong>Dx:</strong> {v.diagnosis}</div>}
+                                        {v.doctorNotes && <div style={{ fontSize: '12px', color: '#475569' }}><strong>Notes:</strong> {v.doctorNotes}</div>}
+                                        {(v.pharmacy || []).length > 0 && (
+                                            <div style={{ fontSize: '12px', color: '#475569', marginTop: '4px' }}>
+                                                <strong>Rx:</strong> {v.pharmacy.map(m => m.medicineName || m.name).join(', ')}
+                                            </div>
+                                        )}
+                                        {(v.labTests || []).length > 0 && (
+                                            <div style={{ fontSize: '12px', color: '#475569' }}><strong>Labs:</strong> {v.labTests.join(', ')}</div>
+                                        )}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* Patient Reports — inline viewer for doctor */}
+                <PatientReportPanel
+                    patientId={consulting.clinicPatientId?._id}
+                    patientName={consulting.clinicPatientId?.name}
+                />
+
+                {/* Vitals Panel */}
+                <div className="clinic-vitals-container">
+                    <button
+                        type="button"
+                        onClick={() => setShowVitals(v => !v)}
+                        className="clinic-vitals-header-btn">
+                        <span>🩺 Patient Vitals {Object.values(vitals).some(v => v) ? '✓' : ''}</span>
+                        <span>{showVitals ? '▲' : '▼'}</span>
+                    </button>
+                    {showVitals && (
+                        <div className="clinic-vitals-content">
+                            <div className="clinic-vitals-grid">
+                                {/* Weight */}
+                                <div className="clinic-vital-card">
+                                    <label className="clinic-vital-label">Weight (kg)</label>
+                                    <input className="clinic-vital-input" type="number" placeholder="e.g. 65" value={vitals.weight}
+                                        onChange={e => handleVitalChange('weight', e.target.value)} />
+                                </div>
+                                {/* Height */}
+                                <div className="clinic-vital-card">
+                                    <label className="clinic-vital-label">Height (cm)</label>
+                                    <input className="clinic-vital-input" type="number" placeholder="e.g. 170" value={vitals.height}
+                                        onChange={e => handleVitalChange('height', e.target.value)} />
+                                </div>
+                                {/* BMI — auto computed */}
+                                <div className="clinic-vital-card">
+                                    <label className="clinic-vital-label">BMI (auto)</label>
+                                    <input className="clinic-vital-input" readOnly value={vitals.bmi}
+                                        placeholder="Auto-calculated"
+                                        style={{ background: vitals.bmi ? 'transparent' : '', fontWeight: vitals.bmi ? '700' : '400' }} />
+                                    {vitals.bmi && (
+                                        <div className={`clinic-bmi-badge clinic-bmi-${parseFloat(vitals.bmi) < 18.5 ? 'underweight' : parseFloat(vitals.bmi) < 25 ? 'normal' : parseFloat(vitals.bmi) < 30 ? 'overweight' : 'obese'}`}>
+                                            {parseFloat(vitals.bmi) < 18.5 ? 'Underweight' : parseFloat(vitals.bmi) < 25 ? 'Normal' : parseFloat(vitals.bmi) < 30 ? 'Overweight' : 'Obese'}
+                                        </div>
+                                    )}
+                                </div>
+                                {/* BP */}
+                                <div className="clinic-vital-card">
+                                    <label className="clinic-vital-label">BP (mmHg)</label>
+                                    <input className="clinic-vital-input" placeholder="e.g. 120/80" value={vitals.bp}
+                                        onChange={e => handleVitalChange('bp', e.target.value)} />
+                                </div>
+                                {/* Temperature */}
+                                <div className="clinic-vital-card">
+                                    <label className="clinic-vital-label">Temp (°F)</label>
+                                    <input className="clinic-vital-input" type="number" step="0.1" placeholder="e.g. 98.6" value={vitals.temperature}
+                                        onChange={e => handleVitalChange('temperature', e.target.value)} />
+                                </div>
+                                {/* Pulse */}
+                                <div className="clinic-vital-card">
+                                    <label className="clinic-vital-label">🫀 Pulse (bpm)</label>
+                                    <input className="clinic-vital-input" type="number" placeholder="e.g. 72" value={vitals.pulse}
+                                        onChange={e => handleVitalChange('pulse', e.target.value)} />
+                                </div>
+                                {/* SpO2 */}
+                                <div className="clinic-vital-card">
+                                    <label className="clinic-vital-label">🫁 SpO₂ (%)</label>
+                                    <input className="clinic-vital-input" type="number" placeholder="e.g. 98" value={vitals.spo2}
+                                        onChange={e => handleVitalChange('spo2', e.target.value)} />
+                                </div>
+                                {/* Respiratory Rate */}
+                                <div className="clinic-vital-card">
+                                    <label className="clinic-vital-label">Resp. Rate (/min)</label>
+                                    <input className="clinic-vital-input" type="number" placeholder="e.g. 16" value={vitals.rr}
+                                        onChange={e => handleVitalChange('rr', e.target.value)} />
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+
+                <div className="clinic-form-grid">
+                    <div className="clinic-form-group" style={{ gridColumn: '1/-1' }}>
+                        <label>Diagnosis / Chief Complaint</label>
+                        <textarea className="clinic-input" rows={2} value={rx.diagnosis}
+                            onChange={e => setRx(r => ({ ...r, diagnosis: e.target.value }))}
+                            placeholder="e.g. Viral fever, URTI..." />
+                    </div>
+                    <div className="clinic-form-group" style={{ gridColumn: '1/-1' }}>
+                        <label>Doctor Notes / Advice</label>
+                        <textarea className="clinic-input" rows={2} value={rx.notes}
+                            onChange={e => setRx(r => ({ ...r, notes: e.target.value }))}
+                            placeholder="Clinical observations, advice..." />
+                    </div>
+                    <div className="clinic-form-group" style={{ gridColumn: '1/-1' }}>
+                        <label>Lab Tests (comma separated)</label>
+                        <input className="clinic-input" value={rx.labTests}
+                            onChange={e => setRx(r => ({ ...r, labTests: e.target.value }))}
+                            placeholder="CBC, Blood Sugar, Urine Routine" />
+                    </div>
+                </div>
+
+                {/* Prescription — inline Excel-like table with medicine autocomplete */}
+                <div style={{ marginTop: '20px' }}>
+                    <h4 style={{ marginBottom: '10px', color: '#1e293b' }}>Prescription</h4>
+
+                    {/* Inline table */}
+                    <MedicineTable rx={rx} setRx={setRx} inventory={inventory} />
+
+                    <button
+                        type="button"
+                        onClick={() => setRx(r => ({ ...r, medicines: [...r.medicines, { name: '', saltName: '', dose: '', days: '' }] }))}
+                        style={{ marginTop: '8px', padding: '6px 14px', fontSize: '12px', background: '#f0fdf4', border: '1px dashed #86efac', borderRadius: '6px', color: '#16a34a', cursor: 'pointer', fontWeight: '600' }}
+                    >
+                        + Add Row
+                    </button>
+                </div>
+
+                <button className="clinic-btn-primary" style={{ marginTop: '24px', width: '100%', padding: '12px' }} disabled={saving} onClick={saveConsult}>
+                    {saving ? 'Saving...' : '✅ Save & Generate Prescription'}
+                </button>
+            </div>
+        </div>
+    );
+
+    return (
+        <div>
+            {msg.text && <div className={`clinic-msg clinic-msg-${msg.type}`}>{msg.text}</div>}
+
+            {/* Tab switcher */}
+            <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
+                {[{ id: 'staff', label: 'Doctor & Staff List' }, { id: 'queue', label: '🩺 Today\'s Queue' }]
+                    .filter(t => !(t.id === 'queue' && (JSON.parse(localStorage.getItem('user') || '{}')?.role || '').toLowerCase() === 'hospitaladmin'))
+                    .map(t => (
+                    <button key={t.id} className={tab === t.id ? 'clinic-btn-primary' : 'clinic-btn-secondary'}
+                        style={{ padding: '8px 18px', fontSize: '13px' }} onClick={() => setTab(t.id)}>
+                        {t.label}
+                    </button>
+                ))}
+            </div>
+
+            {/* Staff List tab */}
+            {tab === 'staff' && (
+                <div className="clinic-card">
+                    <h3 style={{ marginBottom: '14px' }}>Clinic Staff</h3>
+                    {staffLoading ? <Spinner /> : staff.length === 0 ? (
+                        <Empty text="No staff members found for this clinic." />
+                    ) : (
+                        <table className="clinic-table">
+                            <thead><tr><th>Name</th><th>Role</th><th>Email</th><th>Phone</th><th>Joined</th></tr></thead>
+                            <tbody>
+                                {staff.map(s => (
+                                    <tr key={s._id}>
+                                        <td><strong>{s.name}</strong></td>
+                                        <td><span style={{ background: '#f0fdf4', color: '#16a34a', border: '1px solid #bbf7d0', borderRadius: '4px', padding: '2px 8px', fontSize: '12px', textTransform: 'capitalize' }}>{s.roleName}</span></td>
+                                        <td style={{ fontSize: '13px', color: '#64748b' }}>{s.email || '—'}</td>
+                                        <td style={{ fontSize: '13px', color: '#64748b' }}>{s.phone || '—'}</td>
+                                        <td style={{ fontSize: '12px', color: '#94a3b8' }}>{s.createdAt ? new Date(s.createdAt).toLocaleDateString('en-IN') : '—'}</td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    )}
+                </div>
+            )}
+
+            {/* Queue tab */}
+            {tab === 'queue' && <>
+            {/* Monthly Analytics */}
+            {analytics && (
+                <div className="clinic-card" style={{ marginBottom: '16px' }}>
+                    <h3 style={{ margin: '0 0 14px', fontSize: '15px' }}>Clinic Performance — {new Date().toLocaleString('en-IN', { month: 'long', year: 'numeric' })}</h3>
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '12px' }}>
+                        {[
+                            { label: 'Seen Today', value: analytics.todayAppointments ?? '—', color: '#6366f1' },
+                            { label: 'This Month Revenue', value: `₹${(analytics.monthRevenue || 0).toLocaleString('en-IN')}`, color: '#16a34a' },
+                            { label: 'Total Patients', value: analytics.totalPatients ?? '—', color: '#D85F89' },
+                            { label: 'Completed All Time', value: analytics.completedAppointments ?? '—', color: '#7c3aed' },
+                        ].map(s => (
+                            <div key={s.label} style={{ background: '#f8fafc', borderRadius: '10px', padding: '14px', textAlign: 'center', border: '1px solid #e2e8f0' }}>
+                                <div style={{ fontSize: '22px', fontWeight: 800, color: s.color }}>{s.value}</div>
+                                <div style={{ fontSize: '12px', color: '#64748b', marginTop: '4px' }}>{s.label}</div>
+                            </div>
+                        ))}
+                    </div>
+                </div>
+            )}
+
+            <div className="clinic-card" style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                    <div>
+                        <h3 style={{ margin: 0 }}>🩺 Today's Patients — {new Date().toLocaleDateString('en-IN', { weekday: 'long', day: 'numeric', month: 'long' })}</h3>
+                        <p style={{ color: '#64748b', fontSize: '13px', margin: '4px 0 0' }}>
+                            {pending.length} waiting · {done.length} seen today
+                        </p>
+                    </div>
+                    <button className="clinic-btn-secondary" style={{ fontSize: '12px' }} onClick={loadToday}>↻ Refresh</button>
+                </div>
+
+                {loading ? <Spinner /> : pending.length === 0 ? (
+                    <Empty text="No patients in queue. Book tokens from Reception mode." />
+                ) : (
+                    <div className="clinic-token-queue">
+                        {pending.map(a => (
+                            <div key={a._id} className="clinic-token-card">
+                                <div className="token-number">#{a.tokenNumber}</div>
+                                <div className="token-info">
+                                    <div style={{ fontWeight: 700, fontSize: '15px' }}>{a.clinicPatientId?.name || '—'}</div>
+                                    <div style={{ fontSize: '12px', color: '#64748b' }}>
+                                        {a.clinicPatientId?.patientUid || a.patientId} · {a.serviceName || 'General'}
+                                        {a.notes && ` · "${a.notes}"`}
+                                    </div>
+                                </div>
+                                <button className="clinic-btn-primary" style={{ marginLeft: 'auto', padding: '8px 18px' }} onClick={() => openConsult(a)}>
+                                    Start →
+                                </button>
+                            </div>
+                        ))}
+                    </div>
+                )}
+            </div>
+
+            {done.length > 0 && (
+                <div className="clinic-card">
+                    <h3 style={{ marginBottom: '12px' }}>✅ Seen Today ({done.length})</h3>
+                    <table className="clinic-table">
+                        <thead><tr><th>Token</th><th>Patient</th><th>Diagnosis</th><th>Medicines</th><th style={{ width: '80px', textAlign: 'center' }}>Action</th></tr></thead>
+                        <tbody>
+                            {done.map(a => (
+                                <tr key={a._id}>
+                                    <td><strong style={{ color: '#6366f1' }}>#{a.tokenNumber}</strong></td>
+                                    <td>
+                                        <div style={{ fontWeight: 600 }}>{a.clinicPatientId?.name || '—'}</div>
+                                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>{a.clinicPatientId?.patientUid || a.patientId}</div>
+                                    </td>
+                                    <td style={{ fontSize: '12px', maxWidth: '140px' }}>{a.diagnosis || '—'}</td>
+                                    <td style={{ fontSize: '11px', color: '#64748b' }}>
+                                        {(a.pharmacy || []).map((m, i) => <div key={i}>{m.medicineName || m.name}</div>)}
+                                    </td>
+                                    <td style={{ textAlign: 'center' }}>
+                                        <button className="clinic-btn-secondary" style={{ fontSize: '12px', padding: '4px 10px', whiteSpace: 'nowrap' }} onClick={() => openConsult(a)}>
+                                            ✏️ Edit
+                                        </button>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                </div>
+            )}
+            </>}
+        </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════
+// PHARMACY MODE
+// ═══════════════════════════════════════════════════
+// Medicine Registry — simple name list for autocomplete in prescriptions.
+// No ordering, billing, or stock management. Just a saved medicine list.
+const PharmacyMode = () => {
+    const [tab, setTab] = useState('list');
+    const [inventory, setInventory] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [addForm, setAddForm] = useState({ name: '', category: 'General', unit: 'Tablets' });
+    const [adding, setAdding] = useState(false);
+    const [search, setSearch] = useState('');
+    const [showCatDropdown, setShowCatDropdown] = useState(false);
+    const [showUnitDropdown, setShowUnitDropdown] = useState(false);
+    const [msg, setMsg] = useState({ type: '', text: '' });
+
+    const flash = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 3000); };
+
+    const loadInventory = () => {
+        setLoading(true);
+        clinicAPI.getInventory()
+            .then(r => { if (r.success) setInventory(r.inventory || []); })
+            .catch(console.error)
+            .finally(() => setLoading(false));
+    };
+
+    useEffect(() => { loadInventory(); }, []);
+
+    const handleAdd = async (e) => {
+        e.preventDefault();
+        setAdding(true);
+        try {
+            const r = await clinicAPI.addInventory({ name: addForm.name, category: addForm.category, unit: addForm.unit });
+            if (r.success) {
+                setInventory(prev => [...prev, r.item].sort((a, b) => a.name.localeCompare(b.name)));
+                setAddForm({ name: '', category: 'General', unit: 'Tablets' });
+                setTab('list');
+                flash('success', `"${r.item.name}" added to medicine list.`);
+            }
+        } catch (e) { flash('error', e.response?.data?.message || e.message); }
+        finally { setAdding(false); }
+    };
+
+    const filtered = search.trim()
+        ? inventory.filter(m => m.name.toLowerCase().includes(search.trim().toLowerCase()) || (m.category || '').toLowerCase().includes(search.trim().toLowerCase()))
+        : inventory;
+
+    const CATEGORIES = ['General', 'Antibiotic', 'Analgesic', 'Antacid', 'Vitamin', 'Antifungal', 'Antihistamine', 'Other'];
+    const UNITS = ['Tablets', 'Capsules', 'Syrup (ml)', 'Injection', 'Cream/Ointment', 'Drops', 'Other'];
+
+    return (
+        <div>
+            {/* Info Banner */}
+            <div style={{ background: '#f0f9ff', border: '1px solid #bae6fd', borderRadius: '10px', padding: '12px 16px', marginBottom: '16px', fontSize: '13px', color: '#0369a1', display: 'flex', alignItems: 'center', gap: '8px' }}>
+                
+                <span>This is your <strong>medicine list</strong> — add commonly used medicines here so doctors can quickly select them while prescribing. No stock tracking or billing.</span>
+            </div>
+
+            <div className="clinic-sub-tabs">
+                {[
+                    { id: 'list', label: `Medicine List (${inventory.length})` },
+                    { id: 'add', label: '+ Add Medicine' },
+                ].map(t => (
+                    <button key={t.id} className={`clinic-sub-tab ${tab === t.id ? 'active' : ''}`} onClick={() => setTab(t.id)}>{t.label}</button>
+                ))}
+            </div>
+
+            {msg.text && <div className={`clinic-msg clinic-msg-${msg.type}`}>{msg.text}</div>}
+
+            {loading ? <Spinner /> : (
+                <>
+                    {tab === 'list' && (
+                        <div className="clinic-card">
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                                <h3 style={{ margin: 0 }}>Medicine List</h3>
+                                <button className="clinic-btn-primary" style={{ fontSize: '12px', padding: '6px 14px' }} onClick={() => setTab('add')}>+ Add Medicine</button>
+                            </div>
+                            {inventory.length > 0 && (
+                                <input
+                                    className="clinic-input"
+                                    placeholder="Search by name or category…"
+                                    value={search}
+                                    onChange={e => setSearch(e.target.value)}
+                                    style={{ marginBottom: '12px', maxWidth: '320px' }}
+                                />
+                            )}
+                            {filtered.length === 0 ? (
+                                <Empty text={inventory.length === 0 ? 'No medicines added yet. Click "+ Add Medicine" to get started.' : 'No matches found.'} />
+                            ) : (
+                                <table className="clinic-table">
+                                    <thead>
+                                        <tr><th>#</th><th>Medicine Name</th><th>Category</th><th>Unit / Form</th></tr>
+                                    </thead>
+                                    <tbody>
+                                        {filtered.map((m, i) => (
+                                            <tr key={m._id}>
+                                                <td style={{ color: '#94a3b8', fontSize: '12px', width: '40px' }}>{i + 1}</td>
+                                                <td><strong style={{ color: '#1e293b' }}>{m.name}</strong></td>
+                                                <td>
+                                                    <span style={{ background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: '10px', fontSize: '11px', fontWeight: 600 }}>
+                                                        {m.category || 'General'}
+                                                    </span>
+                                                </td>
+                                                <td style={{ fontSize: '12px', color: '#64748b' }}>{m.unit || '—'}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            )}
+                        </div>
+                    )}
+
+                    {tab === 'add' && (
+                        <div className="clinic-card">
+                            <h3 style={{ marginBottom: '4px' }}>+ Add Medicine to List</h3>
+                            <p style={{ color: '#64748b', fontSize: '13px', margin: '0 0 18px' }}>
+                                Add medicines your clinic commonly prescribes. Once added, doctors can search and select them instantly while writing prescriptions.
+                            </p>
+                            <form onSubmit={handleAdd} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', maxWidth: '640px' }}>
+                                <div className="clinic-form-group" style={{ gridColumn: '1 / -1' }}>
+                                    <label>Medicine Name *</label>
+                                    <input
+                                        className="clinic-input"
+                                        placeholder="e.g. Paracetamol 500mg"
+                                        value={addForm.name}
+                                        onChange={e => setAddForm(f => ({ ...f, name: e.target.value }))}
+                                        required
+                                        autoFocus
+                                    />
+                                    <small style={{ color: '#94a3b8', fontSize: '11px', marginTop: '3px', display: 'block' }}>
+                                        Be specific — include strength if relevant (e.g. "Amoxicillin 250mg")
+                                    </small>
+                                </div>
+                                <div className="clinic-form-group">
+                                    <label>Category</label>
+                                    <select className="clinic-input hide-on-mobile" value={addForm.category} onChange={e => setAddForm(f => ({ ...f, category: e.target.value }))}>
+                                        {CATEGORIES.map(c => <option key={c}>{c}</option>)}
+                                    </select>
+                                    <div className="clinic-custom-month-dropdown show-on-mobile" style={{ width: '100%' }}>
+                                        <div className="custom-dropdown-selected" onClick={() => setShowCatDropdown(!showCatDropdown)}>
+                                            {addForm.category || 'Select Category'} <span>▼</span>
+                                        </div>
+                                        {showCatDropdown && (
+                                            <div className="custom-dropdown-options" style={{ width: '100%', zIndex: 100, maxHeight: '200px', overflowY: 'auto' }}>
+                                                {CATEGORIES.map(c => (
+                                                    <div key={c} className="custom-dropdown-option" onClick={() => { setAddForm(f => ({ ...f, category: c })); setShowCatDropdown(false); }}>
+                                                        {c}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div className="clinic-form-group">
+                                    <label>Unit / Form</label>
+                                    <select className="clinic-input hide-on-mobile" value={addForm.unit} onChange={e => setAddForm(f => ({ ...f, unit: e.target.value }))}>
+                                        {UNITS.map(u => <option key={u}>{u}</option>)}
+                                    </select>
+                                    <div className="clinic-custom-month-dropdown show-on-mobile" style={{ width: '100%' }}>
+                                        <div className="custom-dropdown-selected" onClick={() => setShowUnitDropdown(!showUnitDropdown)}>
+                                            {addForm.unit || 'Select Type'} <span>▼</span>
+                                        </div>
+                                        {showUnitDropdown && (
+                                            <div className="custom-dropdown-options" style={{ width: '100%', zIndex: 100, maxHeight: '200px', overflowY: 'auto' }}>
+                                                {UNITS.map(u => (
+                                                    <div key={u} className="custom-dropdown-option" onClick={() => { setAddForm(f => ({ ...f, unit: u })); setShowUnitDropdown(false); }}>
+                                                        {u}
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                                <div style={{ gridColumn: '1 / -1', display: 'flex', gap: '10px', alignItems: 'center' }}>
+                                    <button type="submit" className="clinic-btn-primary" disabled={adding}>
+                                        {adding ? 'Adding…' : '+ Add to List'}
+                                    </button>
+                                    <button type="button" className="clinic-btn-secondary" onClick={() => { setTab('list'); setAddForm({ name: '', category: 'General', unit: 'Tablets' }); }}>
+                                        Cancel
+                                    </button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+                </>
+            )}
+        </div>
+    );
+};
+
+// ═══════════════════════════════════════════════════
+// TREATMENT PLAN MODE
+// ═══════════════════════════════════════════════════
+const TreatmentPlanMode = () => {
+    const [view, setView] = useState('list');
+    const [plans, setPlans] = useState([]);
+    const [todayDue, setTodayDue] = useState([]);
+    const [selectedPlan, setSelectedPlan] = useState(null);
+    const [loading, setLoading] = useState(true);
+    const [saving, setSaving] = useState(false);
+    const [msg, setMsg] = useState({ type: '', text: '' });
+
+    const [patients, setPatients] = useState([]);
+    const [patSearch, setPatSearch] = useState('');
+    const [form, setForm] = useState({
+        clinicPatientId: '', title: '', description: '',
+        totalAmount: '', totalDurationDays: '', startDate: '', intervalDays: '', numberOfVisits: '',
+    });
+    const [visits, setVisits] = useState([]);
+
+    const [payModal, setPayModal] = useState(null);
+    const [payInput, setPayInput] = useState({ amountPaid: '', paymentMethod: 'Cash', notes: '', upiId: 'payments@upi', upiRef: '', confirmedReceipt: false, shakeAmount: false });
+    const [showPayMethodDropdown, setShowPayMethodDropdown] = useState(false);
+
+    const [rescheduleModal, setRescheduleModal] = useState(null);
+    const [rescheduleInput, setRescheduleInput] = useState({ newDate: '', newTime: '', remarks: '' });
+
+    const flash = (type, text) => { setMsg({ type, text }); setTimeout(() => setMsg({ type: '', text: '' }), 5000); };
+
+    const getEffectiveStatus = (visit) => {
+        if (visit.status === 'completed' || visit.status === 'missed') {
+            return visit.status;
+        }
+        const today = new Date();
+        today.setHours(0,0,0,0);
+        const sDate = new Date(visit.scheduledDate);
+        sDate.setHours(0,0,0,0);
+        if (sDate <= today) {
+            return 'due';
+        }
+        return visit.status;
+    };
+
+    const loadAll = () => {
+        setLoading(true);
+        Promise.all([clinicAPI.getTreatmentPlans(), clinicAPI.getTodayDuePlans()])
+            .then(([plansR, dueR]) => {
+                if (plansR.success) setPlans(plansR.plans);
+                if (dueR.success) setTodayDue(dueR.plans);
+            })
+            .catch(console.error)
+            .finally(() => setLoading(false));
+    };
+
+    useEffect(() => { loadAll(); }, []);
+
+    useEffect(() => {
+        const n = parseInt(form.numberOfVisits);
+        const interval = parseInt(form.intervalDays);
+        const start = form.startDate;
+        if (!n || !start) return;
+        const base = new Date(start);
+        setVisits(Array.from({ length: n }, (_, i) => {
+            const d = new Date(base);
+            d.setDate(d.getDate() + (interval || 0) * i);
+            return { visitNumber: i + 1, scheduledDate: d.toISOString().split('T')[0], scheduledTime: '', procedure: '' };
+        }));
+    }, [form.numberOfVisits, form.intervalDays, form.startDate]);
+
+    // Debounced search for live patient filtering
+    useEffect(() => {
+        if (view === 'create') {
+            const delay = setTimeout(() => {
+                clinicAPI.getPatients(patSearch).then(r => {
+                    if (r.success) setPatients(r.patients || []);
+                }).catch(e => console.error(e));
+            }, 300);
+            return () => clearTimeout(delay);
+        }
+    }, [patSearch, view]);
+
+    const loadPatients = async (search) => {
+        // Kept for backward compatibility if called directly
+        try { const r = await clinicAPI.getPatients(search); if (r.success) setPatients(r.patients || []); } catch { }
+    };
+
+    const handleCreateSubmit = async () => {
+        if (!form.clinicPatientId || !form.title || !form.totalAmount || !form.totalDurationDays || !form.startDate || !form.numberOfVisits || !form.intervalDays || visits.length === 0)
+            return flash('error', 'Please fill in all required fields (marked with *).');
+        if (visits.some(v => !v.scheduledDate)) return flash('error', 'All visits must have a scheduled date.');
+        setSaving(true);
+        try {
+            const r = await clinicAPI.createTreatmentPlan({ ...form, visits });
+            if (r.success) {
+                flash('success', 'Treatment plan created.');
+                setPlans(prev => [r.plan, ...prev]);
+                setView('list');
+                setForm({ clinicPatientId: '', title: '', description: '', totalAmount: '', totalDurationDays: '', startDate: '', intervalDays: '', numberOfVisits: '' });
+                setVisits([]);
+                setPatSearch('');
+            } else flash('error', r.message);
+        } catch (e) { flash('error', e.response?.data?.message || e.message); }
+        finally { setSaving(false); }
+    };
+
+    const openDetail = async (plan) => {
+        try {
+            const r = await clinicAPI.getTreatmentPlan(plan._id);
+            if (r.success) { setSelectedPlan(r.plan); setView('detail'); }
+        } catch { setSelectedPlan(plan); setView('detail'); }
+    };
+
+    const handlePay = async () => {
+        if (!payModal) return;
+        const paid = Number(payInput.amountPaid) || 0;
+        if (paid <= 0) return flash('error', 'Enter a valid amount greater than zero.');
+        if (paid > selectedPlan.pendingBalance) return flash('error', 'Payment amount cannot exceed outstanding balance.');
+
+        const pDateStr = todayStr();
+        const pDate = new Date(pDateStr);
+        pDate.setHours(0, 0, 0, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const vDate = new Date(payModal.visit.scheduledDate);
+        vDate.setHours(0, 0, 0, 0);
+        
+        if (pDate < vDate) return flash('error', 'Payment date cannot be earlier than the visit date.');
+
+        if (payInput.paymentMethod === 'UPI') {
+            const upiIdTrimmed = (payInput.upiId || '').trim();
+            if (!upiIdTrimmed) return flash('error', 'Please enter the UPI ID.');
+            if (upiIdTrimmed.length > 25) return flash('error', 'UPI ID cannot exceed 25 characters.');
+            const refClean = (payInput.upiRef || '').replace(/\D/g, '');
+            if (refClean.length !== 12) return flash('error', 'Transaction reference must be exactly 12 digits.');
+            if (!payInput.confirmedReceipt) return flash('error', 'Please confirm you verified the receipt on the device.');
+            // Check for duplicate ref within current plan visits
+            const dupVisit = selectedPlan.visits.find(v => v.paymentHistory && v.paymentHistory.some(ph => ph.method === 'UPI' && ph.upiRef === refClean));
+            if (dupVisit) return flash('error', `Duplicate transaction reference. Already used on Visit ${dupVisit.visitNumber}.`);
+        }
+
+        setSaving(true);
+        try {
+            const payload = {
+                amountPaid: paid,
+                paymentDate: pDateStr,
+                paymentMethod: payInput.paymentMethod,
+                notes: payInput.notes,
+            };
+            if (payInput.paymentMethod === 'UPI') {
+                payload.upiId = (payInput.upiId || '').trim();
+                payload.upiRef = (payInput.upiRef || '').replace(/\D/g, '');
+                payload.notes = `[UPI ID: ${payload.upiId}, Ref: ${payload.upiRef}] ${payload.notes}`.trim();
+            }
+
+            const r = await clinicAPI.payVisit(payModal.planId, payModal.visit._id, payload);
+            if (r.success) {
+                setSelectedPlan(r.plan);
+                setPlans(prev => prev.map(p => p._id === r.plan._id ? r.plan : p));
+                setPayModal(null);
+                flash('success', `₹${paid.toLocaleString('en-IN')} recorded. Remaining balance: ₹${r.plan.pendingBalance.toLocaleString('en-IN')}`);
+            } else flash('error', r.message);
+        } catch (e) { flash('error', e.response?.data?.message || e.message); }
+        finally { setSaving(false); }
+    };
+
+    const handleComplete = async (planId, visitId) => {
+        const plan = selectedPlan;
+        const remainingScheduled = plan.visits.filter(v => v.status === 'scheduled' && v._id !== visitId);
+        const isLast = remainingScheduled.length === 0;
+        if (isLast && plan.pendingBalance > 0) {
+            return flash('error', `❌ Cannot close treatment — ₹${plan.pendingBalance.toLocaleString('en-IN')} is still unpaid. Collect full payment before closing the last visit.`);
+        }
+        if (!(await confirmToast('Mark this visit as completed?', { title: 'Complete Visit', danger: false, confirmText: 'Complete' }))) return;
+        try {
+            const r = await clinicAPI.completeVisit(planId, visitId, {});
+            if (r.success) {
+                setSelectedPlan(r.plan);
+                setPlans(prev => prev.map(p => p._id === r.plan._id ? r.plan : p));
+                flash('success', r.plan.status === 'completed' ? 'Treatment plan completed!' : 'Visit marked completed.');
+            } else flash('error', r.message);
+        } catch (e) { flash('error', e.response?.data?.message || e.message); }
+    };
+
+    const handleMiss = async (planId, visitId) => {
+        if (!(await confirmToast('Mark this visit as missed?', { title: 'Mark Visit as Missed' }))) return;
+        try {
+            const r = await clinicAPI.missVisit(planId, visitId);
+            if (r.success) {
+                setSelectedPlan(r.plan);
+                setPlans(prev => prev.map(p => p._id === r.plan._id ? r.plan : p));
+                flash('success', 'Visit marked as missed.');
+            }
+        } catch (e) { flash('error', e.message); }
+    };
+
+    const handleRescheduleSubmit = async () => {
+        if (!rescheduleModal) return;
+        if (!rescheduleInput.newDate) return flash('error', 'New date is required.');
+        setSaving(true);
+        try {
+            const r = await clinicAPI.rescheduleVisit(rescheduleModal.planId, rescheduleModal.visit._id, rescheduleInput);
+            if (r.success) {
+                setSelectedPlan(r.plan);
+                setPlans(prev => prev.map(p => p._id === r.plan._id ? r.plan : p));
+                setRescheduleModal(null);
+                flash('success', 'Visit rescheduled successfully.');
+            } else {
+                flash('error', r.message);
+            }
+        } catch (e) {
+            flash('error', e.response?.data?.message || e.message);
+        } finally {
+            setSaving(false);
+        }
+    };
+
+    const handleCancel = async (planId) => {
+        if (!(await confirmToast('Cancel this treatment plan?', { title: 'Cancel Treatment Plan' }))) return;
+        try {
+            const r = await clinicAPI.cancelTreatmentPlan(planId);
+            if (r.success) {
+                setPlans(prev => prev.map(p => p._id === planId ? { ...p, status: 'cancelled' } : p));
+                if (selectedPlan?._id === planId) setSelectedPlan(prev => ({ ...prev, status: 'cancelled' }));
+                flash('success', 'Plan cancelled.');
+            }
+        } catch (e) { flash('error', e.message); }
+    };
+
+    const planStatusColor = { active: '#D85F89', completed: '#16a34a', cancelled: '#dc2626' };
+    const visitStatusColor = {
+        scheduled: '#3b82f6',
+        completed: '#16a34a',
+        missed: '#dc2626',
+        rescheduled: '#a855f7',
+        due: '#f97316'
+    };
+
+    // ── LIST VIEW ──
+    if (view === 'list') return (
+        <div>
+            {todayDue.length > 0 && (
+                <div style={{ background: '#fffbeb', border: '1px solid #fde68a', borderRadius: '10px', padding: '14px 18px', marginBottom: '16px', display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                    <div style={{ fontWeight: '800', color: '#92400e', fontSize: '14px' }}>Today's Visits Due</div>
+                    {todayDue.map(plan => plan.visits.filter(v => {
+                        const d = new Date(v.scheduledDate);
+                        return d.toDateString() === new Date().toDateString() && ['scheduled', 'rescheduled'].includes(v.status);
+                    }).map(v => (
+                        <div key={v._id} style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '13px', color: '#78350f' }}>
+                            <span style={{ fontWeight: '700' }}>{plan.clinicPatientId?.name}</span>
+                            <span>— Visit {v.visitNumber} · "{plan.title}"</span>
+                            {v.scheduledTime && <span style={{ background: '#fef3c7', padding: '1px 8px', borderRadius: '4px', fontWeight: '700' }}>{v.scheduledTime}</span>}
+                            {plan.pendingBalance > 0 && <span style={{ color: '#dc2626', fontWeight: '700' }}>₹{plan.pendingBalance.toLocaleString('en-IN')} pending</span>}
+                            <button onClick={() => openDetail(plan)} style={{ marginLeft: 'auto', fontSize: '11px', padding: '3px 10px', background: '#f59e0b', color: '#fff', border: 'none', borderRadius: '5px', cursor: 'pointer', fontWeight: '700' }}>View Plan</button>
+                        </div>
+                    )))}
+                </div>
+            )}
+
+            {msg.text && <div className={`clinic-msg clinic-msg-${msg.type}`}>{msg.text}</div>}
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px' }}>
+                <h3 style={{ margin: 0, color: '#0f172a' }}>Treatment Plans</h3>
+                <button className="clinic-btn-primary" onClick={() => { setView('create'); loadPatients(''); }}>+ New Plan</button>
+            </div>
+
+            {loading ? <Spinner /> : plans.length === 0 ? <Empty text="No treatment plans yet." /> : (
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                    {plans.map(plan => {
+                        const nextVisit = plan.visits.find(v => ['scheduled', 'rescheduled', 'due'].includes(v.status));
+                        const pct = plan.totalAmount > 0 ? Math.min(100, Math.round((plan.totalPaid / plan.totalAmount) * 100)) : 0;
+                        return (
+                            <div key={plan._id} className="clinic-card" style={{ padding: '16px', cursor: 'pointer', borderLeft: `4px solid ${planStatusColor[plan.status] || '#94a3b8'}` }} onClick={() => openDetail(plan)}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '8px' }}>
+                                    <div>
+                                        <div style={{ fontWeight: '800', fontSize: '15px', color: '#0f172a' }}>{plan.title}</div>
+                                        <div style={{ fontSize: '13px', color: '#475569', marginTop: '2px' }}>{plan.clinicPatientId?.name || '—'} · {plan.clinicPatientId?.patientUid || ''}</div>
+                                        {plan.description && <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '2px' }}>{plan.description}</div>}
+                                    </div>
+                                    <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 10px', borderRadius: '20px', background: planStatusColor[plan.status] + '20', color: planStatusColor[plan.status], textTransform: 'uppercase' }}>{plan.status}</span>
+                                </div>
+                                {/* Payment progress bar */}
+                                <div style={{ marginTop: '10px' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
+                                        <span>Paid: <b style={{ color: '#16a34a' }}>₹{plan.totalPaid.toLocaleString('en-IN')}</b> of <b>₹{plan.totalAmount.toLocaleString('en-IN')}</b></span>
+                                        <span style={{ color: plan.pendingBalance > 0 ? '#dc2626' : '#16a34a', fontWeight: '700' }}>
+                                            {plan.pendingBalance > 0 ? `₹${plan.pendingBalance.toLocaleString('en-IN')} due` : '✓ Fully Paid'}
+                                        </span>
+                                    </div>
+                                    <div style={{ background: '#e2e8f0', borderRadius: '4px', height: '6px', overflow: 'hidden' }}>
+                                        <div style={{ height: '100%', width: `${pct}%`, background: pct === 100 ? '#16a34a' : '#D85F89', borderRadius: '4px', transition: 'width 0.3s' }} />
+                                    </div>
+                                </div>
+                                <div style={{ display: 'flex', gap: '16px', marginTop: '8px', flexWrap: 'wrap', fontSize: '12px', color: '#475569' }}>
+                                    <span><b>{plan.visits.filter(v => v.status === 'completed').length}</b>/{plan.visits.length} visits done</span>
+                                    {nextVisit && <span style={{ color: '#D85F89' }}>Next: <b>{new Date(nextVisit.scheduledDate).toLocaleDateString('en-IN')}</b>{nextVisit.scheduledTime ? ' · ' + nextVisit.scheduledTime : ''}</span>}
+                                </div>
+                            </div>
+                        );
+                    })}
+                </div>
+            )}
+        </div>
+    );
+
+    // ── CREATE VIEW ──
+    if (view === 'create') return (
+        <div>
+            <button className="clinic-back-btn" onClick={() => setView('list')}>← Back to Plans</button>
+            {msg.text && <div className={`clinic-msg clinic-msg-${msg.type}`} style={{ marginTop: '10px' }}>{msg.text}</div>}
+            <div className="clinic-card" style={{ marginTop: '12px' }}>
+                <h3 style={{ margin: '0 0 20px', color: '#0f172a' }}>New Treatment Plan</h3>
+
+                <div className="clinic-form-grid">
+                    {/* Row 1: Patient Search | Plan Title */}
+                    <div className="clinic-form-group" style={{ position: 'relative' }}>
+                        <label>Patient *</label>
+                        {!form.clinicPatientId ? (
+                            <input className="clinic-input" placeholder="Search by name, Patient ID, or MRN..."
+                                value={patSearch}
+                                onChange={e => setPatSearch(e.target.value)} />
+                        ) : (
+                            <div style={{
+                                display: 'flex', alignItems: 'center', background: '#f8fafc', 
+                                border: '1px solid #cbd5e1', borderRadius: '8px', 
+                                padding: '9px 12px', fontSize: '13px', width: '100%', boxSizing: 'border-box', height: '100%'
+                            }}>
+                                
+                                <span style={{ flex: 1, fontWeight: '600', color: '#1e293b' }}>{patSearch}</span>
+                                <span style={{ cursor: 'pointer', color: '#94a3b8', fontSize: '16px', lineHeight: 1 }} 
+                                    onClick={() => { setForm(f => ({ ...f, clinicPatientId: '' })); setPatSearch(''); }}>✕</span>
+                            </div>
+                        )}
+                        {patSearch.trim().length > 0 && patients.length > 0 && !form.clinicPatientId && (
+                            <div data-lenis-prevent="true" style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 50, background: '#fff', border: '1px solid #e2e8f0', borderRadius: '8px', maxHeight: '160px', overflowY: 'auto', marginTop: '4px', boxShadow: '0 4px 6px -1px rgba(0,0,0,0.1)' }}>
+                                {patients.filter(p => {
+                                    const q = patSearch.toLowerCase();
+                                    return (p.name || '').toLowerCase().includes(q) || 
+                                           (p.patientUid || '').toLowerCase().includes(q) || 
+                                           (p.phone || '').toLowerCase().includes(q);
+                                }).map(p => (
+                                    <div key={p._id} onClick={() => { setForm(f => ({ ...f, clinicPatientId: p._id })); setPatSearch(`${p.name} (${p.patientUid || p.phone})`); setPatients([]); }}
+                                        style={{ padding: '10px 14px', cursor: 'pointer', borderBottom: '1px solid #f1f5f9', fontSize: '13px' }}
+                                        onMouseEnter={e => e.currentTarget.style.background = '#f0f9ff'}
+                                        onMouseLeave={e => e.currentTarget.style.background = '#fff'}>
+                                        <b>{p.name}</b> · {p.patientUid || ''} · {p.phone || ''}
+                                    </div>
+                                ))}
+                            </div>
+                        )}
+                    </div>
+
+                    <div className="clinic-form-group">
+                        <label>Plan Title *</label>
+                        <input className="clinic-input" placeholder="e.g. Root Canal, Orthodontic Course..." value={form.title} onChange={e => setForm(f => ({ ...f, title: e.target.value }))} />
+                    </div>
+
+                    {/* Row 2: Description | Treatment Amount */}
+                    <div className="clinic-form-group">
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-end' }}>
+                            <label>Description / Notes</label>
+                            <span style={{ fontSize: '13px', color: (form.description || '').length >= 500 ? '#ef4444' : '#64748b', fontWeight: '600' }}>
+                                {(form.description || '').length} / 500
+                            </span>
+                        </div>
+                        <textarea className="clinic-input" rows={2} maxLength={500} placeholder="Brief description (max 500 chars)..." value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} />
+                    </div>
+
+                    <div className="clinic-form-group">
+                        <label>Total Treatment Amount (₹) *</label>
+                        <input className="clinic-input" type="number" min="1" placeholder="e.g. 5000" value={form.totalAmount} onChange={e => setForm(f => ({ ...f, totalAmount: e.target.value }))} />
+                        <div style={{ fontSize: '13px', color: '#64748b', marginTop: '3px', fontWeight: '500' }}>Patient can pay any amount at any visit.</div>
+                    </div>
+
+                    {/* Row 3: Number of Visits | Start Date */}
+                    <div className="clinic-form-group">
+                        <label>Number of Visits *</label>
+                        <input className="clinic-input" type="number" min="1" max="999" placeholder="e.g. 5" value={form.numberOfVisits} 
+                            onChange={e => {
+                                let val = e.target.value;
+                                if (val.length > 3) val = val.slice(0, 3);
+                                setForm(f => {
+                                    const n = parseInt(val) || 0;
+                                    const i = parseInt(f.intervalDays) || 0;
+                                    const duration = n > 1 ? (n - 1) * i : 0;
+                                    return { ...f, numberOfVisits: val, totalDurationDays: String(duration) };
+                                });
+                            }} />
+                    </div>
+
+                    <div className="clinic-form-group">
+                        <label>Start Date *</label>
+                        <MobileDatePicker className="clinic-input" 
+                            min={new Date().toISOString().split('T')[0]}
+                            max={new Date(new Date().setMonth(new Date().getMonth() + 6)).toISOString().split('T')[0]}
+                            value={form.startDate} 
+                            onChange={e => setForm(f => ({ ...f, startDate: e.target.value }))} />
+                    </div>
+
+                    {/* Row 4: Interval | Total Duration */}
+                    <div className="clinic-form-group">
+                        <label>Interval Between Visits (days) *</label>
+                        <input className="clinic-input" type="number" min="0" max="999" placeholder="e.g. 3" value={form.intervalDays} 
+                            onChange={e => {
+                                let val = e.target.value;
+                                if (val.length > 3) val = val.slice(0, 3);
+                                setForm(f => {
+                                    const i = parseInt(val) || 0;
+                                    const n = parseInt(f.numberOfVisits) || 0;
+                                    const duration = n > 1 ? (n - 1) * i : 0;
+                                    return { ...f, intervalDays: val, totalDurationDays: String(duration) };
+                                });
+                            }} />
+                    </div>
+
+                    <div className="clinic-form-group">
+                        <label>Total Duration (days) *</label>
+                        <input className="clinic-input" type="number" placeholder="Auto calculated..." 
+                            value={form.totalDurationDays} 
+                            readOnly 
+                            style={{ backgroundColor: '#e2e8f0', color: '#64748b', cursor: 'not-allowed', borderColor: '#cbd5e1' }} />
+                    </div>
+                </div>
+
+                {visits.length > 0 && (
+                    <div style={{ marginTop: '20px' }}>
+                        <h4 style={{ margin: '0 0 10px', color: '#0f172a' }}>Visit Schedule</h4>
+                        <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflow: 'hidden' }}>
+                            <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                                <thead>
+                                    <tr style={{ background: '#f1f5f9' }}>
+                                        {['#', 'Date', 'Time', 'Procedure / Notes'].map(h => (
+                                            <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: '700', color: '#374151', borderBottom: '1px solid #e2e8f0' }}>{h}</th>
+                                        ))}
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    {visits.map((v, idx) => (
+                                        <tr key={idx} style={{ background: idx % 2 === 0 ? '#fff' : '#f8fafc' }}>
+                                            <td style={{ padding: '6px 10px', borderBottom: '1px solid #f1f5f9', fontWeight: '700', color: '#6366f1', width: '6%' }}>{v.visitNumber}</td>
+                                            <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', width: '22%' }}>
+                                                <MobileDatePicker value={v.scheduledDate}
+                                                    onChange={e => setVisits(p => { const a = [...p]; a[idx] = { ...a[idx], scheduledDate: e.target.value }; return a; })}
+                                                    style={{ border: '1px solid #e2e8f0', borderRadius: '5px', padding: '6px 8px', fontSize: '12px', width: '100%', boxSizing: 'border-box', minHeight: '32px', margin: 0, height: '100%' }} />
+                                            </td>
+                                            <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9', width: '18%' }}>
+                                                <input type="time" value={v.scheduledTime}
+                                                    onChange={e => setVisits(p => { const a = [...p]; a[idx] = { ...a[idx], scheduledTime: e.target.value }; return a; })}
+                                                    style={{ border: '1px solid #e2e8f0', borderRadius: '5px', padding: '6px 8px', fontSize: '12px', width: '100%', boxSizing: 'border-box', minHeight: '32px' }} />
+                                            </td>
+                                            <td style={{ padding: '6px 8px', borderBottom: '1px solid #f1f5f9' }}>
+                                                <input value={v.procedure}
+                                                    onChange={e => setVisits(p => { const a = [...p]; a[idx] = { ...a[idx], procedure: e.target.value }; return a; })}
+                                                    placeholder="e.g. Canal cleaning, X-ray..."
+                                                    style={{ border: '1px solid #e2e8f0', borderRadius: '5px', padding: '6px 8px', fontSize: '12px', width: '100%', boxSizing: 'border-box', minHeight: '32px' }} />
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                )}
+
+                <div style={{ display: 'flex', gap: '12px', marginTop: '24px', justifyContent: 'flex-start', alignItems: 'center' }}>
+                    <button className="clinic-btn-secondary" style={{ padding: '10px 24px', height: '42px', fontSize: '14px', fontWeight: '600' }} onClick={() => setView('list')}>Cancel</button>
+                    <button className="clinic-btn-primary" style={{ padding: '10px 24px', height: '42px', fontSize: '14px', fontWeight: '600' }} disabled={saving} onClick={handleCreateSubmit}>
+                        {saving ? 'Creating...' : '✅ Create Treatment Plan'}
+                    </button>
+                </div>
+            </div>
+        </div>
+    );
+
+    // ── DETAIL VIEW ──
+    if (view === 'detail' && selectedPlan) {
+        const isLastScheduled = (visitId) => selectedPlan.visits.filter(v => ['scheduled', 'rescheduled'].includes(v.status) && v._id !== visitId).length === 0;
+        return (
+            <div>
+                <button className="clinic-back-btn" onClick={() => setView('list')}>← Back to Plans</button>
+                {msg.text && <div className={`clinic-msg clinic-msg-${msg.type}`} style={{ marginTop: '10px' }}>{msg.text}</div>}
+
+                <div className="clinic-card" style={{ marginTop: '12px' }}>
+                    {/* Header */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '10px', marginBottom: '16px', paddingBottom: '16px', borderBottom: '1px solid #f1f5f9' }}>
+                        <div>
+                            <h3 style={{ margin: '0 0 4px', color: '#0f172a' }}>{selectedPlan.title}</h3>
+                            <div style={{ fontSize: '13px', color: '#64748b' }}>{selectedPlan.clinicPatientId?.name} · {selectedPlan.clinicPatientId?.patientUid || ''} · {selectedPlan.clinicPatientId?.phone || ''}</div>
+                            {selectedPlan.description && <div style={{ fontSize: '12px', color: '#94a3b8', marginTop: '4px' }}>{selectedPlan.description}</div>}
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                            {selectedPlan.visits.filter(v => v.status === 'completed').length >= selectedPlan.visits.length || selectedPlan.status === 'completed' ? (
+                                <button onClick={() => downloadTreatmentPlanPDF(selectedPlan)} style={{ fontSize: '11px', padding: '4px 12px', background: '#ecfdf5', color: '#059669', border: '1px solid #10b981', borderRadius: '6px', cursor: 'pointer', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/></svg> Download Slip / Receipt
+                                </button>
+                            ) : (
+                                <span title="Available after all sittings are completed" style={{ fontSize: '11px', padding: '4px 12px', background: '#f8fafc', color: '#64748b', border: '1px solid #e2e8f0', borderRadius: '6px', cursor: 'not-allowed', fontWeight: '700', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                    In Progress ({selectedPlan.visits.filter(v => v.status === 'completed').length}/{selectedPlan.visits.length} Sittings)
+                                </span>
+                            )}
+                            <span style={{ fontSize: '11px', fontWeight: '700', padding: '4px 12px', borderRadius: '20px', background: (planStatusColor[selectedPlan.status] || '#94a3b8') + '20', color: planStatusColor[selectedPlan.status] || '#94a3b8', textTransform: 'uppercase', display: 'flex', alignItems: 'center' }}>{selectedPlan.status}</span>
+                            {selectedPlan.status === 'active' && <button onClick={() => handleCancel(selectedPlan._id)} style={{ fontSize: '11px', padding: '4px 12px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: '700' }}>Cancel Plan</button>}
+                        </div>
+                    </div>
+
+                    {/* Financial Summary */}
+                    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(130px, 1fr))', gap: '10px', marginBottom: '16px' }}>
+                        {[
+                            { label: 'Total Amount', value: '₹' + selectedPlan.totalAmount.toLocaleString('en-IN'), color: '#6366f1' },
+                            { label: 'Total Paid', value: '₹' + selectedPlan.totalPaid.toLocaleString('en-IN'), color: '#16a34a' },
+                            { label: 'Balance Due', value: selectedPlan.pendingBalance > 0 ? '₹' + selectedPlan.pendingBalance.toLocaleString('en-IN') : '✓ Cleared', color: selectedPlan.pendingBalance > 0 ? '#dc2626' : '#16a34a' },
+                            { label: 'Visits Done', value: `${selectedPlan.visits.filter(v => v.status === 'completed').length} / ${selectedPlan.visits.length}`, color: '#D85F89' },
+                        ].map((s, i) => (
+                            <div key={i} style={{ background: '#f8fafc', borderRadius: '8px', padding: '12px', borderTop: `3px solid ${s.color}` }}>
+                                <div style={{ fontSize: '18px', fontWeight: '800', color: s.color }}>{s.value}</div>
+                                <div style={{ fontSize: '11px', color: '#64748b', marginTop: '2px' }}>{s.label}</div>
+                            </div>
+                        ))}
+                    </div>
+
+                    {/* Progress bar */}
+                    {selectedPlan.totalAmount > 0 && (
+                        <div style={{ marginBottom: '20px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '11px', color: '#64748b', marginBottom: '4px' }}>
+                                <span>Payment Progress</span>
+                                <span>{Math.min(100, Math.round((selectedPlan.totalPaid / selectedPlan.totalAmount) * 100))}%</span>
+                            </div>
+                            <div style={{ background: '#e2e8f0', borderRadius: '6px', height: '8px', overflow: 'hidden' }}>
+                                <div style={{ height: '100%', width: `${Math.min(100, Math.round((selectedPlan.totalPaid / selectedPlan.totalAmount) * 100))}%`, background: selectedPlan.pendingBalance === 0 ? '#16a34a' : '#D85F89', borderRadius: '6px', transition: 'width 0.3s' }} />
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Warning if last visit and balance pending */}
+                    {selectedPlan.status === 'active' && selectedPlan.pendingBalance > 0 && selectedPlan.visits.filter(v => ['scheduled', 'rescheduled'].includes(v.status)).length === 1 && (
+                        <div style={{ background: '#fef2f2', border: '1px solid #fecaca', borderRadius: '8px', padding: '10px 14px', marginBottom: '16px', fontSize: '13px', color: '#dc2626' }}>
+                            <b>Last visit remaining.</b> Patient must pay ₹{selectedPlan.pendingBalance.toLocaleString('en-IN')} before this visit can be closed.
+                        </div>
+                    )}
+
+                    {/* Visits Table */}
+                    <h4 style={{ margin: '0 0 12px', color: '#0f172a' }}>Visit Schedule</h4>
+                    <div style={{ border: '1px solid #e2e8f0', borderRadius: '8px', overflowX: 'auto', WebkitOverflowScrolling: 'touch', paddingBottom: '4px' }}>
+                        <table style={{ width: '100%', borderCollapse: 'collapse', fontSize: '13px' }}>
+                            <thead>
+                                <tr style={{ background: '#f1f5f9' }}>
+                                    {['#', 'Date & Time', 'Procedure', 'Paid This Visit', 'Status', 'Actions'].map(h => (
+                                        <th key={h} style={{ padding: '8px 10px', textAlign: 'left', fontWeight: '700', color: '#374151', borderBottom: '1px solid #e2e8f0', whiteSpace: 'nowrap', fontSize: '12px' }}>{h}</th>
+                                    ))}
+                                </tr>
+                            </thead>
+                            <tbody>
+                                 {selectedPlan.visits.map((v, idx) => {
+                                    const effStatus = getEffectiveStatus(v);
+                                    const statusBg = effStatus === 'completed' ? '#f0fdf4' : effStatus === 'missed' ? '#fff1f2' : effStatus === 'due' ? '#fffbeb' : effStatus === 'rescheduled' ? '#faf5ff' : idx % 2 === 0 ? '#fff' : '#f8fafc';
+                                    return (
+                                        <tr key={v._id} style={{ background: statusBg }}>
+                                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f1f5f9', fontWeight: '700', color: '#6366f1' }}>{v.visitNumber}</td>
+                                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f1f5f9', whiteSpace: 'nowrap', fontSize: '12px' }}>
+                                                <div style={{ fontWeight: '600' }}>{new Date(v.scheduledDate).toLocaleDateString('en-IN')}</div>
+                                                {v.scheduledTime && <div style={{ color: '#64748b', fontSize: '11px' }}>{v.scheduledTime}</div>}
+                                                {v.originalScheduledDate && (
+                                                    <div style={{ color: '#a855f7', fontSize: '10px', fontWeight: 'bold', marginTop: '2px' }}>
+                                                        Original: {new Date(v.originalScheduledDate).toLocaleDateString('en-IN')}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f1f5f9', fontSize: '12px', maxWidth: '140px' }}>
+                                                <div>{v.procedure || '—'}</div>
+                                                {v.notes && <div style={{ color: '#94a3b8', fontSize: '11px' }}>{v.notes}</div>}
+                                            </td>
+                                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f1f5f9', fontWeight: '600' }}>
+                                                {v.amountPaid > 0
+                                                    ? <span style={{ color: '#16a34a' }}>₹{v.amountPaid.toLocaleString('en-IN')}{v.paymentMethod ? ` · ${v.paymentMethod}` : ''}</span>
+                                                    : <span style={{ color: '#94a3b8', fontSize: '11px' }}>—</span>}
+                                            </td>
+                                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f1f5f9' }}>
+                                                <span style={{ fontSize: '11px', fontWeight: '700', padding: '3px 8px', borderRadius: '4px', background: (visitStatusColor[effStatus] || '#94a3b8') + '20', color: visitStatusColor[effStatus] || '#94a3b8', textTransform: 'uppercase' }}>{effStatus}</span>
+                                                {v.rescheduledToDate && (
+                                                    <div style={{ fontSize: '10px', color: '#a855f7', marginTop: '4px', fontWeight: '600' }}>
+                                                        Rescheduled To: {new Date(v.rescheduledToDate).toLocaleDateString('en-IN')}
+                                                    </div>
+                                                )}
+                                            </td>
+                                            <td style={{ padding: '8px 10px', borderBottom: '1px solid #f1f5f9' }}>
+                                                {!['completed', 'missed'].includes(v.status) && selectedPlan.status === 'active' && (() => {
+                                                    const vDateStr = new Date(v.scheduledDate).toISOString().split('T')[0];
+                                                    const isFutureVisit = vDateStr > todayStr();
+                                                    const hasPriorPayment = selectedPlan.visits.some(prior => prior.visitNumber === v.visitNumber && prior._id !== v._id && prior.amountPaid > 0);
+                                                    
+                                                    return (
+                                                    <div style={{ display: 'flex', gap: '4px', flexWrap: 'wrap' }}>
+                                                        {selectedPlan.pendingBalance > 0 && !hasPriorPayment && (
+                                                            <button
+                                                                onClick={() => {
+                                                                    const remainingScheduled = selectedPlan.visits.filter(vis => ['scheduled', 'rescheduled'].includes(vis.status) && vis._id !== v._id);
+                                                                    const isFinalVisit = remainingScheduled.length === 0;
+                                                                    const autoAmount = (isFinalVisit && selectedPlan.pendingBalance > 0) ? String(selectedPlan.pendingBalance) : '';
+                                                                    setPayModal({ visit: v, planId: selectedPlan._id, isFinalVisit });
+                                                                    setPayInput({ amountPaid: autoAmount, paymentDate: todayStr(), paymentMethod: 'Cash', notes: '', upiId: '', upiRef: '', confirmedReceipt: false, shakeAmount: false });
+                                                                }}
+                                                                disabled={isFutureVisit}
+                                                                title={isFutureVisit ? "Action not allowed for future visits" : ""}
+                                                                style={{ fontSize: '11px', padding: '3px 8px', background: isFutureVisit ? '#f1f5f9' : '#dcfce7', color: isFutureVisit ? '#94a3b8' : '#16a34a', border: 'none', borderRadius: '4px', cursor: isFutureVisit ? 'not-allowed' : 'pointer', fontWeight: '700' }}>
+                                                                Pay
+                                                            </button>
+                                                        )}
+                                                        <button
+                                                            onClick={() => handleComplete(selectedPlan._id, v._id)}
+                                                            disabled={isFutureVisit || (isLastScheduled(v._id) && selectedPlan.pendingBalance > 0)}
+                                                            title={isFutureVisit ? "Action not allowed for future visits" : (isLastScheduled(v._id) && selectedPlan.pendingBalance > 0 ? `Collect ₹${selectedPlan.pendingBalance.toLocaleString('en-IN')} first` : '')}
+                                                            style={{ fontSize: '11px', padding: '3px 8px', background: (isFutureVisit || (isLastScheduled(v._id) && selectedPlan.pendingBalance > 0)) ? '#f1f5f9' : '#dbeafe', color: (isFutureVisit || (isLastScheduled(v._id) && selectedPlan.pendingBalance > 0)) ? '#94a3b8' : '#1d4ed8', border: 'none', borderRadius: '4px', cursor: (isFutureVisit || (isLastScheduled(v._id) && selectedPlan.pendingBalance > 0)) ? 'not-allowed' : 'pointer', fontWeight: '700' }}>
+                                                            ✓ Done
+                                                        </button>
+                                                        {!hasPriorPayment && (
+                                                            <button
+                                                                onClick={() => handleMiss(selectedPlan._id, v._id)}
+                                                                disabled={isFutureVisit}
+                                                                title={isFutureVisit ? "Action not allowed for future visits" : ""}
+                                                                style={{ fontSize: '11px', padding: '3px 8px', background: isFutureVisit ? '#f1f5f9' : '#fee2e2', color: isFutureVisit ? '#94a3b8' : '#dc2626', border: 'none', borderRadius: '4px', cursor: isFutureVisit ? 'not-allowed' : 'pointer', fontWeight: '700' }}>
+                                                                ✗ Missed
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                    );
+                                                })()}
+                                                {v.status === 'missed' && !v.rescheduledToDate && selectedPlan.status === 'active' && (
+                                                    <button
+                                                        onClick={() => { setRescheduleModal({ visit: v, planId: selectedPlan._id }); setRescheduleInput({ newDate: '', newTime: '', remarks: '' }); }}
+                                                        style={{ fontSize: '11px', padding: '3px 8px', background: '#f3e8ff', color: '#a855f7', border: 'none', borderRadius: '4px', cursor: 'pointer', fontWeight: '700' }}>
+                                                        Reschedule
+                                                    </button>
+                                                )}
+                                                {v.status === 'completed' && <span style={{ fontSize: '11px', color: '#94a3b8' }}>{v.completedAt ? new Date(v.completedAt).toLocaleDateString('en-IN') : '—'}</span>}
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+
+                {/* Payment Modal */}
+                {payModal && (() => {
+                    const amt = Number(payInput.amountPaid) || 0;
+                    const amtExceedsBalance = amt > selectedPlan.pendingBalance;
+                    const amtValid = amt > 0 && !amtExceedsBalance;
+                    const upiRefClean = (payInput.upiRef || '').replace(/\D/g, '');
+                    const upiRefValid = upiRefClean.length === 12;
+                    const upiIdTrimmed = (payInput.upiId || '').trim();
+                    const upiIdValid = upiIdTrimmed.length > 0 && upiIdTrimmed.length <= 25;
+                    const pDateStr = payInput.paymentDate || '';
+                    const pDate = pDateStr ? new Date(pDateStr) : null;
+                    const vDateStr = payModal.visit.scheduledDate ? new Date(payModal.visit.scheduledDate).toISOString().split('T')[0] : '';
+                    
+                    let dateError = '';
+                    if (!pDateStr) dateError = 'Please select a payment date.';
+                    else if (pDateStr > todayStr()) dateError = 'Future payments are not allowed.';
+                    else if (pDateStr < vDateStr) dateError = 'Payment date cannot be earlier than the visit date.';
+
+                    const isUPI = payInput.paymentMethod === 'UPI';
+                    const allValid = amtValid && !dateError && (!isUPI || (upiIdValid && upiRefValid && payInput.confirmedReceipt));
+
+                    return (
+                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <style>{`
+                            @keyframes amountShake {
+                                10%, 90% { transform: translate3d(-1px, 0, 0); }
+                                20%, 80% { transform: translate3d(2px, 0, 0); }
+                                30%, 50%, 70% { transform: translate3d(-4px, 0, 0); }
+                                40%, 60% { transform: translate3d(4px, 0, 0); }
+                            }
+                        `}</style>
+                        <div data-lenis-prevent="true" style={{ background: '#fff', borderRadius: '14px', padding: '32px', width: '520px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
+                            <h3 style={{ margin: '0 0 20px', color: '#0f172a', fontSize: '17px' }}>Record Payment — Visit {payModal.visit.visitNumber}</h3>
+                            {/* Overall plan balance */}
+                            <div style={{ background: '#f8fafc', border: '1px solid #e2e8f0', borderRadius: '8px', padding: '14px 16px', marginBottom: '20px', fontSize: '13px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                    <span>Total Treatment</span><b>₹{selectedPlan.totalAmount.toLocaleString('en-IN')}</b>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '6px' }}>
+                                    <span>Paid so far</span><b style={{ color: '#16a34a' }}>₹{selectedPlan.totalPaid.toLocaleString('en-IN')}</b>
+                                </div>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', fontWeight: '800', color: '#dc2626', fontSize: '15px', paddingTop: '6px', borderTop: '1px solid #e2e8f0' }}>
+                                    <span>Outstanding Balance</span><span>₹{selectedPlan.pendingBalance.toLocaleString('en-IN')}</span>
+                                </div>
+                            </div>
+
+                            {/* Amount Field */}
+                            <div className="clinic-form-group" style={{ marginBottom: '16px' }}>
+                                <label>Amount Paying Now (₹) *</label>
+                                <input className="clinic-input" type="number" min="1" max={selectedPlan.pendingBalance}
+                                    placeholder={`Up to ₹${selectedPlan.pendingBalance.toLocaleString('en-IN')}`}
+                                    value={payInput.amountPaid}
+                                    readOnly={payModal.isFinalVisit && selectedPlan.pendingBalance > 0}
+                                    style={{
+                                        ...(payModal.isFinalVisit && selectedPlan.pendingBalance > 0 ? { backgroundColor: '#e2e8f0', color: '#64748b', cursor: 'not-allowed', borderColor: '#cbd5e1' } : {}),
+                                        ...(payInput.shakeAmount ? { animation: 'amountShake 0.4s cubic-bezier(.36,.07,.19,.97) both', borderColor: '#ef4444', color: '#ef4444' } : {})
+                                    }}
+                                    onChange={e => {
+                                        const val = e.target.value;
+                                        if (Number(val) > selectedPlan.pendingBalance) {
+                                            setPayInput(p => ({ ...p, shakeAmount: true, amountPaid: '' }));
+                                            setTimeout(() => setPayInput(p => ({ ...p, shakeAmount: false })), 400);
+                                        } else {
+                                            setPayInput(p => ({ ...p, amountPaid: val }));
+                                        }
+                                    }} />
+                                {payModal.isFinalVisit && selectedPlan.pendingBalance > 0 && (
+                                    <div style={{ fontSize: '11px', marginTop: '4px', color: '#D85F89', fontWeight: '600' }}>
+                                        Final visit — full remaining balance must be paid.
+                                    </div>
+                                )}
+                                {amtExceedsBalance && (
+                                    <div style={{ fontSize: '12px', marginTop: '4px', color: '#dc2626', fontWeight: '600' }}>
+                                        Payment amount cannot exceed outstanding balance.
+                                    </div>
+                                )}
+                                {amtValid && !amtExceedsBalance && (
+                                    <div style={{ fontSize: '12px', marginTop: '4px', color: amt >= selectedPlan.pendingBalance ? '#16a34a' : '#f97316', fontWeight: '600' }}>
+                                        {amt >= selectedPlan.pendingBalance
+                                            ? '✓ This will clear the full outstanding balance.'
+                                            : `After payment: ₹${Math.max(0, selectedPlan.pendingBalance - amt).toLocaleString('en-IN')} still pending.`}
+                                    </div>
+                                )}
+                            </div>
+
+                            {/* Payment Date Field */}
+                            <div className="clinic-form-group" style={{ marginBottom: '16px' }}>
+                                <label>Payment Date *</label>
+                                <MobileDatePicker className="clinic-input" 
+                                    max={todayStr()}
+                                    min={todayStr()}
+                                    value={todayStr()}
+                                    disabled={true}
+                                    style={{ backgroundColor: '#f8fafc', color: '#64748b', cursor: 'not-allowed', borderColor: '#cbd5e1' }}
+                                />
+                            </div>
+
+                            {/* Payment Method — Cash & UPI only */}
+                            <div className="clinic-form-group" style={{ marginBottom: '16px' }}>
+                                <label>Payment Method *</label>
+                                <select className="clinic-input hide-on-mobile" value={payInput.paymentMethod} onChange={e => setPayInput(p => ({ ...p, paymentMethod: e.target.value, upiId: '', upiRef: '', confirmedReceipt: false }))}>
+                                    <option>Cash</option>
+                                    <option>UPI</option>
+                                </select>
+                                <div className="clinic-custom-month-dropdown show-on-mobile" style={{ width: '100%' }}>
+                                    <div className="custom-dropdown-selected" onClick={() => setShowPayMethodDropdown(!showPayMethodDropdown)}>
+                                        {payInput.paymentMethod || 'Select Payment'} <span>▼</span>
+                                    </div>
+                                    {showPayMethodDropdown && (
+                                        <div className="custom-dropdown-options" style={{ width: '100%', zIndex: 100 }}>
+                                            {['Cash', 'UPI'].map(m => (
+                                                <div key={m} className="custom-dropdown-option" onClick={() => { setPayInput(p => ({ ...p, paymentMethod: m, upiId: '', upiRef: '', confirmedReceipt: false })); setShowPayMethodDropdown(false); }}>
+                                                    {m}
+                                                </div>
+                                            ))}
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                            
+                            {/* UPI Section */}
+                            {isUPI && (
+                                <div style={{ border: '1px dashed #6366f1', borderRadius: '8px', padding: '14px 16px', background: '#f5f3ff', marginBottom: '16px' }}>
+                                    <div className="clinic-form-group" style={{ marginBottom: '12px' }}>
+                                        <label style={{ color: '#4f46e5' }}>UPI ID *</label>
+                                        <input className="clinic-input" placeholder="e.g. 9948977432 or payments@upi" value={payInput.upiId}
+                                            maxLength={25}
+                                            onChange={e => {
+                                                let val = e.target.value;
+                                                if (val.length > 25) val = val.slice(0, 25);
+                                                setPayInput(p => ({ ...p, upiId: val }));
+                                            }}
+                                            onBlur={() => {
+                                                const val = (payInput.upiId || '').trim();
+                                                if (/^\d{10}$/.test(val)) {
+                                                    setPayInput(p => ({ ...p, upiId: val + '@ybl' }));
+                                                }
+                                            }}
+                                            style={{ background: '#fff' }} />
+                                        <div style={{ fontSize: '10px', color: '#6b7280', marginTop: '3px' }}>
+                                            10-digit mobile will auto-append @ybl · Max 25 characters
+                                        </div>
+                                        {upiIdTrimmed.length > 25 && (
+                                            <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '2px', fontWeight: '600' }}>UPI ID cannot exceed 25 characters.</div>
+                                        )}
+                                    </div>
+                                    {amt > 0 && upiIdValid && (
+                                        <div style={{ textAlign: 'center', margin: '14px 0', display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '6px' }}>
+                                            <div style={{ fontSize: '11px', color: '#6b7280', fontWeight: 'bold' }}>Scan QR to Pay ₹{payInput.amountPaid}</div>
+                                            <img
+                                                src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent('upi://pay?pa=' + upiIdTrimmed + '&pn=' + encodeURIComponent(selectedPlan.title) + '&am=' + payInput.amountPaid + '&cu=INR')}`}
+                                                alt="UPI QR Code"
+                                                style={{ border: '4px solid #fff', borderRadius: '8px', boxShadow: '0 4px 10px rgba(0,0,0,0.05)' }}
+                                            />
+                                        </div>
+                                    )}
+                                    <div className="clinic-form-group" style={{ marginBottom: '12px' }}>
+                                        <label style={{ color: '#4f46e5' }}>Transaction Reference Number (Ref #) *</label>
+                                        <input className="clinic-input" placeholder="Enter 12-digit UPI reference ID" value={payInput.upiRef}
+                                            onChange={e => {
+                                                let val = e.target.value.replace(/\D/g, '');
+                                                if (val.length > 12) val = val.slice(0, 12);
+                                                setPayInput(p => ({ ...p, upiRef: val }));
+                                            }} style={{ background: '#fff' }} />
+                                        {upiRefClean.length > 0 && !upiRefValid && (
+                                            <div style={{ fontSize: '11px', color: '#dc2626', marginTop: '3px', fontWeight: '600' }}>
+                                                Enter a valid 12-character transaction reference. ({upiRefClean.length}/12)
+                                            </div>
+                                        )}
+                                        {upiRefValid && (
+                                            <div style={{ fontSize: '11px', color: '#16a34a', marginTop: '3px', fontWeight: '600' }}>
+                                                ✓ Valid reference ({upiRefClean.length}/12)
+                                            </div>
+                                        )}
+                                    </div>
+                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', fontSize: '12px', color: '#475569', cursor: 'pointer', marginTop: '10px', fontWeight: '600' }}>
+                                        <input type="checkbox" checked={payInput.confirmedReceipt}
+                                            onChange={e => setPayInput(p => ({ ...p, confirmedReceipt: e.target.checked }))} />
+                                        I have confirmed the payment receipt on the device
+                                    </label>
+                                </div>
+                            )}
+
+                            {/* Notes */}
+                            <div className="clinic-form-group" style={{ marginBottom: '20px' }}>
+                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                    <label>Notes (optional)</label>
+                                    <span style={{ fontSize: '11px', color: (payInput.notes.length >= 300) ? '#ef4444' : '#64748b', fontWeight: '600' }}>
+                                        {payInput.notes.length} / 300
+                                    </span>
+                                </div>
+                                <input className="clinic-input" placeholder="e.g. Advance, partial..." 
+                                    maxLength={300}
+                                    value={payInput.notes} onChange={e => setPayInput(p => ({ ...p, notes: e.target.value }))} />
+                            </div>
+
+                            {/* Buttons */}
+                            <div style={{ display: 'flex', gap: '12px' }}>
+                                <button className="clinic-btn-secondary" style={{ flex: 1, padding: '10px 20px' }} onClick={() => setPayModal(null)}>Cancel</button>
+                                <button className="clinic-btn-primary" style={{ flex: 1, padding: '10px 20px', whiteSpace: 'nowrap' }} disabled={saving || !allValid} onClick={handlePay}>
+                                    {saving ? 'Saving...' : '✅ Confirm Payment'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                    );
+                })()}
+
+                {/* Reschedule Modal */}
+                {rescheduleModal && (
+                    <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                        <div data-lenis-prevent="true" style={{ background: '#fff', borderRadius: '14px', padding: '28px', width: '400px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }}>
+                            <h3 style={{ margin: '0 0 16px', color: '#0f172a' }}>Reschedule Visit {rescheduleModal.visit.visitNumber}</h3>
+                            <div style={{ background: '#f5f3ff', border: '1px solid #ddd6fe', borderRadius: '8px', padding: '12px', marginBottom: '16px', fontSize: '12px', color: '#6d28d9' }}>
+                                ℹ️ <b>Automatic Date Shifter Enabled</b>
+                                <br />
+                                All subsequent scheduled visits will automatically move forward to maintain their relative spacing.
+                            </div>
+                            <div className="clinic-form-group" style={{ marginBottom: '12px' }}>
+                                <label>New Visit Date *</label>
+                                <MobileDatePicker
+                                    className="clinic-input"
+                                    min={todayStr()}
+                                    required
+                                    value={rescheduleInput.newDate}
+                                    onChange={e => setRescheduleInput(p => ({ ...p, newDate: e.target.value }))}
+                                />
+                            </div>
+                            <div className="clinic-form-group" style={{ marginBottom: '12px' }}>
+                                <label>New Visit Time (optional)</label>
+                                <input
+                                    className="clinic-input"
+                                    type="time"
+                                    value={rescheduleInput.newTime}
+                                    onChange={e => setRescheduleInput(p => ({ ...p, newTime: e.target.value }))}
+                                />
+                            </div>
+                            <div className="clinic-form-group" style={{ marginBottom: '16px' }}>
+                                <label>Reason / Remarks (optional)</label>
+                                <input
+                                    className="clinic-input"
+                                    placeholder="e.g. Patient requested delay..."
+                                    value={rescheduleInput.remarks}
+                                    onChange={e => setRescheduleInput(p => ({ ...p, remarks: e.target.value }))}
+                                />
+                            </div>
+                            <div style={{ display: 'flex', gap: '10px' }}>
+                                <button className="clinic-btn-secondary" style={{ flex: 1 }} onClick={() => setRescheduleModal(null)}>Cancel</button>
+                                <button className="clinic-btn-primary" style={{ flex: 1 }} disabled={saving || !rescheduleInput.newDate} onClick={handleRescheduleSubmit}>
+                                    {saving ? 'Saving...' : 'Save & Shift'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+        );
+    }
+
+    return null;
+};
+
+// ═══════════════════════════════════════════════════
+// BILLING MODE — Collection & Billing History for Consultations & Treatment Plans
+// ═══════════════════════════════════════════════════
+const BillingMode = () => {
+    const [allRecords, setAllRecords] = useState([]);
+    const [displayRecords, setDisplayRecords] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [stats, setStats] = useState(null);
+    const [patSearch, setPatSearch] = useState('');
+    const [detailsModal, setDetailsModal] = useState(null);
+
+    useEffect(() => {
+        Promise.all([
+            clinicAPI.getAppointments(),
+            clinicAPI.getTreatmentPlans(),
+            clinicAPI.getStats(),
+        ]).then(([apptR, plansR, statsR]) => {
+            let combined = [];
+
+            // 1. Consultation Appointments
+            if (apptR.success && Array.isArray(apptR.appointments)) {
+                const paidAppts = apptR.appointments.filter(a => a.paymentStatus === 'paid' || a.amount > 0);
+                paidAppts.forEach(a => {
+                    combined.push({
+                        _id: a._id,
+                        date: a.appointmentDate,
+                        tokenOrSlot: a.tokenNumber ? `#${a.tokenNumber}` : (a.appointmentTime ? a.appointmentTime : 'Token'),
+                        patientName: a.clinicPatientId?.name || '—',
+                        patientUid: a.clinicPatientId?.patientUid || a.patientId || '—',
+                        serviceName: a.serviceName || 'General Consultation',
+                        category: 'Consultation Fee',
+                        amount: a.amount || 0,
+                        pendingAmount: 0,
+                        paymentMethod: a.paymentMethod || 'Cash',
+                        status: a.status || 'completed',
+                        cardRef: a.cardRef,
+                        upiScreenshotUrl: a.upiScreenshotUrl,
+                        type: 'consultation',
+                        rawRecord: a
+                    });
+                });
+            }
+
+            // 2. Treatment Plan Bills / Procedures
+            if (plansR.success && Array.isArray(plansR.plans)) {
+                plansR.plans.forEach(plan => {
+                    const pName = plan.clinicPatientId?.name || plan.patientName || '—';
+                    const pUid = plan.clinicPatientId?.patientUid || '—';
+
+                    if (Array.isArray(plan.visits) && plan.visits.length > 0) {
+                        plan.visits.forEach((v, idx) => {
+                            if (v.isPaid || (v.amountPaid && v.amountPaid > 0) || (v.cost && v.cost > 0)) {
+                                combined.push({
+                                    _id: `${plan._id}_v${v._id || idx}`,
+                                    date: v.paidAt || v.completedAt || v.dueDate || plan.createdAt,
+                                    tokenOrSlot: `Plan: ${plan.title || 'Procedure'}`,
+                                    patientName: pName,
+                                    patientUid: pUid,
+                                    serviceName: `Treatment Plan: ${plan.title || 'Procedure'} (Visit #${v.visitNumber || (idx + 1)})`,
+                                    category: 'Treatment Plan / Procedure',
+                                    amount: v.amountPaid || (v.isPaid ? (v.cost || 0) : 0),
+                                    pendingAmount: plan.pendingBalance || 0,
+                                    paymentMethod: v.paymentMethod || 'Cash',
+                                    status: v.isPaid ? 'completed' : (v.status || plan.status || 'pending'),
+                                    type: 'treatment_plan',
+                                    rawRecord: plan,
+                                    rawVisit: v
+                                });
+                            }
+                        });
+                    } else {
+                        combined.push({
+                            _id: plan._id,
+                            date: plan.createdAt,
+                            tokenOrSlot: `Plan: ${plan.title || 'Procedure'}`,
+                            patientName: pName,
+                            patientUid: pUid,
+                            serviceName: `Treatment Plan: ${plan.title || 'Procedure'}`,
+                            category: 'Treatment Plan / Procedure',
+                            amount: plan.totalPaid || 0,
+                            pendingAmount: plan.pendingBalance || 0,
+                            paymentMethod: 'Multiple / Cash',
+                            status: plan.status || 'active',
+                            type: 'treatment_plan',
+                            rawRecord: plan
+                        });
+                    }
+                });
+            }
+
+            // Sort by date descending
+            combined.sort((a, b) => new Date(b.date || 0) - new Date(a.date || 0));
+
+            setAllRecords(combined);
+            setDisplayRecords(combined);
+            if (statsR.success) setStats(statsR.stats);
+        }).catch(console.error).finally(() => setLoading(false));
+    }, []);
+
+    const filterByPatient = () => {
+        if (!patSearch.trim()) { setDisplayRecords(allRecords); return; }
+        const q = patSearch.trim().toLowerCase();
+        setDisplayRecords(allRecords.filter(r =>
+            (r.patientName || '').toLowerCase().includes(q) ||
+            (r.patientUid || '').toLowerCase().includes(q) ||
+            (r.serviceName || '').toLowerCase().includes(q)
+        ));
+    };
+
+    const todayTotal = allRecords
+        .filter(r => new Date(r.date).toDateString() === new Date().toDateString())
+        .reduce((s, r) => s + (r.amount || 0), 0);
+
+    const handleInvoice = (r, action = 'view') => {
+        const doc = new jsPDF();
+        pdfHeader(doc, 'INVOICE / RECEIPT');
+        
+        let y = 45;
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Patient Details', 14, y); y += 6;
+        doc.setFont('helvetica', 'normal');
+        doc.text(`Name: ${r.patientName}`, 14, y);
+        doc.text(`ID: ${r.patientUid}`, 105, y); y += 6;
+        
+        y += 8;
+        doc.setFont('helvetica', 'bold');
+        doc.text('Billing Details', 14, y); y += 6;
+        
+        const tableData = [
+            ['Date', new Date(r.date).toLocaleDateString('en-IN')],
+            ['Service/Procedure', r.serviceName],
+            ['Token/Plan', r.tokenOrSlot],
+            ['Payment Method', r.paymentMethod],
+            ['Paid Amount', `Rs. ${r.amount}`],
+            ['Pending Balance', `Rs. ${r.pendingAmount}`]
+        ];
+
+        autoTable(doc, {
+            startY: y,
+            head: [['Description', 'Details']],
+            body: tableData,
+            theme: 'grid',
+            headStyles: { fillColor: [41, 128, 185] },
+            styles: { fontSize: 10, cellPadding: 4 }
+        });
+
+        y = doc.lastAutoTable.finalY + 15;
+        doc.setFontSize(10);
+        doc.setFont('helvetica', 'bold');
+        doc.text('Authorized Signatory', 150, y);
+
+        if (action === 'download') {
+            doc.save(`Invoice_${r.patientName.replace(/\s+/g, '_')}_${new Date(r.date).getTime()}.pdf`);
+        } else {
+            window.open(doc.output('bloburl'), '_blank');
+        }
+    };
+
+    return (
+        <div>
+            {/* Collection Summary Strip */}
+            {stats && (
+                <div className="clinic-kpi-grid" style={{ marginBottom: '20px' }}>
+                    {[
+                        { label: 'Total Collection', value: fmt(stats.totalRevenue || allRecords.reduce((sum, r) => sum + r.amount, 0)), icon: <FiDollarSign />, color: '#D85F89' },
+                        { label: "Today's Collection", value: fmt(stats.todayRevenue || todayTotal), icon: <FiCalendar />, color: '#D85F89' },
+                        { label: 'Treatment Plan Revenue', value: fmt(stats.treatmentPlanRevenue || 0), icon: <FiFileText />, color: '#0284C7' },
+                        { label: 'Treatment Plan Pending', value: fmt(stats.treatmentPlanPending || 0), icon: '⏳', color: '#dc2626' },
+                        { label: 'Total Paid Transactions', value: allRecords.filter(r => r.amount > 0).length, icon: '✅', color: '#0ea5e9' },
+                    ].map((k, i) => (
+                        <div key={i} className="clinic-kpi-card" style={{ borderTop: `4px solid ${k.color}` }}>
+                            <div style={{ fontSize: '24px' }}>{k.icon}</div>
+                            <div style={{ fontSize: '20px', fontWeight: 800, color: k.color }}>{k.value}</div>
+                            <div style={{ fontSize: '12px', color: '#64748b' }}>{k.label}</div>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            <div className="clinic-card">
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '14px' }}>
+                    <h3 style={{ margin: 0 }}>Billing & Collection Records</h3>
+                    <span style={{ fontSize: '12px', background: '#dcfce7', color: '#16a34a', padding: '3px 10px', borderRadius: '10px', fontWeight: 700 }}>
+                        Consultations & Treatment Plans
+                    </span>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', marginBottom: '14px' }}>
+                    <input className="clinic-input" style={{ flex: 1 }} placeholder="Search by patient name, ID or procedure..."
+                        value={patSearch} onChange={e => setPatSearch(e.target.value)}
+                        onKeyDown={e => e.key === 'Enter' && filterByPatient()} />
+                    <button className="clinic-btn-secondary" onClick={filterByPatient}>Search</button>
+                    {patSearch && <button className="clinic-btn-secondary" onClick={() => { setPatSearch(''); setDisplayRecords(allRecords); }}>✕ Clear</button>}
+                </div>
+
+                {loading ? <Spinner /> : displayRecords.length === 0 ? (
+                    <Empty text="No collection records found." />
+                ) : (
+                    <table className="clinic-table">
+                        <thead>
+                            <tr>
+                                <th>Date</th>
+                                <th>Type</th>
+                                <th>Token / Plan</th>
+                                <th>Patient</th>
+                                <th>Service / Procedure</th>
+                                <th>Paid Fee</th>
+                                <th>Pending Dues</th>
+                                <th>Method</th>
+                                <th>Status</th>
+                                <th style={{ textAlign: 'right' }}>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            {displayRecords.map(r => (
+                                <tr key={r._id}>
+                                    <td style={{ fontSize: '12px' }}>{fmtDate(r.date)}</td>
+                                    <td>
+                                        <span style={{
+                                            background: r.type === 'treatment_plan' ? '#FFF7FA' : '#f0fdf4',
+                                            color: r.type === 'treatment_plan' ? '#D85F89' : '#16a34a',
+                                            padding: '2px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 700
+                                        }}>
+                                            {r.category || (r.type === 'treatment_plan' ? 'Treatment Plan' : 'Consultation')}
+                                        </span>
+                                    </td>
+                                    <td>
+                                        <strong style={{ color: '#6366f1' }}>{r.tokenOrSlot}</strong>
+                                    </td>
+                                    <td>
+                                        <div style={{ fontWeight: 600 }}>{r.patientName}</div>
+                                        <div style={{ fontSize: '11px', color: '#94a3b8' }}>{r.patientUid}</div>
+                                    </td>
+                                    <td style={{ fontSize: '12px', color: '#334155' }}>{r.serviceName}</td>
+                                    <td><strong style={{ color: '#16a34a' }}>{fmt(r.amount)}</strong></td>
+                                    <td>
+                                        {r.pendingAmount > 0 ? (
+                                            <strong style={{ color: '#dc2626' }}>{fmt(r.pendingAmount)}</strong>
+                                        ) : (
+                                            <span style={{ color: '#94a3b8', fontSize: '12px' }}>₹0</span>
+                                        )}
+                                    </td>
+                                    <td>
+                                        <span style={{ background: '#f1f5f9', color: '#475569', padding: '2px 8px', borderRadius: '8px', fontSize: '11px', fontWeight: 600 }}>
+                                            {r.paymentMethod}
+                                        </span>
+                                        {r.cardRef && <div style={{ fontSize: '10px', color: '#64748b', marginTop: '2px' }}>Ref: {r.cardRef}</div>}
+                                        {r.upiScreenshotUrl && (
+                                            <a href={r.upiScreenshotUrl} target="_blank" rel="noreferrer" style={{ fontSize: '10px', color: '#3b82f6', display: 'block', marginTop: '2px' }}>Screenshot</a>
+                                        )}
+                                    </td>
+                                    <td>
+                                        <StatusBadge status={r.status} />
+                                        {r.type === 'treatment_plan' && r.rawVisit?.rescheduledToDate && (
+                                            <div 
+                                                style={{ fontSize: '10px', color: '#8b5cf6', marginTop: '4px', fontWeight: 700, display: 'inline-flex', alignItems: 'center', gap: '4px', cursor: 'pointer', background: '#f5f3ff', padding: '2px 6px', borderRadius: '4px', border: '1px solid #ddd6fe' }} 
+                                                title="Click to view reschedule details"
+                                                onClick={() => setDetailsModal(r)}
+                                            >
+                                                Rescheduled
+                                            </div>
+                                        )}
+                                    </td>
+                                    <td style={{ textAlign: 'right' }}>
+                                        <div style={{ display: 'flex', gap: '6px', justifyContent: 'flex-end' }}>
+                                            <button className="clinic-btn-secondary" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => setDetailsModal(r)}>
+                                                View Details
+                                            </button>
+                                            <button className="clinic-btn-secondary" style={{ padding: '4px 8px', fontSize: '11px', background: '#f0fdf4', color: '#16a34a', borderColor: '#bbf7d0' }} onClick={() => handleInvoice(r, 'view')}>
+                                                Invoice
+                                            </button>
+                                            <button className="clinic-btn-secondary" style={{ padding: '4px 8px', fontSize: '11px' }} onClick={() => handleInvoice(r, 'download')} title="Download Invoice">
+                                                ⬇️
+                                            </button>
+                                        </div>
+                                    </td>
+                                </tr>
+                            ))}
+                        </tbody>
+                    </table>
+                )}
+            </div>
+
+            {/* View Details Modal */}
+            {detailsModal && (
+                <div style={{ position: 'fixed', top: 0, left: 0, right: 0, bottom: 0, background: 'rgba(0,0,0,0.5)', zIndex: 1000, display: 'flex', alignItems: 'center', justifyContent: 'center' }} onClick={() => setDetailsModal(null)}>
+                    <div data-lenis-prevent="true" style={{ background: '#fff', borderRadius: '14px', padding: '28px', width: '550px', maxWidth: '95vw', maxHeight: '90vh', overflowY: 'auto', boxShadow: '0 20px 40px rgba(0,0,0,0.15)' }} onClick={e => e.stopPropagation()}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', paddingBottom: '12px', borderBottom: '1px solid #e2e8f0' }}>
+                            <h2 style={{ fontSize: '1.2rem', margin: 0, display: 'flex', alignItems: 'center', gap: '8px', color: '#0f172a' }}>
+                                Billing Details
+                            </h2>
+                            <button style={{ background: 'transparent', border: 'none', fontSize: '18px', cursor: 'pointer', color: '#64748b' }} onClick={() => setDetailsModal(null)}>✕</button>
+                        </div>
+                        
+                        <div style={{ padding: '20px' }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '16px', background: '#f8fafc', padding: '12px', borderRadius: '8px' }}>
+                                <div>
+                                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Patient</div>
+                                    <div style={{ fontSize: '15px', fontWeight: 700, color: '#1e293b' }}>{detailsModal.patientName}</div>
+                                    <div style={{ fontSize: '12px', color: '#64748b' }}>{detailsModal.patientUid}</div>
+                                    {detailsModal.rawRecord?.clinicPatientId?.phone && (
+                                        <div style={{ fontSize: '12px', color: '#64748b', marginTop: '2px' }}>{detailsModal.rawRecord.clinicPatientId.phone}</div>
+                                    )}
+                                </div>
+                                <div style={{ textAlign: 'right' }}>
+                                    <div style={{ fontSize: '11px', color: '#64748b', fontWeight: 600, textTransform: 'uppercase' }}>Date</div>
+                                    <div style={{ fontSize: '14px', fontWeight: 600, color: '#334155' }}>{new Date(detailsModal.date).toLocaleDateString('en-IN')}</div>
+                                    <div style={{ marginTop: '6px', display: 'flex', flexDirection: 'column', alignItems: 'flex-end', gap: '6px' }}>
+                                        <StatusBadge status={detailsModal.status} />
+                                        {detailsModal.type === 'treatment_plan' && detailsModal.rawVisit?.rescheduledToDate && (
+                                            <div style={{ fontSize: '11px', color: '#8b5cf6', fontWeight: 700, background: '#f5f3ff', padding: '4px 8px', borderRadius: '6px', display: 'flex', alignItems: 'center', gap: '4px' }}>
+                                                Rescheduled To: {new Date(detailsModal.rawVisit.rescheduledToDate).toLocaleDateString('en-IN')}
+                                            </div>
+                                        )}
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div style={{ marginBottom: '20px' }}>
+                                <h4 style={{ fontSize: '13px', color: '#475569', marginBottom: '8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>Treatment & Payment Summary</h4>
+                                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', fontSize: '13px' }}>
+                                    <div>
+                                        <div style={{ color: '#64748b' }}>Service / Procedure</div>
+                                        <div style={{ fontWeight: 600 }}>{detailsModal.serviceName}</div>
+                                    </div>
+                                    <div>
+                                        <div style={{ color: '#64748b' }}>Payment Method</div>
+                                        <div style={{ fontWeight: 600 }}>{detailsModal.paymentMethod}</div>
+                                    </div>
+                                    <div>
+                                        <div style={{ color: '#64748b' }}>Paid Amount</div>
+                                        <div style={{ fontWeight: 700, color: '#16a34a', fontSize: '15px' }}>₹{detailsModal.amount}</div>
+                                    </div>
+                                    <div>
+                                        <div style={{ color: '#64748b' }}>Pending Balance</div>
+                                        <div style={{ fontWeight: 700, color: detailsModal.pendingAmount > 0 ? '#dc2626' : '#94a3b8', fontSize: '15px' }}>
+                                            ₹{detailsModal.pendingAmount}
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {detailsModal.type === 'treatment_plan' && detailsModal.rawVisit?.paymentHistory?.length > 0 && (
+                                <div style={{ marginBottom: '20px' }}>
+                                    <h4 style={{ fontSize: '13px', color: '#475569', marginBottom: '8px', borderBottom: '1px solid #e2e8f0', paddingBottom: '4px' }}>Complete Payment History</h4>
+                                    <table className="clinic-table" style={{ fontSize: '12px' }}>
+                                        <thead>
+                                            <tr>
+                                                <th style={{ padding: '6px 8px' }}>Date</th>
+                                                <th style={{ padding: '6px 8px' }}>Method</th>
+                                                <th style={{ padding: '6px 8px', textAlign: 'right' }}>Amount</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {detailsModal.rawVisit.paymentHistory.map((ph, i) => (
+                                                <tr key={i}>
+                                                    <td style={{ padding: '6px 8px' }}>{new Date(ph.date).toLocaleDateString('en-IN')}</td>
+                                                    <td style={{ padding: '6px 8px' }}>{ph.method}</td>
+                                                    <td style={{ padding: '6px 8px', textAlign: 'right', fontWeight: 600, color: '#16a34a' }}>₹{ph.amount}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+
+                            <div style={{ display: 'flex', gap: '12px', marginTop: '24px' }}>
+                                <button className="clinic-btn-secondary" style={{ flex: 1 }} onClick={() => setDetailsModal(null)}>Close</button>
+                                <button className="clinic-btn-primary" style={{ flex: 1 }} onClick={() => handleInvoice(detailsModal, 'view')}>
+                                    View Invoice
+                                </button>
+                                <button className="clinic-btn-primary" style={{ flex: 1, background: '#10b981', borderColor: '#10b981' }} onClick={() => handleInvoice(detailsModal, 'download')}>
+                                    ⬇️ Download Invoice
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+// ─────────────────────────────────────────────
+// Small shared components
+// ─────────────────────────────────────────────
+const Spinner = ({ text = 'Loading...' }) => (
+    <div style={{ textAlign: 'center', padding: '40px', color: '#94a3b8', fontSize: '14px' }}>{text}</div>
+);
+
+const Empty = ({ text }) => (
+    <div style={{ textAlign: 'center', padding: '32px', color: '#94a3b8', fontSize: '14px' }}>{text}</div>
+);
+
+const StatusBadge = ({ status }) => {
+    const map = {
+        pending: { bg: '#fef9c3', color: '#854d0e' },
+        confirmed: { bg: '#dbeafe', color: '#1d4ed8' },
+        completed: { bg: '#dcfce7', color: '#16a34a' },
+        cancelled: { bg: '#fee2e2', color: '#dc2626' },
+    };
+    const s = map[status] || { bg: '#f1f5f9', color: '#64748b' };
+    return <span style={{ ...s, padding: '3px 8px', borderRadius: '4px', fontSize: '11px', fontWeight: 700, textTransform: 'uppercase' }}>{status}</span>;
+};
+
+const PayBadge = ({ status }) => {
+    const color = status === 'paid' ? '#16a34a' : status === 'refunded' ? '#0ea5e9' : '#dc2626';
+    return <span style={{ color, fontWeight: 700, fontSize: '12px' }}>{status}</span>;
+};
+
+export default ClinicDashboard;

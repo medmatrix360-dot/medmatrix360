@@ -1,0 +1,361 @@
+/* ============================================================
+   MedMatrix 360 Design System — Pharmacy Collections & Analytics
+   Scoped under .collections-container
+   Zero global :root leakage
+   ============================================================ */
+
+.collections-container {
+    --col-bg: #FFF7FA;
+    --col-surface: #FFFFFF;
+    --col-primary: #D85F89;
+    --col-primary-hover: #C94D78;
+    --col-primary-active: #B83D68;
+    --col-selected-bg: #FCE7EF;
+    --col-selected-border: #F7BFD2;
+    --col-navy: #172238;
+    --col-muted: #64748B;
+    --col-subtle: #94A3B8;
+    --col-border: #F1DCE4;
+    --col-border-light: #FDF2F6;
+    --col-shadow: 0 4px 18px -2px rgba(216, 95, 137, 0.06), 0 2px 6px -1px rgba(23, 34, 56, 0.03);
+    --col-shadow-sm: 0 1px 3px rgba(23, 34, 56, 0.04);
+
+    /* Semantic Clinical Tokens */
+    --col-success: #10B981;
+    --col-success-bg: #DCFCE7;
+    --col-success-border: #BBF7D0;
+    --col-warning: #F59E0B;
+    --col-warning-bg: #FEF3C7;
+    --col-warning-border: #FDE68A;
+    --col-danger: #EF4444;
+    --col-danger-bg: #FEE2E2;
+    --col-danger-border: #FECACA;
+    --col-purple: #8B5CF6;
+    --col-purple-bg: #F3E8FF;
+    --col-purple-border: #DDD6FE;
+
+    min-height: 100vh;
+    padding: 24px;
+    background-color: var(--col-bg);
+    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--col-navy);
+}
+
+/* ============================================================
+   Header & Range Filters
+   ============================================================ */
+.collections-container .collections-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 24px;
+    background: var(--col-surface);
+    padding: 20px 24px;
+    border-radius: 16px;
+    border: 1.5px solid var(--col-border);
+    box-shadow: var(--col-shadow);
+}
+
+.collections-container .collections-header h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--col-navy);
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.collections-container .filters {
+    display: flex;
+    gap: 12px;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.collections-container .filters select,
+.collections-container .filters input {
+    padding: 9px 14px;
+    border: 1.5px solid var(--col-border);
+    border-radius: 10px;
+    outline: none;
+    background: var(--col-surface);
+    color: var(--col-navy);
+    font-size: 0.9rem;
+    font-weight: 600;
+    transition: all 0.15s ease;
+    cursor: pointer;
+}
+
+.collections-container .filters select:focus,
+.collections-container .filters input:focus {
+    border-color: var(--col-primary);
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.18);
+}
+
+.collections-container .custom-dates {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    font-size: 0.88rem;
+    color: var(--col-muted);
+    font-weight: 600;
+}
+
+/* ============================================================
+   KPI Metrics Grid
+   ============================================================ */
+.collections-container .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 18px;
+    margin-bottom: 28px;
+}
+
+.collections-container .kpi-card {
+    background: var(--col-surface);
+    padding: 22px 24px;
+    border-radius: 16px;
+    border: 1.5px solid var(--col-border);
+    box-shadow: var(--col-shadow);
+    position: relative;
+    overflow: hidden;
+    transition: transform 0.2s ease, box-shadow 0.2s ease;
+}
+
+.collections-container .kpi-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -4px rgba(216, 95, 137, 0.12);
+}
+
+.collections-container .kpi-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    bottom: 0;
+    width: 4px;
+}
+
+.collections-container .kpi-card.sales::before { background: var(--col-primary); }
+.collections-container .kpi-card.refunds::before { background: var(--col-danger); }
+.collections-container .kpi-card.net::before { background: var(--col-purple); }
+.collections-container .kpi-card.profit::before { background: var(--col-success); }
+
+.collections-container .kpi-card h3 {
+    margin: 0 0 8px 0;
+    color: var(--col-muted);
+    font-size: 0.8rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.collections-container .kpi-value {
+    font-size: 1.85rem;
+    font-weight: 800;
+    color: var(--col-navy);
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+}
+
+.collections-container .kpi-subtext {
+    font-size: 0.82rem;
+    color: var(--col-muted);
+    margin-top: 8px;
+    font-weight: 600;
+}
+
+/* ============================================================
+   Charts & Data Section
+   ============================================================ */
+.collections-container .charts-section {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 20px;
+}
+
+.collections-container .chart-card {
+    background: var(--col-surface);
+    padding: 24px;
+    border-radius: 16px;
+    border: 1.5px solid var(--col-border);
+    box-shadow: var(--col-shadow);
+    overflow: hidden;
+}
+
+.collections-container .chart-card h3 {
+    margin: 0 0 18px 0;
+    color: var(--col-navy);
+    font-size: 1.15rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+    padding-bottom: 12px;
+    border-bottom: 1.5px solid var(--col-border);
+}
+
+/* ============================================================
+   Data Tables
+   ============================================================ */
+.collections-container .data-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.collections-container .data-table th {
+    text-align: left;
+    padding: 12px 14px;
+    background: #FFF7FA;
+    color: var(--col-navy);
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+    border-bottom: 1.5px solid var(--col-border);
+}
+
+.collections-container .data-table th:first-child {
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+}
+
+.collections-container .data-table th:last-child {
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.collections-container .data-table td {
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--col-border);
+    color: var(--col-navy);
+    font-size: 0.88rem;
+    vertical-align: middle;
+}
+
+.collections-container .data-table tbody tr:hover td {
+    background: #FFF7FA;
+}
+
+/* ============================================================
+   Progress Bar & Badges
+   ============================================================ */
+.collections-container .progress-bar-container {
+    width: 100%;
+    background-color: var(--col-selected-bg);
+    border: 1px solid var(--col-selected-border);
+    border-radius: 6px;
+    height: 8px;
+    overflow: hidden;
+}
+
+.collections-container .progress-bar-fill {
+    background: linear-gradient(90deg, var(--col-primary), var(--col-primary-hover));
+    height: 100%;
+    border-radius: 6px;
+    transition: width 0.4s ease;
+}
+
+.collections-container .badge {
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 0.74rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    display: inline-block;
+}
+
+.collections-container .badge-sale {
+    background: var(--col-success-bg);
+    color: #166534;
+    border: 1px solid var(--col-success-border);
+}
+
+.collections-container .badge-refund {
+    background: var(--col-danger-bg);
+    color: #991B1B;
+    border: 1px solid var(--col-danger-border);
+}
+
+.collections-container .loading,
+.collections-container .no-data {
+    text-align: center;
+    padding: 60px 20px;
+    font-size: 1rem;
+    color: var(--col-muted);
+    font-weight: 600;
+    background: var(--col-surface);
+    border-radius: 16px;
+    border: 1.5px solid var(--col-border);
+}
+
+/* ============================================================
+   Responsive Design Breakpoints
+   ============================================================ */
+@media (max-width: 1024px) {
+    .collections-container {
+        padding: 18px;
+    }
+
+    .collections-container .charts-section {
+        grid-template-columns: 1fr;
+        gap: 18px;
+    }
+}
+
+@media (max-width: 768px) {
+    .collections-container .collections-header {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 16px;
+    }
+
+    .collections-container .filters {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .collections-container .filters select,
+    .collections-container .filters input {
+        width: 100%;
+        box-sizing: border-box;
+    }
+
+    .collections-container .custom-dates {
+        width: 100%;
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .collections-container .chart-card {
+        padding: 18px 14px;
+        overflow-x: auto;
+    }
+
+    .collections-container .data-table {
+        min-width: 480px;
+    }
+}
+
+@media (max-width: 480px) {
+    .collections-container {
+        padding: 12px;
+    }
+
+    .collections-container .collections-header h2 {
+        font-size: 1.25rem;
+    }
+
+    .collections-container .kpi-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .collections-container .kpi-value {
+        font-size: 1.6rem;
+    }
+}

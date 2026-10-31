@@ -1,0 +1,240 @@
+/* ============================================================
+   MedMatrix 360 — Laboratory Management Dashboard Stylesheet
+   Phase 7 UI Redesign — Scoped to .lab-dashboard
+   Zero global :root leakage | Clean Healthcare SaaS Theme
+   ============================================================ */
+
+.lab-dashboard {
+  --lab-bg: #FFF7FA;
+  --lab-surface: #FFFFFF;
+  --lab-primary: #D85F89;
+  --lab-primary-hover: #C94D78;
+  --lab-primary-tint: #FCE7EF;
+  --lab-border: #F1DCE4;
+  --lab-text-primary: #172238;
+  --lab-text-secondary: #64748B;
+  --lab-text-muted: #94A3B8;
+  --lab-shadow: 0 4px 20px rgba(216, 95, 137, 0.08);
+  --lab-shadow-hover: 0 12px 28px rgba(216, 95, 137, 0.15);
+  --lab-success: #10B981;
+  --lab-warning: #F59E0B;
+  --lab-purple: #8B5CF6;
+
+  min-height: 100vh;
+  padding: 32px 36px;
+  background-color: var(--lab-bg);
+  font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  color: var(--lab-text-primary);
+  box-sizing: border-box;
+}
+
+/* ============================================================
+   Header Section
+   ============================================================ */
+.lab-dashboard .lab-header {
+  margin-bottom: 32px;
+  background: var(--lab-surface);
+  padding: 28px 32px;
+  border-radius: 20px;
+  border: 1.5px solid var(--lab-border);
+  box-shadow: var(--lab-shadow);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.lab-dashboard .lab-header::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 3px;
+  background: linear-gradient(90deg, var(--lab-primary) 0%, #F472B6 100%);
+}
+
+.lab-dashboard .lab-header h1 {
+  font-size: 1.85rem;
+  font-weight: 800;
+  color: var(--lab-text-primary);
+  margin: 0 0 6px 0;
+  letter-spacing: -0.02em;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.lab-dashboard .lab-header p {
+  color: var(--lab-text-secondary);
+  font-size: 0.95rem;
+  margin: 0;
+  font-weight: 500;
+}
+
+/* ============================================================
+   KPI Metrics Grid
+   ============================================================ */
+.lab-dashboard .lab-stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 24px;
+  margin-bottom: 36px;
+}
+
+.lab-dashboard .lab-stat-card {
+  background: var(--lab-surface);
+  border: 1.5px solid var(--lab-border);
+  border-radius: 18px;
+  padding: 26px 28px;
+  transition: all 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  cursor: pointer;
+  box-shadow: var(--lab-shadow);
+  position: relative;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+}
+
+.lab-dashboard .lab-stat-card:hover {
+  transform: translateY(-4px);
+  box-shadow: var(--lab-shadow-hover);
+  border-color: #F7BFD2;
+}
+
+/* Semantic Indicator Left Bar */
+.lab-dashboard .lab-stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 5px;
+  height: 100%;
+  border-radius: 4px 0 0 4px;
+}
+
+.lab-dashboard .lab-stat-card.pending::before {
+  background: linear-gradient(180deg, #F59E0B 0%, #D97706 100%);
+}
+
+.lab-dashboard .lab-stat-card.completed::before {
+  background: linear-gradient(180deg, #10B981 0%, #059669 100%);
+}
+
+.lab-dashboard .lab-stat-card.revenue::before {
+  background: linear-gradient(180deg, #8B5CF6 0%, #6D28D9 100%);
+}
+
+.lab-dashboard .lab-stat-card h3 {
+  font-size: 2.5rem;
+  font-weight: 800;
+  margin: 0 0 6px 0;
+  color: var(--lab-text-primary);
+  letter-spacing: -0.03em;
+  line-height: 1.1;
+}
+
+.lab-dashboard .lab-stat-card p {
+  color: var(--lab-text-secondary);
+  font-size: 0.95rem;
+  font-weight: 600;
+  margin: 0;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+/* ============================================================
+   Action Navigation Buttons
+   ============================================================ */
+.lab-dashboard .lab-actions {
+  display: flex;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.lab-dashboard .lab-action-btn {
+  padding: 14px 28px;
+  border-radius: 14px;
+  border: 1.5px solid transparent;
+  font-size: 0.95rem;
+  font-weight: 700;
+  cursor: pointer;
+  transition: all 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  background: var(--lab-primary);
+  color: #FFFFFF;
+  box-shadow: 0 4px 14px rgba(216, 95, 137, 0.25);
+}
+
+.lab-dashboard .lab-action-btn:hover {
+  background: var(--lab-primary-hover);
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(216, 95, 137, 0.35);
+}
+
+.lab-dashboard .lab-action-btn:active {
+  transform: translateY(0);
+}
+
+.lab-dashboard .lab-action-btn.secondary {
+  background: var(--lab-surface);
+  color: var(--lab-text-primary);
+  border: 1.5px solid var(--lab-border);
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.03);
+}
+
+.lab-dashboard .lab-action-btn.secondary:hover {
+  background: var(--lab-primary-tint);
+  border-color: #F7BFD2;
+  color: var(--lab-primary);
+  box-shadow: 0 4px 12px rgba(216, 95, 137, 0.15);
+}
+
+/* ============================================================
+   Responsive Design Breakpoints
+   ============================================================ */
+@media (max-width: 768px) {
+  .lab-dashboard {
+    padding: 20px 18px;
+  }
+
+  .lab-dashboard .lab-header {
+    flex-direction: column;
+    text-align: center;
+    gap: 14px;
+    padding: 20px;
+  }
+
+  .lab-dashboard .lab-header h1 {
+    justify-content: center;
+    font-size: 1.55rem;
+  }
+
+  .lab-dashboard .lab-actions {
+    flex-direction: column;
+  }
+
+  .lab-dashboard .lab-action-btn {
+    width: 100%;
+    justify-content: center;
+  }
+}
+
+@media (max-width: 480px) {
+  .lab-dashboard .lab-stats-grid {
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+
+  .lab-dashboard .lab-stat-card {
+    padding: 20px 22px;
+  }
+
+  .lab-dashboard .lab-stat-card h3 {
+    font-size: 2.1rem;
+  }
+}

@@ -1,0 +1,829 @@
+import React, { useState, useEffect } from 'react';
+import { useParams, useNavigate } from 'react-router-dom';
+import { patientAPI, clinicAPI, doctorAPI } from '../../utils/api';
+import jsPDF from 'jspdf';
+import autoTable from 'jspdf-autotable';
+import { 
+    FiArrowLeft, 
+    FiCalendar, 
+    FiDownload, 
+    FiMail, 
+    FiPhone, 
+    FiActivity, 
+    FiDollarSign, 
+    FiTrash2, 
+    FiPlus, 
+    FiUserCheck, 
+    FiAlertCircle, 
+    FiFileText, 
+    FiMapPin 
+} from 'react-icons/fi';
+import './ClinicPatientProfile.css';
+import toast from 'react-hot-toast';
+import { confirmToast } from '../../utils/confirmToast';
+
+import AppointmentReports from '../../components/AppointmentReports';
+import PatientVialsSection from '../../components/vials/PatientVialsSection';
+
+const ClinicPatientProfile = () => {
+    const { id: patientId } = useParams();
+    const navigate = useNavigate();
+
+    // Data States
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    const userRoleStr = (currentUser.role || '').toLowerCase();
+    const dynRoleStr = (currentUser._roleData?.name || '').toLowerCase();
+    const isHospitalAdmin = ['hospitaladmin', 'centraladmin', 'superadmin'].includes(userRoleStr) ||
+                            ['hospitaladmin', 'centraladmin', 'superadmin'].includes(dynRoleStr);
+    const canViewVials = isHospitalAdmin || 
+                         ['reception', 'receptionist', 'doctor', 'clinicdoctor', 'clinic doctor', 'staff', 'frontdesk'].includes(userRoleStr) ||
+                         ['reception', 'receptionist', 'doctor', 'clinicdoctor', 'clinic doctor', 'staff', 'frontdesk'].includes(dynRoleStr);
+
+    const [patientData, setPatientData] = useState(null);
+    const [timeline, setTimeline] = useState([]);
+    const [loading, setLoading] = useState(true);
+    const [error, setError] = useState('');
+    const [activeTab, setActiveTab] = useState('timeline');
+
+    // Report upload states
+    const [file, setFile] = useState(null);
+    const [reportName, setReportName] = useState('');
+    const [uploading, setUploading] = useState(false);
+
+    // Vitals form state
+    const [vitalsForm, setVitalsForm] = useState({
+        weight: '', height: '', bmi: '', bloodPressure: '', pulse: '', temperature: '', spo2: '', respiratoryRate: ''
+    });
+    const [savingVitals, setSavingVitals] = useState(false);
+
+    useEffect(() => {
+        if (patientId) {
+            fetchProfile();
+        }
+    }, [patientId]);
+
+    const fetchProfile = async () => {
+        setLoading(true);
+        try {
+            const res = await patientAPI.getFullHistory(patientId);
+            if (res.success) {
+                if (res.user && Array.isArray(res.user.reports)) {
+                    res.user.reports = Array.from(new Map(res.user.reports.map(r => [r.filename || r.url || r.fileUrl || r.name, r])).values());
+                }
+                setPatientData(res.user);
+                setTimeline(res.timeline || []);
+            } else {
+                setError(res.message || 'Failed to load profile data.');
+            }
+        } catch (err) {
+            console.error(err);
+            setError('An error occurred while fetching the profile.');
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const getReportUrl = (filename) => {
+        if (!filename) return '';
+        const isAbsolute = filename.startsWith('http://') || filename.startsWith('https://');
+        return isAbsolute ? filename : `/api/patients/reports/${encodeURIComponent(filename)}`;
+    };
+
+    // Helper to filter out unassigned/orphaned placeholder visits
+    const filterValidVisits = (items) => {
+        if (!Array.isArray(items) || items.length === 0) return [];
+
+        const isUnassignedPlaceholder = (item) => {
+            const d = item.data || item;
+            const rawDoc = (d.doctorName || d.doctorSeen || d.doctorId?.name || d.assignedDoctor || '').toString().trim();
+            const docClean = rawDoc.replace(/^dr\.\s*/i, '').toLowerCase();
+            const isDocUnassigned = !docClean || docClean === 'not assigned' || docClean === 'pending' || docClean === 'unassigned' || docClean === 'none';
+
+            const status = (d.status || '').toString().toLowerCase();
+            const isStatusUnassigned = status === 'active' || status === 'pending' || !status;
+
+            const hasDoctorActions = Boolean(
+                (d.diagnosis && d.diagnosis !== '—' && d.diagnosis !== 'Processing' && d.diagnosis !== 'No diagnosis logged') ||
+                (d.doctorNotes && d.doctorNotes.trim()) ||
+                (d.notes && d.notes.trim() && d.notes !== '—') ||
+                (d.prescriptions && d.prescriptions.length > 0) ||
+                (d.medicines && d.medicines.length > 0) ||
+                (d.pharmacy && d.pharmacy.length > 0)
+            );
+
+            return isDocUnassigned && isStatusUnassigned && !hasDoctorActions;
+        };
+
+        const hasValidConsultation = items.some(item => !isUnassignedPlaceholder(item));
+
+        if (hasValidConsultation) {
+            return items.filter(item => !isUnassignedPlaceholder(item));
+        }
+        return items;
+    };
+
+    // Calculate Metrics
+    const calculateMetrics = () => {
+        const validTimeline = filterValidVisits(timeline);
+        const appointments = validTimeline.filter(t => t.type === 'appointment' || t.type === 'clinicalVisit') || [];
+        const completed = appointments.filter(a => a.data?.status === 'completed');
+        const upcoming = appointments.filter(a => {
+            const status = a.data?.status;
+            const date = new Date(a.date);
+            const today = new Date();
+            today.setHours(0,0,0,0);
+            return (status === 'pending' || status === 'confirmed') && date >= today;
+        });
+
+        let totalPaid = 0;
+        let pendingDues = 0;
+
+        appointments.forEach(a => {
+            const amt = a.data?.amount || 0;
+            const pStatus = (a.data?.paymentStatus || '').toLowerCase();
+            if (pStatus === 'paid') {
+                totalPaid += amt;
+            } else if (pStatus === 'pending') {
+                pendingDues += amt;
+            }
+        });
+
+        return {
+            totalVisits: appointments.length,
+            upcomingCount: upcoming.length,
+            totalPaid,
+            pendingDues
+        };
+    };
+
+    const handleUploadReport = async (e) => {
+        e.preventDefault();
+        if (!file || !reportName.trim()) {
+            toast.error('Please select a file and enter a report name.');
+            return;
+        }
+        setUploading(true);
+        try {
+            const res = await clinicAPI.uploadPatientReport(patientData._id, file, reportName.trim());
+            if (res.success) {
+                toast.success('Report uploaded successfully!');
+                setFile(null);
+                setReportName('');
+                fetchProfile();
+            } else {
+                toast.error(res.message || 'Failed to upload report.');
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error('Error uploading report.');
+        } finally {
+            setUploading(false);
+        }
+    };
+
+    const handleSaveVitals = async (e) => {
+        e.preventDefault();
+        setSavingVitals(true);
+        try {
+            const profileData = {
+                vitals: {
+                    weight: vitalsForm.weight,
+                    height: vitalsForm.height,
+                    bmi: vitalsForm.bmi,
+                    bloodPressure: vitalsForm.bloodPressure,
+                    pulse: vitalsForm.pulse,
+                    temperature: vitalsForm.temperature,
+                    spo2: vitalsForm.spo2,
+                    respiratoryRate: vitalsForm.respiratoryRate,
+                    lastRecorded: new Date().toISOString()
+                }
+            };
+            await doctorAPI.updatePatientProfile(patientData._id, profileData);
+            
+            toast.success('Vitals saved successfully!');
+            setVitalsForm({ weight: '', height: '', bmi: '', bloodPressure: '', pulse: '', temperature: '', spo2: '', respiratoryRate: '' });
+            fetchProfile(); // refresh to show updated vitals
+        } catch (err) {
+            console.error(err);
+            toast.error('Error saving vitals.');
+        } finally {
+            setSavingVitals(false);
+        }
+    };
+
+    const handleDeleteReport = async (reportId) => {
+        const confirmed = await confirmToast('Are you sure you want to delete this report?', {
+            title: 'Delete Report',
+            confirmText: 'Delete',
+            danger: true
+        });
+        if (!confirmed) return;
+
+        try {
+            const res = await clinicAPI.deletePatientReport(patientData._id, reportId);
+            if (res.success) {
+                toast.success('Report deleted successfully!');
+                fetchProfile();
+            } else {
+                toast.error(res.message || 'Failed to delete report.');
+            }
+        } catch (err) {
+            console.error(err);
+            toast.error('Error deleting report.');
+        }
+    };
+
+    // Export PDF Profile summary with Prescribed Medicines
+    const handleDownloadPDF = () => {
+        if (!patientData) return;
+        const doc = new jsPDF();
+        
+        // Title banner
+        doc.setFillColor(99, 102, 241);
+        doc.rect(0, 0, 210, 40, 'F');
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(22);
+        doc.setTextColor(255, 255, 255);
+        doc.text("CLINIC PATIENT PROFILE SUMMARY", 15, 26);
+
+        // Patient details box
+        doc.setTextColor(15, 23, 42);
+        doc.setFontSize(11);
+        doc.setFont("helvetica", "bold");
+        doc.text("Patient Name:", 15, 55);
+        doc.setFont("helvetica", "normal");
+        doc.text(patientData.name || '—', 50, 55);
+
+        doc.setFont("helvetica", "bold");
+        doc.text("Patient UID (MRN):", 15, 63);
+        doc.setFont("helvetica", "normal");
+        doc.text(patientData.patientUid || '—', 50, 63);
+
+        doc.setFont("helvetica", "bold");
+        doc.text("Phone Number:", 15, 71);
+        doc.setFont("helvetica", "normal");
+        doc.text(patientData.phone || '—', 50, 71);
+
+        doc.setFont("helvetica", "bold");
+        doc.text("Blood Group:", 115, 55);
+        doc.setFont("helvetica", "normal");
+        doc.text(patientData.bloodGroup || '—', 150, 55);
+
+        doc.setFont("helvetica", "bold");
+        doc.text("Gender / DOB:", 115, 63);
+        doc.setFont("helvetica", "normal");
+        doc.text(`${patientData.gender || '—'} / ${patientData.dob ? new Date(patientData.dob).toLocaleDateString('en-IN') : '—'}`, 150, 63);
+
+        doc.setFont("helvetica", "bold");
+        doc.text("Allergies:", 115, 71);
+        doc.setFont("helvetica", "normal");
+        doc.text(patientData.allergies || 'None', 150, 71);
+
+        // Vitals box
+        doc.setFillColor(248, 250, 252);
+        doc.rect(15, 80, 180, 26, 'F');
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(10);
+        doc.setTextColor(99, 102, 241);
+        doc.text("LATEST RECORDED VITALS", 20, 88);
+        doc.setTextColor(15, 23, 42);
+        doc.setFont("helvetica", "normal");
+        
+        const vitals = patientData.vitals || {};
+        doc.text(`Weight: ${vitals.weight || '—'} kg`, 20, 98);
+        doc.text(`Height: ${vitals.height || '—'} cm`, 65, 98);
+        doc.text(`BP: ${vitals.bloodPressure || vitals.bp || '—'}`, 110, 98);
+        doc.text(`Pulse: ${vitals.pulse || '—'} bpm`, 150, 98);
+
+        // Filter valid visits for PDF export
+        const validTimeline = filterValidVisits(timeline);
+        const appointments = validTimeline.filter(t => t.type === 'appointment' || t.type === 'clinicalVisit');
+        const rows = appointments.map(a => [
+            new Date(a.date).toLocaleDateString('en-IN'),
+            a.data?.doctorName || a.data?.doctorSeen || 'Not Assigned',
+            a.data?.diagnosis || '—',
+            a.data?.notes || a.data?.doctorNotes || '—',
+            a.data?.status || 'Completed'
+        ]);
+
+        autoTable(doc, {
+            startY: 115,
+            head: [['Date', 'Doctor', 'Diagnosis', 'Consultation Notes', 'Status']],
+            body: rows,
+            headStyles: { fillColor: [99, 102, 241] },
+            theme: 'striped',
+            margin: { horizontal: 15 }
+        });
+
+        let nextY = (doc.lastAutoTable ? doc.lastAutoTable.finalY : 115) + 12;
+
+        if (nextY > 240) {
+            doc.addPage();
+            nextY = 20;
+        }
+
+        // Prescribed Medicines Section
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(13);
+        doc.setTextColor(16, 185, 129);
+        doc.text("PRESCRIBED MEDICINES SUMMARY", 15, nextY);
+        nextY += 6;
+
+        // Extract medicines from all consultation records
+        const allMedicines = [];
+        validTimeline.forEach(t => {
+            const dateStr = t.date ? new Date(t.date).toLocaleDateString('en-IN') : '—';
+            const d = t.data || {};
+            const medList = d.medicines || d.pharmacy || d.prescriptions || d.doctorConsultation?.medicines || [];
+            if (Array.isArray(medList) && medList.length > 0) {
+                medList.forEach(m => {
+                    allMedicines.push({
+                        date: dateStr,
+                        doctor: d.doctorName || d.doctorSeen || 'Doctor',
+                        name: m.name || m.medicineName || m.title || '—',
+                        dosage: m.dosage || m.dose || m.frequency || '—',
+                        frequency: m.frequency || '—',
+                        duration: m.duration || (m.days ? `${m.days} days` : '—'),
+                        instructions: m.instructions || m.notes || m.instruction || '—'
+                    });
+                });
+            }
+        });
+
+        if (allMedicines.length > 0) {
+            const medRows = allMedicines.map((m, idx) => [
+                idx + 1,
+                m.date,
+                m.name,
+                `${m.dosage} ${m.frequency !== '—' && m.frequency !== m.dosage ? `(${m.frequency})` : ''}`.trim(),
+                m.duration,
+                m.instructions
+            ]);
+
+            autoTable(doc, {
+                startY: nextY,
+                head: [['#', 'Date', 'Medicine Name', 'Dosage / Frequency', 'Duration', 'Instructions']],
+                body: medRows,
+                headStyles: { fillColor: [16, 185, 129] },
+                theme: 'striped',
+                margin: { horizontal: 15 },
+                styles: { fontSize: 9 }
+            });
+        } else {
+            doc.setFont("helvetica", "italic");
+            doc.setFontSize(10);
+            doc.setTextColor(100);
+            doc.text("No prescribed medicines recorded for these visits.", 15, nextY + 4);
+        }
+
+        doc.save(`Patient_Profile_${patientData.patientUid || 'summary'}.pdf`);
+    };
+
+    if (loading) {
+        return (
+            <div className="cpp-loading-screen">
+                <div className="cpp-spinner"></div>
+                <p>Loading patient history details...</p>
+            </div>
+        );
+    }
+
+    if (error || !patientData) {
+        return (
+            <div className="cpp-loading-screen">
+                <FiAlertCircle size={48} color="#ef4444" />
+                <p>{error || 'Patient profile not found.'}</p>
+                <button className="cpp-btn-download" onClick={() => navigate(-1)} style={{ background: '#64748b' }}>
+                    <FiArrowLeft /> Go Back
+                </button>
+            </div>
+        );
+    }
+
+    const metrics = calculateMetrics();
+    const vitals = patientData.vitals || {};
+    const relative = patientData.relatives?.[0] || {};
+
+    // Get unique medicines
+    const getMedicinesList = () => {
+        const list = [];
+        timeline.filter(t => t.type === 'appointment').forEach(appt => {
+            const meds = appt.data?.pharmacy || [];
+            meds.forEach(m => {
+                list.push({
+                    name: m.medicineName,
+                    salt: m.saltName,
+                    frequency: m.frequency,
+                    duration: m.duration,
+                    date: appt.date
+                });
+            });
+        });
+        return list;
+    };
+    const medicinesList = getMedicinesList();
+
+    // Get invoices
+    const getInvoicesList = () => {
+        return timeline
+            .filter(t => t.type === 'appointment' && t.data?.amount > 0)
+            .map(t => ({
+                id: t.data?._id,
+                date: t.date,
+                amount: t.data?.amount,
+                method: t.data?.paymentMethod || 'Cash',
+                status: t.data?.paymentStatus || 'Pending'
+            }));
+    };
+    const invoicesList = getInvoicesList();
+
+    return (
+        <div className="cpp-container">
+            {/* Header Identity Card */}
+            <div className="cpp-header-card">
+                <div className="cpp-identity">
+                    <div className="cpp-avatar">
+                        {(patientData.name || 'P')[0].toUpperCase()}
+                    </div>
+                    <div className="cpp-info">
+                        <h1>{patientData.name}</h1>
+                        <div className="cpp-tags">
+                            <span className="cpp-tag cpp-tag-primary">UID: {patientData.patientUid}</span>
+                            <span className="cpp-tag">📱 {patientData.phone}</span>
+                            <span className="cpp-tag">🩸 Blood: {patientData.bloodGroup || '—'}</span>
+                            <span className="cpp-tag">👤 {patientData.gender}</span>
+                        </div>
+                    </div>
+                </div>
+                <div style={{ display: 'flex', gap: '12px' }}>
+                    <button className="cpp-btn-download" onClick={() => navigate(-1)} style={{ background: '#64748b' }}>
+                        <FiArrowLeft /> Back
+                    </button>
+                    <button className="cpp-btn-download" onClick={handleDownloadPDF}>
+                        <FiDownload /> Export Summary
+                    </button>
+                </div>
+            </div>
+
+            {/* Quick Metrics Cards Grid */}
+            <div className="cpp-metrics">
+                <div className="cpp-metric-card metric-visits">
+                    <div className="cpp-metric-info">
+                        <span className="cpp-metric-label">Total Visits</span>
+                        <span className="cpp-metric-val">{metrics.totalVisits}</span>
+                    </div>
+                    <div className="cpp-metric-icon"><FiUserCheck /></div>
+                </div>
+                <div className="cpp-metric-card metric-upcoming">
+                    <div className="cpp-metric-info">
+                        <span className="cpp-metric-label">Upcoming</span>
+                        <span className="cpp-metric-val">{metrics.upcomingCount}</span>
+                    </div>
+                    <div className="cpp-metric-icon"><FiCalendar /></div>
+                </div>
+                <div className="cpp-metric-card metric-paid">
+                    <div className="cpp-metric-info">
+                        <span className="cpp-metric-label">Total Paid</span>
+                        <span className="cpp-metric-val">₹{metrics.totalPaid.toLocaleString('en-IN')}</span>
+                    </div>
+                    <div className="cpp-metric-icon"><FiDollarSign /></div>
+                </div>
+                <div className="cpp-metric-card metric-pending">
+                    <div className="cpp-metric-info">
+                        <span className="cpp-metric-label">Pending Dues</span>
+                        <span className="cpp-metric-val">₹{metrics.pendingDues}</span>
+                    </div>
+                    <div className="cpp-metric-icon"><FiAlertCircle /></div>
+                </div>
+            </div>
+
+            {/* Sidebar and content grid */}
+            <div className="cpp-content-grid">
+                
+                {/* Left Sidebar Columns */}
+                <div className="cpp-sidebar">
+                    {/* Patient Information Card */}
+                    <div className="cpp-card">
+                        <h3 className="cpp-card-title"><FiUserCheck /> Demographics</h3>
+                        <div className="cpp-details-list">
+                            <div className="cpp-detail-item">
+                                <span className="cpp-detail-lbl">Full Name</span>
+                                <span className="cpp-detail-val">{patientData.name}</span>
+                            </div>
+                            <div className="cpp-detail-item">
+                                <span className="cpp-detail-lbl">Email Address</span>
+                                <span className="cpp-detail-val">{patientData.email || 'No email registered'}</span>
+                            </div>
+                            <div className="cpp-detail-item">
+                                <span className="cpp-detail-lbl">Date of Birth</span>
+                                <span className="cpp-detail-val">
+                                    {patientData.dob ? new Date(patientData.dob).toLocaleDateString('en-IN') : '—'}
+                                </span>
+                            </div>
+                            <div className="cpp-detail-item">
+                                <span className="cpp-detail-lbl">Address</span>
+                                <span className="cpp-detail-val">{patientData.address || '—'}</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Medical Alert Profile Card */}
+                    <div className="cpp-card">
+                        <h3 className="cpp-card-title" style={{ color: '#f59e0b' }}><FiAlertCircle /> Clinical Profile</h3>
+                        <div className="cpp-details-list">
+                            <div className="cpp-detail-item">
+                                <span className="cpp-detail-lbl">Allergies</span>
+                                <span className="cpp-detail-val" style={{ color: patientData.allergies ? '#ef4444' : 'inherit' }}>
+                                    {patientData.allergies || 'No allergies recorded'}
+                                </span>
+                            </div>
+                            <div className="cpp-detail-item">
+                                <span className="cpp-detail-lbl">Chronic Conditions</span>
+                                <span className="cpp-detail-val">
+                                    {patientData.chronicConditions || 'No chronic conditions'}
+                                </span>
+                            </div>
+                            <div className="cpp-detail-item">
+                                <span className="cpp-detail-lbl">Clinical Notes / Intake</span>
+                                <span className="cpp-detail-val">
+                                    {patientData.medicalNotes || 'No notes added'}
+                                </span>
+                            </div>
+                        </div>
+                    </div>
+
+                    {/* Emergency Contacts Card */}
+                    <div className="cpp-card">
+                        <h3 className="cpp-card-title"><FiPhone /> Emergency Contacts</h3>
+                        {relative.name ? (
+                            <div className="cpp-details-list">
+                                <div className="cpp-detail-item">
+                                    <span className="cpp-detail-lbl">Contact Name</span>
+                                    <span className="cpp-detail-val">{relative.name}</span>
+                                </div>
+                                <div className="cpp-detail-item">
+                                    <span className="cpp-detail-lbl">Relationship</span>
+                                    <span className="cpp-detail-val">{relative.relation || 'Relative'}</span>
+                                </div>
+                                <div className="cpp-detail-item">
+                                    <span className="cpp-detail-lbl">Phone Number</span>
+                                    <span className="cpp-detail-val">{relative.phone}</span>
+                                </div>
+                            </div>
+                        ) : (
+                            <p style={{ color: '#94a3b8', fontSize: '13px', margin: 0 }}>No emergency relative registered.</p>
+                        )}
+                    </div>
+                </div>
+
+                {/* Right Panel Main Contents */}
+                <div className="cpp-main-panel">
+                    
+                    {/* Horizontal Nav Tabs */}
+                    {(() => {
+                        const displayTimeline = filterValidVisits(timeline);
+                        return (
+                            <>
+                                <div className="cpp-tabs-bar">
+                                    <button 
+                                        className={`cpp-tab-btn ${activeTab === 'timeline' ? 'active' : ''}`}
+                                        onClick={() => setActiveTab('timeline')}
+                                    >
+                                        📋 Visits History ({displayTimeline.length})
+                                    </button>
+                                    <button 
+                                        className={`cpp-tab-btn ${activeTab === 'medicines' ? 'active' : ''}`}
+                                        onClick={() => setActiveTab('medicines')}
+                                    >
+                                        💊 Medicines ({medicinesList.length})
+                                    </button>
+                                    <button 
+                                        className={`cpp-tab-btn ${activeTab === 'vitals' ? 'active' : ''}`}
+                                        onClick={() => setActiveTab('vitals')}
+                                    >
+                                        💓 Vitals
+                                    </button>
+                                    <button 
+                                        className={`cpp-tab-btn ${activeTab === 'billing' ? 'active' : ''}`}
+                                        onClick={() => setActiveTab('billing')}
+                                    >
+                                        💰 Financials ({invoicesList.length})
+                                    </button>
+                                    {canViewVials && (
+                                        <button 
+                                            className={`cpp-tab-btn ${activeTab === 'vials' ? 'active' : ''}`}
+                                            onClick={() => setActiveTab('vials')}
+                                        >
+                                            🧪 Vial Management
+                                        </button>
+                                    )}
+                                </div>
+
+                                {/* Tab Panels */}
+                                {activeTab === 'timeline' && (
+                                    <div className="cpp-card">
+                                        <h3 className="cpp-card-title"><FiFileText /> Visit Consultation Log</h3>
+                                        {displayTimeline.length === 0 ? (
+                                            <div className="cpp-empty-state">No consult history logs recorded for this patient.</div>
+                                        ) : (
+                                            <div className="cpp-timeline">
+                                                {displayTimeline.map((item, idx) => {
+                                        const dateStr = new Date(item.date).toLocaleDateString('en-IN', {
+                                            day: '2-digit', month: 'short', year: 'numeric'
+                                        });
+                                        const timeStr = item.data?.appointmentTime || '';
+                                        const diag = item.data?.diagnosis || 'No diagnosis logged';
+                                        const status = item.data?.status || 'pending';
+                                        
+                                        return (
+                                            <div key={idx} className="cpp-timeline-item">
+                                                <div className="cpp-tl-head">
+                                                    <div className="cpp-tl-meta">
+                                                        <span className="cpp-tl-date">{dateStr} {timeStr && `• ${timeStr}`}</span>
+                                                        <span className="cpp-tl-doctor">Dr. {item.data?.doctorName || 'Not Assigned'}</span>
+                                                    </div>
+                                                    <span className={`cpp-tl-badge badge-${status.toLowerCase()}`}>
+                                                        {status}
+                                                    </span>
+                                                </div>
+                                                <div className="cpp-tl-body">
+                                                    <div className="cpp-tl-section">
+                                                        <span className="cpp-tl-lbl">Diagnosis</span>
+                                                        <span className="cpp-tl-val" style={{ fontWeight: '700' }}>{diag}</span>
+                                                    </div>
+                                                    {item.data?.notes && (
+                                                        <div className="cpp-tl-section">
+                                                            <span className="cpp-tl-lbl">Intake symptoms</span>
+                                                            <span className="cpp-tl-val">{item.data?.notes}</span>
+                                                        </div>
+                                                    )}
+                                                    {item.data?.doctorNotes && (
+                                                        <div className="cpp-tl-section">
+                                                            <span className="cpp-tl-lbl">Consultation notes</span>
+                                                            <span className="cpp-tl-val">{item.data?.doctorNotes}</span>
+                                                        </div>
+                                                    )}
+                                                    {/* Vitals summary */}
+                                                    {item.data?.vitals && Object.values(item.data.vitals).some(Boolean) && (
+                                                        <div className="cpp-tl-section">
+                                                            <span className="cpp-tl-lbl">Consult Vitals</span>
+                                                            <div className="cpp-tl-vitals">
+                                                                {item.data.vitals.weight && <span className="cpp-tl-vital-pill">⚖️ Weight: {item.data.vitals.weight}kg</span>}
+                                                                {item.data.vitals.height && <span className="cpp-tl-vital-pill">📏 Height: {item.data.vitals.height}cm</span>}
+                                                                {item.data.vitals.bp && <span className="cpp-tl-vital-pill">🩸 BP: {item.data.vitals.bp}</span>}
+                                                                {item.data.vitals.temperature && <span className="cpp-tl-vital-pill">🌡️ Temp: {item.data.vitals.temperature}°F</span>}
+                                                                {item.data.vitals.pulse && <span className="cpp-tl-vital-pill">💓 Pulse: {item.data.vitals.pulse}</span>}
+                                                            </div>
+                                                        </div>
+                                                    )}
+                                                    
+                                                    {/* Reports & Prescriptions for this Appointment */}
+                                                    <div className="cpp-tl-section" style={{ marginTop: '12px' }}>
+                                                        <AppointmentReports appointmentId={item.data?._id} prescriptions={item.data?.prescriptions} />
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        );
+                                    })}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === 'medicines' && (
+                        <div className="cpp-card">
+                            <h3 className="cpp-card-title"><FiActivity /> Prescribed Medicines Log</h3>
+                            {medicinesList.length === 0 ? (
+                                <div className="cpp-empty-state">No prescribed medicines logs found.</div>
+                            ) : (
+                                <div className="cpp-table-wrap">
+                                    <table className="cpp-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Date Prescribed</th>
+                                                <th>Medicine Name</th>
+                                                <th>Dosage / Salt</th>
+                                                <th>Frequency</th>
+                                                <th>Duration</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {medicinesList.map((med, idx) => (
+                                                <tr key={idx}>
+                                                    <td><strong>{new Date(med.date).toLocaleDateString('en-IN')}</strong></td>
+                                                    <td style={{ color: 'var(--cpp-primary)', fontWeight: '700' }}>{med.name}</td>
+                                                    <td>{med.salt || '—'}</td>
+                                                    <td><span style={{ background: 'var(--cpp-secondary-light)', color: 'var(--cpp-secondary)', padding: '2px 8px', borderRadius: '4px', fontWeight: '700' }}>{med.frequency}</span></td>
+                                                    <td>{med.duration}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === 'vitals' && (
+                        <div className="cpp-card">
+                            <h3 className="cpp-card-title"><FiActivity /> Patient Vitals</h3>
+
+                            {/* Vitals Form */}
+                            <form onSubmit={handleSaveVitals} style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(150px, 1fr))', gap: '12px', background: '#f8fafc', padding: '16px', borderRadius: '8px', border: '1px solid #e2e8f0', marginBottom: '20px' }}>
+                                {[
+                                    { key: 'weight', label: 'Weight (kg)', icon: '⚖️', type: 'number' },
+                                    { key: 'height', label: 'Height (cm)', icon: '📏', type: 'number' },
+                                    { key: 'bloodPressure', label: 'Blood Pressure', icon: '🩸', type: 'text', placeholder: '120/80' },
+                                    { key: 'pulse', label: 'Pulse (bpm)', icon: '💓', type: 'number' },
+                                    { key: 'temperature', label: 'Temp (°F)', icon: '🌡️', type: 'number' },
+                                    { key: 'spo2', label: 'SpO₂ (%)', icon: '🫁', type: 'number' },
+                                ].map(field => (
+                                    <div key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
+                                        <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 600 }}>{field.icon} {field.label}</label>
+                                        <input
+                                            type={field.type}
+                                            value={vitalsForm[field.key]}
+                                            placeholder={field.placeholder || ''}
+                                            onChange={e => setVitalsForm({ ...vitalsForm, [field.key]: e.target.value })}
+                                            style={{ padding: '8px 12px', border: '1px solid #cbd5e1', borderRadius: '6px', fontSize: '13px' }}
+                                        />
+                                    </div>
+                                ))}
+                                <div style={{ gridColumn: '1 / -1', display: 'flex', justifyContent: 'flex-end', marginTop: '8px' }}>
+                                    <button type="submit" disabled={savingVitals} style={{ padding: '8px 24px', background: '#3b82f6', color: '#fff', border: 'none', borderRadius: '6px', fontSize: '14px', fontWeight: 600, cursor: savingVitals ? 'not-allowed' : 'pointer', opacity: savingVitals ? 0.7 : 1 }}>
+                                        {savingVitals ? 'Saving...' : 'Save Vitals'}
+                                    </button>
+                                </div>
+                            </form>
+
+                            <h3 className="cpp-card-title" style={{ marginTop: '24px', fontSize: '15px' }}>Vitals Log</h3>
+                            {displayTimeline.filter(t => t.data?.vitals && Object.values(t.data.vitals).some(Boolean)).length === 0 ? (
+                                <div className="cpp-empty-state">No vitals logged yet.</div>
+                            ) : (
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+                                    {displayTimeline.filter(t => t.data?.vitals && Object.values(t.data.vitals).some(Boolean)).map((item, idx) => (
+                                        <div key={idx} className="cpp-report-row" style={{ display: 'flex', flexDirection: 'column', gap: '4px', alignItems: 'flex-start' }}>
+                                            <div style={{ fontWeight: 700, color: '#1e293b' }}>{new Date(item.date).toLocaleDateString('en-IN')}</div>
+                                            <div className="cpp-tl-vitals">
+                                                {item.data.vitals.weight && <span className="cpp-tl-vital-pill">⚖️ Weight: {item.data.vitals.weight}kg</span>}
+                                                {item.data.vitals.height && <span className="cpp-tl-vital-pill">📏 Height: {item.data.vitals.height}cm</span>}
+                                                {item.data.vitals.bp && <span className="cpp-tl-vital-pill">🩸 BP: {item.data.vitals.bp}</span>}
+                                                {item.data.vitals.temperature && <span className="cpp-tl-vital-pill">🌡️ Temp: {item.data.vitals.temperature}°F</span>}
+                                                {item.data.vitals.pulse && <span className="cpp-tl-vital-pill">💓 Pulse: {item.data.vitals.pulse}</span>}
+                                            </div>
+                                        </div>
+                                    ))}
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === 'billing' && (
+                        <div className="cpp-card">
+                            <h3 className="cpp-card-title"><FiDollarSign /> Consultation Financial Details</h3>
+                            {invoicesList.length === 0 ? (
+                                <div className="cpp-empty-state">No billing details logged yet.</div>
+                            ) : (
+                                <div className="cpp-table-wrap">
+                                    <table className="cpp-table">
+                                        <thead>
+                                            <tr>
+                                                <th>Billing Date</th>
+                                                <th>Amount</th>
+                                                <th>Payment Method</th>
+                                                <th>Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {invoicesList.map((inv, idx) => (
+                                                <tr key={idx}>
+                                                    <td><strong>{new Date(inv.date).toLocaleDateString('en-IN')}</strong></td>
+                                                    <td style={{ color: '#10b981', fontWeight: '800' }}>₹{inv.amount}</td>
+                                                    <td>{inv.method}</td>
+                                                    <td>
+                                                        <span className={`cpp-tl-badge badge-${inv.status.toLowerCase()}`}>
+                                                            {inv.status}
+                                                        </span>
+                                                    </td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+                    )}
+
+                    {activeTab === 'vials' && (
+                        <PatientVialsSection patientId={patientData?._id || patientId} patientData={patientData} />
+                    )}
+                </>
+            );
+        })()}
+                </div>
+            </div>
+        </div>
+    );
+};
+
+export default ClinicPatientProfile;

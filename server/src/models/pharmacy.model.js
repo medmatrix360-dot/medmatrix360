@@ -1,0 +1,61 @@
+const mongoose = require('mongoose');
+
+const pharmacySchema = new mongoose.Schema({
+  userId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User',
+    default: null,
+    index: true
+  },
+  hospitalId: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'Hospital',
+    default: null,
+    index: true
+  },
+  name: {
+    type: String,
+    required: [true, 'Pharmacy name is required']
+  },
+  email: { type: String, required: true, lowercase: true, trim: true, match: /^\S+@\S+\.\S+$/ },
+  phone: { type: String, required: true, match: /^\d{10}$/ },
+  address: {
+    type: String,
+    default: ''
+  },
+  availability: {
+    monday: { available: Boolean, startTime: String, endTime: String },
+    tuesday: { available: Boolean, startTime: String, endTime: String },
+    wednesday: { available: Boolean, startTime: String, endTime: String },
+    thursday: { available: Boolean, startTime: String, endTime: String },
+    friday: { available: Boolean, startTime: String, endTime: String },
+    saturday: { available: Boolean, startTime: String, endTime: String },
+    sunday: { available: Boolean, startTime: String, endTime: String }
+  },
+  description: {
+    type: String,
+    default: ''
+  },
+  medications: [{
+    name: String,
+    price: Number,
+    stock: Number,
+    category: String
+  }]
+}, {
+  timestamps: true
+});
+
+const Pharmacy = mongoose.model('Pharmacy', pharmacySchema);
+
+module.exports = Pharmacy;
+
+
+
+
+
+
+
+
+
+

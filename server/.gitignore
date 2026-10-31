@@ -1,0 +1,5 @@
+node_modules
+.env
+.testenv
+.vs/
+.env_live/

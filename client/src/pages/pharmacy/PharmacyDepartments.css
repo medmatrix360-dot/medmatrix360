@@ -1,0 +1,429 @@
+/* ============================================================
+   MedMatrix 360 Design System — Pharmacy Departments & Transfers
+   Scoped under .pharmacy-departments-container
+   Zero global :root leakage
+   ============================================================ */
+
+.pharmacy-departments-container {
+    --dept-bg: #FFF7FA;
+    --dept-surface: #FFFFFF;
+    --dept-primary: #D85F89;
+    --dept-primary-hover: #C94D78;
+    --dept-primary-active: #B83D68;
+    --dept-selected-bg: #FCE7EF;
+    --dept-selected-border: #F7BFD2;
+    --dept-navy: #172238;
+    --dept-muted: #64748B;
+    --dept-subtle: #94A3B8;
+    --dept-border: #F1DCE4;
+    --dept-border-light: #FDF2F6;
+    --dept-shadow: 0 4px 18px -2px rgba(216, 95, 137, 0.06), 0 2px 6px -1px rgba(23, 34, 56, 0.03);
+    --dept-shadow-sm: 0 1px 3px rgba(23, 34, 56, 0.04);
+
+    /* Semantic Clinical Tokens */
+    --dept-success: #10B981;
+    --dept-success-hover: #059669;
+    --dept-warning: #F59E0B;
+    --dept-warning-hover: #D97706;
+    --dept-danger: #EF4444;
+    --dept-danger-hover: #DC2626;
+
+    min-height: 100vh;
+    padding: 24px;
+    background-color: var(--dept-bg);
+    font-family: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    color: var(--dept-navy);
+}
+
+/* ============================================================
+   Header & Action Bar
+   ============================================================ */
+.pharmacy-departments-container .header-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 16px;
+    margin-bottom: 24px;
+    background: var(--dept-surface);
+    padding: 20px 24px;
+    border-radius: 16px;
+    border: 1.5px solid var(--dept-border);
+    box-shadow: var(--dept-shadow);
+}
+
+.pharmacy-departments-container .header-actions h2 {
+    margin: 0;
+    font-size: 1.5rem;
+    font-weight: 800;
+    color: var(--dept-navy);
+    letter-spacing: -0.02em;
+}
+
+.pharmacy-departments-container .action-buttons {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* Action Buttons */
+.pharmacy-departments-container .btn-primary {
+    background: var(--dept-primary);
+    color: #FFFFFF;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 8px rgba(216, 95, 137, 0.28);
+    transition: all 0.2s ease;
+}
+
+.pharmacy-departments-container .btn-primary:hover {
+    background: var(--dept-primary-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(216, 95, 137, 0.38);
+}
+
+.pharmacy-departments-container .btn-warning {
+    background: var(--dept-warning);
+    color: #FFFFFF;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 8px rgba(245, 158, 11, 0.28);
+    transition: all 0.2s ease;
+}
+
+.pharmacy-departments-container .btn-warning:hover {
+    background: var(--dept-warning-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(245, 158, 11, 0.38);
+}
+
+.pharmacy-departments-container .btn-success {
+    background: var(--dept-success);
+    color: #FFFFFF;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 700;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    box-shadow: 0 2px 8px rgba(16, 185, 129, 0.28);
+    transition: all 0.2s ease;
+}
+
+.pharmacy-departments-container .btn-success:hover:not(:disabled) {
+    background: var(--dept-success-hover);
+    transform: translateY(-1px);
+    box-shadow: 0 4px 14px rgba(16, 185, 129, 0.38);
+}
+
+.pharmacy-departments-container .btn-success:disabled {
+    opacity: 0.55;
+    cursor: not-allowed;
+}
+
+.pharmacy-departments-container .btn-secondary {
+    background: #F8FAFC;
+    color: #475569;
+    border: 1.5px solid #E2E8F0;
+    padding: 10px 18px;
+    border-radius: 10px;
+    cursor: pointer;
+    font-size: 0.88rem;
+    font-weight: 700;
+    transition: all 0.15s ease;
+}
+
+.pharmacy-departments-container .btn-secondary:hover {
+    background: #E2E8F0;
+    color: var(--dept-navy);
+}
+
+/* ============================================================
+   Departments Cards Grid
+   ============================================================ */
+.pharmacy-departments-container .departments-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+    gap: 18px;
+    margin-bottom: 28px;
+}
+
+.pharmacy-departments-container .department-card {
+    background: var(--dept-surface);
+    padding: 22px 24px;
+    border-radius: 16px;
+    border: 1.5px solid var(--dept-border);
+    box-shadow: var(--dept-shadow);
+    transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+    position: relative;
+    overflow: hidden;
+}
+
+.pharmacy-departments-container .department-card::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    height: 4px;
+    background: linear-gradient(90deg, var(--dept-primary), var(--dept-primary-hover));
+}
+
+.pharmacy-departments-container .department-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 8px 24px -4px rgba(216, 95, 137, 0.12);
+    border-color: var(--dept-selected-border);
+}
+
+.pharmacy-departments-container .department-card h3 {
+    margin: 0 0 8px 0;
+    color: var(--dept-navy);
+    font-size: 1.2rem;
+    font-weight: 800;
+    letter-spacing: -0.01em;
+}
+
+.pharmacy-departments-container .department-card p {
+    margin: 0;
+    color: var(--dept-muted);
+    font-size: 0.88rem;
+    line-height: 1.5;
+    font-weight: 500;
+}
+
+/* ============================================================
+   Stock Table Section
+   ============================================================ */
+.pharmacy-departments-container .stock-table-container {
+    background: var(--dept-surface);
+    border-radius: 16px;
+    padding: 24px;
+    border: 1.5px solid var(--dept-border);
+    box-shadow: var(--dept-shadow);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+}
+
+.pharmacy-departments-container .stock-table-container h3 {
+    margin: 0 0 18px 0;
+    color: var(--dept-navy);
+    font-size: 1.15rem;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    letter-spacing: -0.01em;
+}
+
+.pharmacy-departments-container .stock-table {
+    width: 100%;
+    min-width: 680px;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.pharmacy-departments-container .stock-table th {
+    text-align: left;
+    padding: 12px 14px;
+    background: #FFF7FA;
+    color: var(--dept-navy);
+    font-weight: 700;
+    font-size: 0.76rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    border-bottom: 1.5px solid var(--dept-border);
+}
+
+.pharmacy-departments-container .stock-table th:first-child {
+    border-top-left-radius: 8px;
+    border-bottom-left-radius: 8px;
+}
+
+.pharmacy-departments-container .stock-table th:last-child {
+    border-top-right-radius: 8px;
+    border-bottom-right-radius: 8px;
+}
+
+.pharmacy-departments-container .stock-table td {
+    padding: 13px 14px;
+    border-bottom: 1px solid var(--dept-border);
+    color: var(--dept-navy);
+    font-size: 0.88rem;
+    vertical-align: middle;
+}
+
+.pharmacy-departments-container .stock-table tbody tr:hover td {
+    background: #FFF7FA;
+}
+
+/* ============================================================
+   Modal Dialogs (Scoped)
+   ============================================================ */
+.pharmacy-departments-container .modal-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(23, 34, 56, 0.6);
+    backdrop-filter: blur(4px);
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    z-index: 1000;
+    animation: deptFadeIn 0.2s ease;
+    padding: 16px;
+    box-sizing: border-box;
+}
+
+.pharmacy-departments-container .modal-content {
+    background: var(--dept-surface);
+    padding: 28px 32px;
+    border-radius: 18px;
+    width: 100%;
+    max-width: 540px;
+    max-height: 90vh;
+    overflow-y: auto;
+    box-shadow: 0 20px 50px -10px rgba(23, 34, 56, 0.22);
+    border: 1.5px solid var(--dept-border);
+    animation: deptSlideIn 0.2s ease;
+}
+
+@keyframes deptFadeIn {
+    from { opacity: 0; }
+    to { opacity: 1; }
+}
+
+@keyframes deptSlideIn {
+    from { transform: translateY(12px); opacity: 0; }
+    to { transform: translateY(0); opacity: 1; }
+}
+
+.pharmacy-departments-container .modal-content h3 {
+    margin-top: 0;
+    margin-bottom: 20px;
+    color: var(--dept-navy);
+    font-size: 1.3rem;
+    font-weight: 800;
+    border-bottom: 1.5px solid var(--dept-border);
+    padding-bottom: 12px;
+}
+
+.pharmacy-departments-container .form-group {
+    margin-bottom: 16px;
+}
+
+.pharmacy-departments-container .form-group label {
+    display: block;
+    margin-bottom: 6px;
+    color: var(--dept-navy);
+    font-weight: 700;
+    font-size: 0.82rem;
+}
+
+.pharmacy-departments-container .form-group input,
+.pharmacy-departments-container .form-group select,
+.pharmacy-departments-container .form-group textarea {
+    width: 100%;
+    padding: 10px 14px;
+    border: 1.5px solid var(--dept-border);
+    border-radius: 10px;
+    font-size: 0.92rem;
+    color: var(--dept-navy);
+    background: #FFFFFF;
+    box-sizing: border-box;
+    transition: all 0.15s ease;
+}
+
+.pharmacy-departments-container .form-group input:focus,
+.pharmacy-departments-container .form-group select:focus,
+.pharmacy-departments-container .form-group textarea:focus {
+    outline: none;
+    border-color: var(--dept-primary);
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.18);
+}
+
+.pharmacy-departments-container .modal-actions {
+    display: flex;
+    justify-content: flex-end;
+    gap: 12px;
+    margin-top: 24px;
+    padding-top: 16px;
+    border-top: 1.5px solid var(--dept-border);
+}
+
+/* ============================================================
+   Responsive Design Breakpoints
+   ============================================================ */
+@media (max-width: 1024px) {
+    .pharmacy-departments-container {
+        padding: 18px;
+    }
+}
+
+@media (max-width: 768px) {
+    .pharmacy-departments-container .header-actions {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 16px;
+    }
+
+    .pharmacy-departments-container .action-buttons {
+        width: 100%;
+        flex-direction: column;
+    }
+
+    .pharmacy-departments-container .action-buttons button {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .pharmacy-departments-container .modal-content {
+        padding: 20px 16px;
+        max-width: 95vw;
+    }
+
+    .pharmacy-departments-container .stock-table-container {
+        padding: 16px 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .pharmacy-departments-container {
+        padding: 12px;
+    }
+
+    .pharmacy-departments-container .header-actions h2 {
+        font-size: 1.25rem;
+    }
+
+    .pharmacy-departments-container .departments-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .pharmacy-departments-container .modal-actions {
+        flex-direction: column;
+    }
+
+    .pharmacy-departments-container .modal-actions button {
+        width: 100%;
+    }
+}

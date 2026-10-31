@@ -1,0 +1,278 @@
+import React from 'react';
+
+const fmt = (n) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(n || 0);
+
+/**
+ * Shared Payment Section Component
+ * Used by both Billing (PatientBillingProfile) and Reception (ReceptionDashboard).
+ *
+ * Props:
+ * - splitPayments: Array of { method, amount }
+ * - onSplitChange(index, field, value): handler for changing a split row
+ * - onAddSplit(): handler to add a new split row
+ * - onRemoveSplit(index): handler to remove a split row
+ * - totalAmount: the target amount that splits must sum to
+ * - upiOptions: Array of { upiId, label } from hospital config
+ * - paymentData: { upiId, transactionId, cardDetails, bankReference }
+ * - onPaymentDataChange(newData): handler to update payment data
+ * - proofFile: File | null
+ * - onProofFileChange(file): handler for proof file upload
+ * - label: optional label for the section (default: 'Payment Breakdown')
+ * - noUpiMessage: optional message shown when no UPI is configured for this department
+ */
+const PaymentSection = ({
+    splitPayments = [],
+    onSplitChange,
+    onAddSplit,
+    onRemoveSplit,
+    totalAmount = 0,
+    upiOptions = [],
+    paymentData = {},
+    onPaymentDataChange,
+    proofFile = null,
+    onProofFileChange,
+    label = 'Payment Breakdown',
+    noUpiMessage = '',
+    allowCash = true
+}) => {
+    const totalSplitAmount = splitPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+
+    // UPI QR Code logic
+    const hasUpi = splitPayments.some(sp => sp.method === 'UPI');
+    const upiAmount = hasUpi
+        ? splitPayments.filter(sp => sp.method === 'UPI').reduce((acc, curr) => acc + (Number(curr.amount) || 0), 0)
+        : 0;
+    const selectedUpiId = paymentData?.upiId || upiOptions?.[0]?.upiId || '';
+    const showQr = hasUpi && upiAmount > 0 && selectedUpiId && upiOptions.length > 0;
+    const showNoUpiMsg = hasUpi && upiOptions.length === 0;
+
+    return (
+        <div style={{ display: 'flex', gap: '20px', alignItems: 'flex-start', flexWrap: 'wrap', width: '100%', boxSizing: 'border-box' }}>
+            {/* LEFT: Payment Methods */}
+            <div style={{ flex: '1 1 320px', minWidth: 0, width: '100%', boxSizing: 'border-box' }}>
+                <label style={{ fontSize: '13px', fontWeight: 'bold', color: '#475569', display: 'block', marginBottom: '10px' }}>
+                    {label} <span style={{ color: '#ef4444' }}>*(Total must match: {fmt(totalAmount)})</span>
+                </label>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '10px', width: '100%', boxSizing: 'border-box' }}>
+                    {splitPayments.map((split, index) => (
+                        <div key={index} className="payment-inline-inputs" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap', alignItems: 'center', background: '#f8fafc', padding: '10px', borderRadius: '8px', border: '1px solid #e2e8f0', width: '100%', boxSizing: 'border-box' }}>
+                            <select
+                                value={split.method}
+                                onChange={e => onSplitChange(index, 'method', e.target.value)}
+                                className="payment-mode-select"
+                                style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', flex: '1 1 120px', minWidth: 0, boxSizing: 'border-box' }}
+                            >
+                                {allowCash && <option value="Cash">Cash</option>}
+                                <option value="UPI">UPI</option>
+                                <option value="Card">Card</option>
+                                <option value="Cheque">Cheque</option>
+                                <option value="NEFT/RTGS">NEFT / RTGS</option>
+                            </select>
+
+                            <div style={{ position: 'relative', flex: '1 1 120px', minWidth: 0, boxSizing: 'border-box' }}>
+                                <input
+                                    type="number"
+                                    placeholder="Amount"
+                                    value={splitPayments.length === 1 ? (totalAmount || 0) : split.amount}
+                                    onChange={e => {
+                                        if (splitPayments.length === 1) return;
+                                        onSplitChange(index, 'amount', e.target.value);
+                                    }}
+                                    style={{
+                                        padding: splitPayments.length === 1 ? '8px 55px 8px 10px' : '8px 10px',
+                                        border: '1px solid #cbd5e1',
+                                        borderRadius: '6px',
+                                        width: '100%',
+                                        boxSizing: 'border-box',
+                                        backgroundColor: splitPayments.length === 1 ? '#f1f5f9' : '#ffffff',
+                                        cursor: splitPayments.length === 1 ? 'not-allowed' : 'text',
+                                        fontWeight: splitPayments.length === 1 ? 'bold' : 'normal',
+                                        color: splitPayments.length === 1 ? '#0f172a' : 'inherit'
+                                    }}
+                                    readOnly={splitPayments.length === 1}
+                                    title={splitPayments.length === 1 ? "Amount is fixed to full consultation fee. Click '+ Add Payment Method' to split." : "Enter amount"}
+                                    min="0"
+                                    max={totalAmount}
+                                    required
+                                />
+                                {splitPayments.length === 1 && (
+                                    <span style={{
+                                        position: 'absolute',
+                                        right: '6px',
+                                        top: '50%',
+                                        transform: 'translateY(-50%)',
+                                        fontSize: '10.5px',
+                                        color: '#64748b',
+                                        background: '#e2e8f0',
+                                        padding: '2px 6px',
+                                        borderRadius: '4px',
+                                        fontWeight: 600,
+                                        pointerEvents: 'none'
+                                    }}>
+                                        🔒 Fixed
+                                    </span>
+                                )}
+                            </div>
+
+                            {splitPayments.length > 1 && (
+                                <button type="button" onClick={() => onRemoveSplit(index)} style={{ padding: '8px 12px', background: '#fee2e2', color: '#dc2626', border: 'none', borderRadius: '6px', cursor: 'pointer', fontWeight: 'bold' }}>✕</button>
+                            )}
+
+                            {/* UPI fields */}
+                            {split.method === 'UPI' && upiOptions.length > 0 && (
+                                <div style={{ flexBasis: '100%', width: '100%', display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '10px', boxSizing: 'border-box' }}>
+                                    <select
+                                        value={paymentData?.upiId || upiOptions?.[0]?.upiId || ''}
+                                        onChange={e => onPaymentDataChange({ ...paymentData, upiId: e.target.value })}
+                                        style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', flex: '1 1 200px', minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                        required
+                                    >
+                                        <option value="" disabled>Select Department UPI ID</option>
+                                        {upiOptions.map((opt, idx) => (
+                                            <option key={idx} value={opt.upiId}>
+                                                {opt.label && opt.label.includes(opt.upiId) ? opt.label : `${opt.label} (${opt.upiId})`}
+                                            </option>
+                                        ))}
+                                    </select>
+                                    <input
+                                        type="text"
+                                        placeholder="Txn Ref (optional)"
+                                        value={paymentData?.transactionId || ''}
+                                        onChange={e => onPaymentDataChange({ ...paymentData, transactionId: e.target.value })}
+                                        style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', flex: '1 1 120px', minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                            )}
+
+                            {/* No UPI configured message */}
+                            {split.method === 'UPI' && upiOptions.length === 0 && (
+                                <div style={{ flexBasis: '100%', width: '100%', marginTop: '10px', padding: '12px 16px', background: '#fef3c7', border: '1px solid #f59e0b', borderRadius: '8px', color: '#92400e', fontSize: '13px', boxSizing: 'border-box' }}>
+                                    ⚠️ {noUpiMessage || 'No UPI account has been configured for this department. Please contact Hospital Admin.'}
+                                </div>
+                            )}
+
+                            {/* Card fields */}
+                            {split.method === 'Card' && (
+                                <div style={{ flexBasis: '100%', width: '100%', display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '10px', boxSizing: 'border-box' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="Card (Last 4)"
+                                        required
+                                        value={paymentData?.cardDetails || ''}
+                                        onChange={e => onPaymentDataChange({ ...paymentData, cardDetails: e.target.value })}
+                                        style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', flex: '1 1 130px', minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                    />
+                                    <input
+                                        type="text"
+                                        placeholder="Txn Ref"
+                                        required
+                                        value={paymentData?.transactionId || ''}
+                                        onChange={e => onPaymentDataChange({ ...paymentData, transactionId: e.target.value })}
+                                        style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', flex: '1 1 130px', minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Cheque / NEFT fields */}
+                            {['Cheque', 'NEFT/RTGS'].includes(split.method) && (
+                                <div style={{ flexBasis: '100%', width: '100%', display: 'flex', flexWrap: 'wrap', gap: '10px', marginTop: '10px', boxSizing: 'border-box' }}>
+                                    <input
+                                        type="text"
+                                        placeholder="Bank Ref / Cheque No"
+                                        required
+                                        value={paymentData?.bankReference || ''}
+                                        onChange={e => onPaymentDataChange({ ...paymentData, bankReference: e.target.value })}
+                                        style={{ padding: '8px 10px', border: '1px solid #cbd5e1', borderRadius: '6px', flex: 1, minWidth: 0, width: '100%', boxSizing: 'border-box' }}
+                                    />
+                                </div>
+                            )}
+
+                            {/* Proof upload — show for non-cash method */}
+                            {split.method !== 'Cash' && (
+                                <div className="inline-file-upload" style={{ flexBasis: '100%', width: '100%', display: 'flex', flexDirection: 'column', gap: '4px', marginTop: '10px', boxSizing: 'border-box' }}>
+                                    <label style={{ fontSize: '11px', color: '#64748b', fontWeight: 'bold' }}>Payment Proof / Screenshot <span style={{ color: '#ef4444' }}>*Required for non-cash</span></label>
+                                    <input type="file" accept="image/*,.pdf" onChange={e => onProofFileChange(e.target.files[0])} style={{ fontSize: '12.5px', padding: '6px', border: '1.5px dashed #D85F89', borderRadius: '6px', background: '#FFF7FA', width: '100%', boxSizing: 'border-box' }} />
+                                    {proofFile && (
+                                        <span style={{ fontSize: '12px', color: '#059669', fontWeight: 600, wordBreak: 'break-all' }}>
+                                            ✅ Attached: {proofFile.name}
+                                        </span>
+                                    )}
+                                </div>
+                            )}
+                        </div>
+                    ))}
+
+                    <div style={{ display: 'flex', gap: '12px', alignItems: 'center', flexWrap: 'wrap', width: '100%', boxSizing: 'border-box' }}>
+                        {splitPayments.length < 2 && (
+                            <button type="button" onClick={onAddSplit} style={{ padding: '8px 16px', background: '#FFF7FA', color: '#D85F89', border: '1px solid #F1DCE4', borderRadius: '7px', fontWeight: 700, cursor: 'pointer', transition: 'all 0.15s ease' }}>+ Add Payment Method</button>
+                        )}
+                        <span style={{
+                            fontSize: '13px',
+                            fontWeight: 700,
+                            padding: '4px 10px',
+                            borderRadius: '6px',
+                            background: totalSplitAmount === Number(totalAmount) ? '#dcfce7' : '#fee2e2',
+                            color: totalSplitAmount === Number(totalAmount) ? '#15803d' : '#dc2626',
+                            border: `1px solid ${totalSplitAmount === Number(totalAmount) ? '#86efac' : '#fca5a5'}`
+                        }}>
+                            {totalSplitAmount === Number(totalAmount)
+                                ? `✓ Split Total: ${fmt(totalSplitAmount)} / ${fmt(totalAmount)} (Matched)`
+                                : `⚠️ Split Total: ${fmt(totalSplitAmount)} / ${fmt(totalAmount)} (Mismatch: ${fmt(Math.abs(totalSplitAmount - totalAmount))})`
+                            }
+                        </span>
+                    </div>
+                </div>
+            </div>
+
+            {/* RIGHT: UPI QR Code */}
+            {showQr && (
+                <div style={{
+                    flex: '0 0 200px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    padding: '20px',
+                    background: '#FFF7FA',
+                    borderRadius: '12px',
+                    border: '1px dashed #D85F89',
+                    alignSelf: 'flex-start'
+                }}>
+                    <div style={{ fontSize: '14px', color: '#D85F89', fontWeight: 'bold', marginBottom: '12px', textAlign: 'center' }}>
+                        Scan QR to Pay {fmt(upiAmount)}
+                    </div>
+                    <img
+                        src={`https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=${encodeURIComponent('upi://pay?pa=' + selectedUpiId.trim() + '&pn=Medical365&am=' + upiAmount + '&cu=INR')}`}
+                        alt="UPI QR Code"
+                        style={{ borderRadius: '8px', width: '150px', height: '150px' }}
+                    />
+                    <div style={{ fontSize: '11px', color: '#64748b', marginTop: '8px', textAlign: 'center' }}>
+                        UPI ID: {selectedUpiId}
+                    </div>
+                </div>
+            )}
+
+            {/* RIGHT: No UPI configured message */}
+            {showNoUpiMsg && (
+                <div style={{
+                    flex: '0 0 200px',
+                    display: 'flex',
+                    flexDirection: 'column',
+                    alignItems: 'center',
+                    padding: '20px',
+                    background: '#fef3c7',
+                    borderRadius: '12px',
+                    border: '1px dashed #f59e0b',
+                    alignSelf: 'flex-start',
+                    textAlign: 'center'
+                }}>
+                    <div style={{ fontSize: '28px', marginBottom: '8px' }}>⚠️</div>
+                    <div style={{ fontSize: '12px', color: '#92400e', fontWeight: 600 }}>
+                        {noUpiMessage || 'No UPI account has been configured for this department. Please contact Hospital Admin.'}
+                    </div>
+                </div>
+            )}
+        </div>
+    );
+};
+
+export default PaymentSection;

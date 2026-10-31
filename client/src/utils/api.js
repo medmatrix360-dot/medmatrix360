@@ -1,0 +1,1774 @@
+import axios from 'axios';
+import { nanoid } from 'nanoid';
+import {
+    buildCacheKey,
+    getCached,
+    putCache,
+    enqueue as enqueueOffline,
+    getQueueCount,
+} from './offlineDb';
+import { isOnline } from './networkStatus';
+const defaultBackend = (typeof import.meta !== 'undefined' && import.meta.env?.DEV) ? 'http://localhost:3000' : '';
+const rawBaseURL = (typeof import.meta !== 'undefined' && import.meta.env?.VITE_API_URL) || defaultBackend;
+export const baseURL = rawBaseURL ? (rawBaseURL.startsWith('http') ? rawBaseURL : `https://${rawBaseURL}`) : '';
+
+const apiClient = axios.create({
+    baseURL: baseURL,
+    headers: { 'Content-Type': 'application/json' },
+});
+
+// Request Interceptor
+apiClient.interceptors.request.use(
+    (config) => {
+        const token = localStorage.getItem('token') || localStorage.getItem('superadmin_token');
+        const patientToken = localStorage.getItem('patientToken');
+        if (token) {
+            config.headers.Authorization = `Bearer ${token}`;
+        } else if (patientToken) {
+            config.headers.Authorization = `Bearer ${patientToken}`;
+        }
+
+        // If sending FormData, remove default Content-Type: application/json so browser sets multipart boundary
+        if (typeof FormData !== 'undefined' && config.data instanceof FormData) {
+            delete config.headers['Content-Type'];
+        }
+        return config;
+    },
+    (error) => Promise.reject(error)
+);
+
+/**
+ * Check if a request is a network error (not a server error)
+ */
+function isNetworkError(error) {
+    if (!error) return true;
+    if (!navigator.onLine || !isOnline()) return true;
+    if (!error.response) return true; // No response from server (network drop, DNS, offline, timeout)
+    if (error.code === 'ERR_NETWORK' || error.code === 'ECONNABORTED' || error.code === 'ECONNREFUSED') return true;
+    if (error.message && (
+        error.message === 'Network Error' ||
+        error.message.includes('Network Error') ||
+        error.message.includes('Failed to fetch') ||
+        error.message.includes('timeout')
+    )) return true;
+    if (error.response && [502, 503, 504].includes(error.response.status)) return true;
+    return false;
+}
+
+// Response Interceptor (401 handler)
+apiClient.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        // CASE 1: Network / Offline failure — NEVER wipe tokens, NEVER logout
+        if (isNetworkError(error)) {
+            return Promise.reject(error);
+        }
+
+        // CASE 2: Genuine server-confirmed HTTP 401
+        if (error.response?.status === 401) {
+            const isSessionExpired = error.response?.data?.sessionExpired;
+            const errMsg = (error.response?.data?.message || '').toLowerCase();
+
+            // ONLY force logout on genuine session expiration or explicitly revoked/invalidated token
+            // NEVER logout on transient 'No token provided' or sub-resource auth errors
+            const shouldLogout = isSessionExpired || 
+                                 errMsg.includes('session') || 
+                                 errMsg.includes('revoked') || 
+                                 errMsg.includes('invalidated') || 
+                                 errMsg.includes('jwt expired') ||
+                                 errMsg.includes('invalid token');
+
+            if (shouldLogout) {
+                localStorage.removeItem('token');
+                localStorage.removeItem('user');
+
+                if (isSessionExpired) {
+                    sessionStorage.setItem('sessionExpiredMessage', error.response?.data?.message || 'Your account has been logged in from another device. Please login again.');
+                }
+
+                if (!window.location.pathname.includes('/login')) {
+                    window.location.href = '/login';
+                }
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// OFFLINE-FIRST INTERCEPTORS
+// ═══════════════════════════════════════════════════════════════════════════════
+
+/**
+ * Offline-writable operations allowlist across the entire project.
+ * Supports '*' (single segment) and '**' (multi segment) wildcards.
+ * Format: "METHOD /path/pattern"
+ */
+const OFFLINE_WRITABLE_OPS = [
+    // Reception & Appointments & Patients
+    'POST /api/reception/**',
+    'PUT /api/reception/**',
+    'PATCH /api/reception/**',
+    'DELETE /api/reception/**',
+    'POST /api/appointments/**',
+    'PUT /api/appointments/**',
+    'PATCH /api/appointments/**',
+    'DELETE /api/appointments/**',
+    'POST /api/patients/**',
+    'PUT /api/patients/**',
+    'PATCH /api/patients/**',
+    'DELETE /api/patients/**',
+
+    // Hospital Administration & Settings
+    'POST /api/hospitals/**',
+    'PUT /api/hospitals/**',
+    'PATCH /api/hospitals/**',
+    'DELETE /api/hospitals/**',
+    'POST /api/hospital-policies/**',
+    'PUT /api/hospital-policies/**',
+    'PATCH /api/hospital-policies/**',
+    'DELETE /api/hospital-policies/**',
+    'POST /api/admin/**',
+    'PUT /api/admin/**',
+    'DELETE /api/admin/**',
+    'POST /api/staff/**',
+    'PUT /api/staff/**',
+    'DELETE /api/staff/**',
+
+    // Beds & Facilities
+    'POST /api/beds/**',
+    'PUT /api/beds/**',
+    'PATCH /api/beds/**',
+    'DELETE /api/beds/**',
+
+    // Vials & Blood Bank
+    'POST /api/vials/**',
+    'PUT /api/vials/**',
+    'PATCH /api/vials/**',
+    'DELETE /api/vials/**',
+
+    // Clinical, Doctor, OPD, IPD, Nurse
+    'POST /api/clinical/**',
+    'PUT /api/clinical/**',
+    'PATCH /api/clinical/**',
+    'POST /api/doctor/**',
+    'PUT /api/doctor/**',
+    'PATCH /api/doctor/**',
+    'POST /api/prescriptions/**',
+    'PUT /api/prescriptions/**',
+    'DELETE /api/prescriptions/**',
+    'POST /api/nurse/**',
+    'PUT /api/nurse/**',
+    'POST /api/ipd/**',
+    'PUT /api/ipd/**',
+    'POST /api/admissions/**',
+    'PATCH /api/admissions/**',
+    'PUT /api/admissions/**',
+
+    // OT (Operation Theatre)
+    'POST /api/ot/**',
+    'PUT /api/ot/**',
+    'PATCH /api/ot/**',
+    'DELETE /api/ot/**',
+
+    // Pharmacy & Medicines
+    'POST /api/pharmacy/**',
+    'PUT /api/pharmacy/**',
+    'PATCH /api/pharmacy/**',
+    'DELETE /api/pharmacy/**',
+    'POST /api/medicines/**',
+    'PUT /api/medicines/**',
+    'DELETE /api/medicines/**',
+
+    // Labs & Tests
+    'POST /api/lab/**',
+    'PUT /api/lab/**',
+    'PATCH /api/lab/**',
+    'POST /api/lab-tests/**',
+    'PUT /api/lab-tests/**',
+    'DELETE /api/lab-tests/**',
+    'POST /api/lab-test-packages/**',
+    'PUT /api/lab-test-packages/**',
+    'DELETE /api/lab-test-packages/**',
+
+    // Question Library
+    'POST /api/question-library/**',
+    'PUT /api/question-library/**',
+    'DELETE /api/question-library/**',
+    'POST /api/question-library',
+    'PUT /api/question-library',
+    'DELETE /api/question-library',
+
+    // Billing & Services
+    'POST /api/billing/**',
+    'PUT /api/billing/**',
+    'PATCH /api/billing/**',
+    'DELETE /api/billing/**',
+    'POST /api/services/**',
+    'PUT /api/services/**',
+    'DELETE /api/services/**',
+    'POST /api/test-packages/**',
+    'PUT /api/test-packages/**',
+    'DELETE /api/test-packages/**',
+    'POST /api/simple-clinic/**',
+    'PUT /api/simple-clinic/**',
+    'DELETE /api/simple-clinic/**',
+    'POST /api/ai-wallet/**',
+    'POST /api/revenue/**',
+];
+
+/**
+ * Check if a request matches the offline-writable allowlist
+ */
+function isOfflineWritable(method, url) {
+    const normalizedMethod = (method || '').toUpperCase();
+    let normalizedUrl = (url || '').replace(baseURL, '');
+    if (normalizedUrl.startsWith('http://') || normalizedUrl.startsWith('https://')) {
+        try {
+            normalizedUrl = new URL(normalizedUrl).pathname;
+        } catch {}
+    }
+    // Remove query parameters
+    normalizedUrl = normalizedUrl.split('?')[0];
+    if (!normalizedUrl.startsWith('/')) {
+        normalizedUrl = '/' + normalizedUrl;
+    }
+
+    return OFFLINE_WRITABLE_OPS.some((pattern) => {
+        const [patternMethod, patternPath] = pattern.split(' ');
+        if (patternMethod !== '*' && patternMethod !== normalizedMethod) return false;
+        
+        // Escape regex characters except our placeholders
+        const regexStr = '^' + patternPath
+            .replace(/\*\*/g, '___DOUBLE_STAR___')
+            .replace(/\*/g, '[^/]+')
+            .replace(/___DOUBLE_STAR___/g, '.*') + '$';
+        const regex = new RegExp(regexStr);
+        return regex.test(normalizedUrl);
+    });
+}
+
+/**
+ * Response interceptor: Cache successful GET responses in IndexedDB & Queue offline writes
+ */
+apiClient.interceptors.response.use(
+    async (response) => {
+        // Cache successful GET responses
+        if (response.config.method === 'get' && response.status === 200) {
+            try {
+                const url = response.config.url || '';
+                // Don't cache auth endpoints, uploads, or streaming responses
+                if (
+                    !url.includes('/auth/') &&
+                    !url.includes('/upload') &&
+                    !url.includes('/otp') &&
+                    !url.includes('/login') &&
+                    response.data
+                ) {
+                    const cacheKey = buildCacheKey(url, response.config.params);
+                    await putCache(cacheKey, response.data);
+                }
+            } catch {
+                // Caching failure should never break the app
+            }
+        }
+        return response;
+    },
+    async (error) => {
+        // Only handle network/offline errors (not server-side 400, 500)
+        if (!isNetworkError(error)) {
+            return Promise.reject(error);
+        }
+
+        const config = error.config || {};
+        const method = (config.method || 'get').toLowerCase();
+        const url = config.url || '';
+
+        // ── GET requests: Fall back to IndexedDB cache ──
+        if (method === 'get') {
+            try {
+                const cacheKey = buildCacheKey(url, config.params);
+                const cached = await getCached(cacheKey);
+                if (cached) {
+                    // Return cached data as if it were a successful response
+                    return {
+                        data: cached.data,
+                        status: 200,
+                        statusText: 'OK (Cached)',
+                        headers: {},
+                        config,
+                        _offline: true,
+                        _isStale: cached.isStale,
+                        _cachedAt: cached.timestamp,
+                    };
+                }
+            } catch {
+                // Cache read failed — fall through to rejection
+            }
+            // No cache available — reject with a clear offline message
+            return Promise.reject({
+                ...error,
+                _offline: true,
+                message: 'You are offline and no cached data is available.',
+            });
+        }
+
+        // ── Write requests (POST/PUT/PATCH/DELETE): Queue if allowed ──
+        if (['post', 'put', 'patch', 'delete'].includes(method)) {
+            // Never queue file uploads
+            const contentType = config.headers?.['Content-Type'] || config.headers?.['content-type'] || '';
+            if (contentType.includes('multipart/form-data')) {
+                const isActuallyOffline = !navigator.onLine || !isOnline();
+                return Promise.reject({
+                    ...error,
+                    _offline: isActuallyOffline,
+                    message: isActuallyOffline
+                        ? 'File uploads require an internet connection.'
+                        : (error.response?.data?.message || error.message || 'Request failed. Please check your server connection.'),
+                });
+            }
+
+            // Check if this operation is in the offline-writable allowlist
+            if (isOfflineWritable(method, url)) {
+                try {
+                    let requestData = config.data;
+                    if (typeof requestData === 'string') {
+                        try { requestData = JSON.parse(requestData); } catch {}
+                    }
+                    if (!requestData || typeof requestData !== 'object') {
+                        requestData = {};
+                    }
+
+                    // Assign a temporary client ID if creating a record
+                    const tempId = `tmp_${nanoid(16)}`;
+                    if (!requestData._tempId && ['post'].includes(method)) {
+                        requestData._tempId = tempId;
+                    }
+
+                    const queueId = await enqueueOffline({
+                        method: method.toUpperCase(),
+                        url: url.replace(baseURL, ''),
+                        data: requestData,
+                        clientOperationId: `cop_${nanoid(16)}`,
+                        description: getOperationDescription(method, url),
+                    });
+
+                    // Build synthetic response objects so UI handlers across all dashboards succeed
+                    const syntheticUser = {
+                        _id: tempId,
+                        id: tempId,
+                        name: requestData.name || 'Offline User',
+                        email: requestData.email || '',
+                        role: requestData.roleId || requestData.role || 'staff',
+                        ...requestData,
+                        _isOffline: true,
+                        _syncStatus: 'Pending Sync',
+                    };
+
+                    const syntheticAppointment = {
+                        _id: tempId,
+                        id: tempId,
+                        patient: requestData.patientId || tempId,
+                        doctor: requestData.doctorId,
+                        date: requestData.date,
+                        time: requestData.time,
+                        status: 'Scheduled',
+                        paymentStatus: requestData.paymentStatus || 'Paid',
+                        ...requestData,
+                        _isOffline: true,
+                        _syncStatus: 'Pending Sync',
+                    };
+
+                    const syntheticHospital = {
+                        _id: tempId,
+                        ...requestData,
+                        _isOffline: true,
+                        _syncStatus: 'Pending Sync',
+                    };
+
+                    // Return a synthetic success response so the UI flow continues seamlessly
+                    return {
+                        data: {
+                            success: true,
+                            _offline: true,
+                            _queued: true,
+                            _queueId: queueId,
+                            _syncStatus: 'Pending Sync',
+                            message: 'Saved offline. Status: Pending Sync (Will sync when connected).',
+                            user: syntheticUser,
+                            appointment: syntheticAppointment,
+                            patient: syntheticUser,
+                            hospital: syntheticHospital,
+                            departmentFees: requestData.departmentFees,
+                            departmentValidity: requestData.departmentValidity,
+                            facilities: requestData.facilities,
+                            medicine: requestData,
+                            inventory: requestData,
+                            bed: requestData,
+                            vial: requestData,
+                            data: {
+                                _id: tempId,
+                                ...requestData,
+                                _syncStatus: 'Pending Sync',
+                            },
+                            ...requestData,
+                        },
+                        status: 202,
+                        statusText: 'Accepted (Offline)',
+                        headers: {},
+                        config,
+                        _offline: true,
+                        _queued: true,
+                    };
+                } catch (err) {
+                    console.error('[OfflineQueue] Enqueue error:', err);
+                }
+            }
+
+            // Not in allowlist or queue failed
+            return Promise.reject({
+                ...error,
+                _offline: true,
+                message: 'This action requires an internet connection.',
+            });
+        }
+
+        return Promise.reject(error);
+    }
+);
+
+/**
+ * Generate a human-readable description for a queued operation
+ */
+function getOperationDescription(method, url) {
+    if (url.includes('/reception/register')) return 'Register new patient';
+    if (url.includes('/reception/book-appointment')) return 'Book appointment';
+    if (url.includes('/clinical/intake')) return 'Clinical intake';
+    if (url.includes('/confirm-payment')) return 'Confirm payment';
+    if (url.includes('/reception/intake')) return 'Update patient info';
+    if (url.includes('/department-fees')) return 'Update department fees';
+    if (url.includes('/facilities')) return 'Update hospital facilities';
+    if (url.includes('/upi-ids') || url.includes('/department-upi')) return 'Update UPI configuration';
+    if (url.includes('/admin/users') || url.includes('/staff')) return 'Manage staff user';
+    if (url.includes('/admin/roles')) return 'Manage role';
+    if (url.includes('/medicines') || url.includes('/pharmacy')) return 'Manage medicine / inventory';
+    if (url.includes('/lab-tests') || url.includes('/lab')) return 'Manage lab tests';
+    if (url.includes('/beds')) return 'Manage hospital beds';
+    if (url.includes('/vials')) return 'Manage blood bank vials';
+    if (url.includes('/doctor/session')) return 'Start patient consultation';
+    if (url.includes('/ot/schedule') || url.includes('/ot/')) return 'Manage OT surgery';
+    if (url.includes('/nurse/vitals') || url.includes('/ipd/vitals')) return 'Record vitals';
+    if (url.includes('/admissions')) return 'Manage patient admission';
+    if (url.includes('/billing')) return 'Manage patient billing';
+    if (url.includes('/question-library')) return 'Update clinical question library';
+    return `${method.toUpperCase()} ${url.split('/api/')[1] || url}`;
+}
+
+export const authAPI = {
+    login: async (email, password, hospitalId) => {
+        const payload = { email, password };
+        if (hospitalId) payload.hospitalId = hospitalId;
+        const response = await apiClient.post('/api/auth/login', payload);
+        return response.data;
+    },
+    signup: async (name, email, password, phone = '') => {
+        const response = await apiClient.post('/api/auth/signup', { name, email, password, phone });
+        return response.data;
+    },
+    // ── Email OTP Authentication ──────────────────────────────────────────
+    sendOtp: async (email, password, hospitalId, hospitalSlug, loginType) => {
+        try {
+            const payload = { email, password, loginType };
+            if (hospitalId) payload.hospitalId = hospitalId;
+            if (hospitalSlug) payload.hospitalSlug = hospitalSlug;
+            const response = await apiClient.post('/api/auth/otp/send', payload);
+            return response.data;
+        } catch (error) {
+            console.error('[Axios Network Error in sendOtp]:', {
+                code: error.code,
+                message: error.message,
+                status: error.response?.status,
+                data: error.response?.data
+            });
+            throw error;
+        }
+    },
+    verifyOtp: async (preAuthToken, otp) => {
+        const response = await apiClient.post('/api/auth/otp/verify', { preAuthToken, otp });
+        return response.data;
+    },
+    resendOtp: async (preAuthToken) => {
+        const response = await apiClient.post('/api/auth/otp/resend', { preAuthToken });
+        return response.data;
+    },
+    forceLogin: async (preAuthToken) => {
+        const response = await apiClient.post('/api/auth/otp/force-login', { preAuthToken });
+        return response.data;
+    },
+    getAuthConfig: async () => {
+        const response = await apiClient.get('/api/public/auth-config');
+        return response.data;
+    },
+};
+
+export const doctorAPI = {
+    getAppointments: async () => {
+        const response = await apiClient.get('/api/doctor/appointments');
+        return response.data;
+    },
+    getAllAppointments: async () => {
+        const response = await apiClient.get('/api/doctor/all-appointments');
+        return response.data;
+    },
+    getAppointmentDetails: async (id) => {
+        const response = await apiClient.get(`/api/doctor/appointments/${id}`);
+        return response.data;
+    },
+    getPatients: async () => {
+        const response = await apiClient.get('/api/doctor/patients');
+        return response.data;
+    },
+    getPatientHistory: async (patientId, department) => {
+        let url = `/api/doctor/patients/${patientId}/history`;
+        if (department) url += `?department=${encodeURIComponent(department)}`;
+        const response = await apiClient.get(url);
+        return response.data;
+    },
+    getFullPatientProfile: async (patientId) => {
+        const response = await apiClient.get(`/api/doctor/patients/${patientId}/full-profile`);
+        return response.data;
+    },
+    getClinicPatientReports: async (clinicPatientId) => (await apiClient.get(`/api/doctor/clinic-patients/${clinicPatientId}/reports`)).data,
+    startSession: async (patientId) => {
+        const response = await apiClient.post('/api/doctor/session/start', { patientId });
+        return response.data;
+    },
+    updatePatientProfile: async (patientId, profileData) => {
+        const response = await apiClient.put(`/api/doctor/patients/${patientId}/profile`, profileData);
+        return response.data;
+    },
+    updateSession: async (id, data) => {
+        const formData = new FormData();
+        Object.keys(data).forEach(key => {
+            if (typeof data[key] === 'object' && key !== 'prescriptionFile') {
+                formData.append(key, JSON.stringify(data[key]));
+            } else {
+                formData.append(key, data[key]);
+            }
+        });
+        const response = await apiClient.patch(`/api/doctor/appointments/${id}/prescription`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return response.data;
+    },
+    getLabs: async () => {
+        const response = await apiClient.get('/api/doctor/labs-list');
+        return response.data;
+    },
+    getMedicines: async () => {
+        const response = await apiClient.get('/api/doctor/medicines-list');
+        return response.data;
+    },
+    getBookedSlots: async (doctorId, date) => {
+        const response = await apiClient.get(`/api/doctor/${doctorId}/booked-slots?date=${date}`);
+        return response.data;
+    },
+    getDoctors: async (hospitalId = null) => {
+        let url = '/api/doctor';
+        if (hospitalId) url += `?hospitalId=${encodeURIComponent(hospitalId)}`;
+        const response = await apiClient.get(url);
+        return response.data;
+    }
+};
+
+export const receptionAPI = {
+    getStats: async () => {
+        const response = await apiClient.get('/api/reception/stats');
+        return response.data;
+    },
+    getAllAppointments: async (params = {}) => {
+        const response = await apiClient.get('/api/reception/appointments', { params });
+        return response.data;
+    },
+    getAllPatients: async () => {
+        const response = await apiClient.get('/api/reception/patients');
+        return response.data;
+    },
+    registerPatient: async (data) => {
+        const response = await apiClient.post('/api/reception/register', data);
+        return response.data;
+    },
+    getTransactions: async () => {
+        const response = await apiClient.get('/api/reception/transactions');
+        return response.data;
+    },
+    searchPatients: async (query) => {
+        const response = await apiClient.get(`/api/reception/search-patients?query=${query}`);
+        return response.data;
+    },
+    updateIntake: async (userId, data) => {
+        const response = await apiClient.put(`/api/reception/intake/${userId}`, data);
+        return response.data;
+    },
+    getFollowupStatus: async (patientId, department, date = '') => {
+        let url = department === 'auto'
+            ? `/api/reception/patients/${patientId}/followup-status?auto=true`
+            : department
+                ? `/api/reception/patients/${patientId}/followup-status?department=${encodeURIComponent(department)}`
+                : `/api/reception/patients/${patientId}/followup-status`;
+        if (date) {
+            url += (url.includes('?') ? '&' : '?') + `date=${date}`;
+        }
+        const response = await apiClient.get(url);
+        return response.data;
+    },
+    bookAppointment: async (data) => {
+        const response = await apiClient.post('/api/reception/book-appointment', data);
+        return response.data;
+    },
+    getBookedSlots: async (doctorId, date, hospitalId = '') => {
+        let url = `/api/doctor/${doctorId}/booked-slots?date=${date}`;
+        if (hospitalId) url += `&hospitalId=${hospitalId}`;
+        const response = await apiClient.get(url);
+        return response.data;
+    },
+    rescheduleAppointment: async (id, date, time) => {
+        const response = await apiClient.patch(`/api/reception/appointments/${id}/reschedule`, { date, time });
+        return response.data;
+    },
+    cancelAppointment: async (id) => {
+        const response = await apiClient.patch(`/api/reception/appointments/${id}/cancel`);
+        return response.data;
+    },
+    confirmPayment: async (id, paymentMethod, amount, data = {}) => {
+        const response = await apiClient.patch(`/api/reception/appointments/${id}/confirm-payment`, { paymentMethod, amount, ...data });
+        return response.data;
+    },
+    sendAadhaarOTP: async (aadhaarNumber) => {
+        const response = await apiClient.post('/api/reception/send-aadhaar-otp', { aadhaarNumber });
+        return response.data;
+    },
+    verifyAadhaarOTP: async (aadhaarNumber, otp) => {
+        const response = await apiClient.post('/api/reception/verify-aadhaar-otp', { aadhaarNumber, otp });
+        return response.data;
+    }
+};
+
+// Lightweight in-memory cache for static metadata
+const metaCache = new Map();
+const CACHE_TTL_MS = 25000; // 25s
+
+export const invalidateMetaCache = (prefix = '') => {
+    if (!prefix) {
+        metaCache.clear();
+        return;
+    }
+    for (const key of metaCache.keys()) {
+        if (key.startsWith(prefix)) {
+            metaCache.delete(key);
+        }
+    }
+};
+
+const getCachedOrFetch = async (key, fetcher) => {
+    const cached = metaCache.get(key);
+    const now = Date.now();
+    if (cached && (now - cached.timestamp < CACHE_TTL_MS)) {
+        return cached.data;
+    }
+    const data = await fetcher();
+    metaCache.set(key, { data, timestamp: now });
+    return data;
+};
+
+export const adminAPI = {
+    login: async (email, password) => (await apiClient.post('/api/admin/login', { email, password })).data,
+    signup: async (name, email, password, phone) => (await apiClient.post('/api/admin/signup', { name, email, password, phone })).data,
+    getUsers: async (plan, hospitalId, page, limit, search, excludeDoctors) => {
+        let url = '/api/admin/users?';
+        if (typeof plan === 'object' && plan !== null) {
+            const params = plan;
+            if (params.plan) url += `plan=${encodeURIComponent(params.plan)}&`;
+            if (params.hospitalId) url += `hospitalId=${encodeURIComponent(params.hospitalId)}&`;
+            if (params.page !== undefined && params.page !== null && params.page !== '') url += `page=${encodeURIComponent(params.page)}&`;
+            if (params.limit !== undefined && params.limit !== null && params.limit !== '') url += `limit=${encodeURIComponent(params.limit)}&`;
+            if (params.search) url += `search=${encodeURIComponent(params.search)}&`;
+            if (params.excludeDoctors !== undefined) url += `excludeDoctors=${encodeURIComponent(params.excludeDoctors)}&`;
+        } else {
+            if (plan) url += `plan=${encodeURIComponent(plan)}&`;
+            if (hospitalId) url += `hospitalId=${encodeURIComponent(hospitalId)}&`;
+            if (page !== undefined && page !== null && page !== '') url += `page=${encodeURIComponent(page)}&`;
+            if (limit !== undefined && limit !== null && limit !== '') url += `limit=${encodeURIComponent(limit)}&`;
+            if (search) url += `search=${encodeURIComponent(search)}&`;
+            if (excludeDoctors !== undefined) url += `excludeDoctors=${encodeURIComponent(excludeDoctors)}&`;
+        }
+        return (await apiClient.get(url)).data;
+    },
+    createUser: async (data) => (await apiClient.post('/api/admin/users', data)).data,
+    deleteUser: async (id) => (await apiClient.delete(`/api/admin/users/${id}`)).data,
+    updateUser: async (id, data) => (await apiClient.put(`/api/admin/users/${id}`, data)).data,
+    getRoles: async (plan) => {
+        let url = '/api/admin/roles';
+        if (plan) url += `?plan=${encodeURIComponent(plan)}`;
+        return getCachedOrFetch(`roles_${plan || 'all'}`, async () => (await apiClient.get(url)).data);
+    },
+    createRole: async (data) => {
+        invalidateMetaCache('roles');
+        return (await apiClient.post('/api/admin/roles', data)).data;
+    },
+    updateRole: async (id, data) => {
+        invalidateMetaCache('roles');
+        return (await apiClient.put(`/api/admin/roles/${id}`, data)).data;
+    },
+    deleteRole: async (id) => {
+        invalidateMetaCache('roles');
+        return (await apiClient.delete(`/api/admin/roles/${id}`)).data;
+    },
+};
+
+export const adminEntitiesAPI = {
+    getDoctors: async () => (await apiClient.get('/api/admin-entities/doctors')).data,
+    getDoctor: async (id) => (await apiClient.get(`/api/admin-entities/doctors/${id}`)).data,
+    createDoctor: async (data) => (await apiClient.post('/api/admin-entities/doctors', data)).data,
+    updateDoctor: async (id, data) => (await apiClient.put(`/api/admin-entities/doctors/${id}`, data)).data,
+    deleteDoctor: async (id) => (await apiClient.delete(`/api/admin-entities/doctors/${id}`)).data,
+    getLabs: async () => (await apiClient.get('/api/admin-entities/labs')).data,
+    createLab: async (data) => (await apiClient.post('/api/admin-entities/labs', data)).data,
+    deleteLab: async (id) => (await apiClient.delete(`/api/admin-entities/labs/${id}`)).data,
+    getPharmacies: async () => (await apiClient.get('/api/admin-entities/pharmacies')).data,
+    createPharmacy: async (data) => (await apiClient.post('/api/admin-entities/pharmacies', data)).data,
+    deletePharmacy: async (id) => (await apiClient.delete(`/api/admin-entities/pharmacies/${id}`)).data,
+    getReceptions: async () => (await apiClient.get('/api/admin-entities/receptions')).data,
+    createReception: async (data) => (await apiClient.post('/api/admin-entities/receptions', data)).data,
+    deleteReception: async (id) => (await apiClient.delete(`/api/admin-entities/receptions/${id}`)).data,
+    getServices: async () => (await apiClient.get('/api/admin-entities/services')).data,
+    createService: async (data) => (await apiClient.post('/api/admin-entities/services', data)).data,
+    deleteService: async (id) => (await apiClient.delete(`/api/admin-entities/services/${id}`)).data,
+};
+
+export const publicAPI = {
+    getServices: async () => (await apiClient.get('/api/public/services')).data,
+    getDoctors: async (serviceId = null, hospitalId = null) => {
+        let url = '/api/doctor';
+        const params = [];
+        if (serviceId) params.push(`serviceId=${encodeURIComponent(serviceId)}`);
+        if (hospitalId) params.push(`hospitalId=${encodeURIComponent(hospitalId)}`);
+        if (params.length > 0) {
+            url += '?' + params.join('&');
+        }
+        return (await apiClient.get(url)).data;
+    },
+    getTenantConfig: async (domain) => {
+        const url = `/api/public/tenant-config?domain=${encodeURIComponent(domain)}`;
+        return (await apiClient.get(url)).data;
+    },
+    getBookedSlots: async (doctorId, date, hospitalId = '') => {
+        let url = `/api/doctor/${doctorId}/booked-slots?date=${date}`;
+        if (hospitalId) url += `&hospitalId=${encodeURIComponent(hospitalId)}`;
+        return (await apiClient.get(url)).data;
+    }
+};
+
+export const reportAPI = {
+    uploadReport: async (formData) => {
+        const response = await apiClient.post('/api/reports/upload', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return response.data;
+    },
+    getReportsByAppointment: async (appointmentId) => {
+        const response = await apiClient.get(`/api/reports/${appointmentId}`);
+        return response.data;
+    },
+    getReportsByPatient: async (patientId) => {
+        const response = await apiClient.get(`/api/reports/patient/${patientId}`);
+        return response.data;
+    },
+    generateAISummary: async (fileUrl, mimeType, fileName) => {
+        const response = await apiClient.post('/api/reports/summary', { fileUrl, mimeType, fileName });
+        return response.data;
+    },
+    analyzeMedia: async (fileUrl, mimeType, question, fileName) => {
+        const response = await apiClient.post('/api/reports/analyze', { fileUrl, mimeType, question, fileName });
+        return response.data;
+    },
+    searchReports: async (patientId, keyword) => {
+        const response = await apiClient.post('/api/reports/search', { patientId, keyword });
+        return response.data;
+    },
+    compareReports: async (latestFileUrl, latestMimeType, previousFileUrl, previousMimeType, patientId) => {
+        const response = await apiClient.post('/api/reports/compare', { latestFileUrl, latestMimeType, previousFileUrl, previousMimeType, patientId });
+        return response.data;
+    },
+    chatWithAssistant: async (messages, mediaUrls) => {
+        const response = await apiClient.post('/api/reports/chat', { messages, mediaUrls });
+        return response.data;
+    },
+    // AI Wallet & Usage Stats
+    getAIUsageStats: async () => {
+        const response = await apiClient.get('/api/ai-wallet');
+        return response.data;
+    },
+    getAIUsageHistory: async (limit = 30) => {
+        const response = await apiClient.get(`/api/ai-wallet/usage?limit=${limit}`);
+        return response.data;
+    }
+};
+
+export const aiWalletAPI = {
+    getWallet: async () => {
+        const response = await apiClient.get('/api/ai-wallet');
+        return response.data;
+    },
+    getWalletStatus: async () => {
+        const response = await apiClient.get('/api/ai-wallet/status');
+        return response.data;
+    },
+    getUsageHistory: async (limit = 30) => {
+        const response = await apiClient.get(`/api/ai-wallet/usage?limit=${limit}`);
+        return response.data;
+    },
+    getTransactions: async (page = 1, limit = 30) => {
+        const response = await apiClient.get(`/api/ai-wallet/transactions?page=${page}&limit=${limit}`);
+        return response.data;
+    },
+    getAllHospitalWallets: async () => {
+        const response = await apiClient.get('/api/ai-wallet/admin/hospitals');
+        return response.data;
+    },
+    rechargeWallet: async (hospitalId, amount) => {
+        const response = await apiClient.post('/api/ai-wallet/admin/recharge', { hospitalId, amount });
+        return response.data;
+    }
+};
+
+export const uploadAPI = {
+    uploadImages: async (formData) => {
+        const response = await apiClient.post('/api/upload/images', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return response.data;
+    },
+};
+
+export const labAPI = {
+    getStats: async () => (await apiClient.get('/api/lab/stats')).data,
+    getMyReports: async () => (await apiClient.get('/api/lab/my-reports')).data,
+    getRequests: async (status) => (await apiClient.get(`/api/lab/requests?status=${status || ''}`)).data,
+    updatePayment: async (id, paymentData) => (await apiClient.patch(`/api/lab/update-payment/${id}`, paymentData)).data,
+    uploadReport: async (id, formData) => (await apiClient.post(`/api/lab/upload-report/${id}`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    })).data
+};
+
+export const pharmacyAPI = {
+    getDashboardSummary: async (hospitalId) => (await apiClient.get(`/api/pharmacy/orders/dashboard-summary?hospitalId=${hospitalId}`)).data,
+    getVendorReturns: async () => (await apiClient.get('/api/pharmacy/vendor-returns')).data,
+    createVendorReturn: async (data) => (await apiClient.post('/api/pharmacy/vendor-returns', data)).data,
+    getInventory: async () => (await apiClient.get('/api/pharmacy/inventory')).data,
+    addMedicine: async (data) => (await apiClient.post('/api/pharmacy/inventory', data)).data,
+    updateMedicine: async (id, data) => (await apiClient.put(`/api/pharmacy/inventory/${id}`, data)).data,
+    deleteMedicine: async (id) => (await apiClient.delete(`/api/pharmacy/inventory/${id}`)).data,
+    getVendors: async () => (await apiClient.get('/api/pharmacy/vendors')).data,
+    addVendor: async (data) => (await apiClient.post('/api/pharmacy/vendors', data)).data,
+    updateVendor: async (id, data) => (await apiClient.put(`/api/pharmacy/vendors/${id}`, data)).data,
+    getCollectionsAnalytics: async (startDate, endDate) => {
+        let url = `/api/pharmacy/analytics/collections`;
+        const params = new URLSearchParams();
+        if (startDate) params.append('startDate', startDate);
+        if (endDate) params.append('endDate', endDate);
+        const qs = params.toString();
+        if (qs) url += `?${qs}`;
+        return (await apiClient.get(url)).data;
+    },
+    uploadPurchaseInvoice: async (formData) => (await apiClient.post('/api/pharmacy/purchase-invoice/upload', formData, { headers: { 'Content-Type': 'multipart/form-data' } })).data,
+    processPurchaseInvoice: async (id) => (await apiClient.post(`/api/pharmacy/purchase-invoice/${id}/process`)).data,
+    getPurchaseInvoices: async () => (await apiClient.get('/api/pharmacy/purchase-invoice')).data,
+    getPurchaseInvoiceById: async (id) => (await apiClient.get(`/api/pharmacy/purchase-invoice/${id}`)).data,
+    deletePurchaseInvoice: async (id) => (await apiClient.delete(`/api/pharmacy/purchase-invoice/${id}`)).data,
+    recordConsumption: async (data) => (await apiClient.post('/api/pharmacy/consumption', data)).data,
+    getDepartments: async () => (await apiClient.get('/api/pharmacy/departments')).data,
+    createDepartment: async (data) => (await apiClient.post('/api/pharmacy/departments', data)).data,
+    getDepartmentStocks: async (departmentId = '') => {
+        let url = '/api/pharmacy/department-stocks';
+        if (departmentId) url += `?departmentId=${departmentId}`;
+        return (await apiClient.get(url)).data;
+    },
+    transferToDepartment: async (data) => (await apiClient.post('/api/pharmacy/departments/transfer', data)).data,
+    recordDepartmentUsage: async (data) => (await apiClient.post('/api/pharmacy/departments/usage', data)).data
+};
+
+export const pharmacyOrderAPI = {
+    getOrders: async () => (await apiClient.get('/api/pharmacy/orders')).data,
+    createOrder: async (data) => (await apiClient.post('/api/pharmacy/orders', data)).data,
+    completeOrder: async (id, payload = {}) => (await apiClient.patch(`/api/pharmacy/orders/${id}/complete`, payload)).data,
+    searchBills: async (query) => (await apiClient.get(`/api/pharmacy/orders/search-bill?query=${query}`)).data,
+    processReturn: async (data) => (await apiClient.post('/api/pharmacy/orders/process-return', data)).data
+};
+
+export const clinicalAPI = {
+    intake: async (data) => (await apiClient.post('/api/clinical/intake', data)).data,
+    getHistory: async (patientId) => (await apiClient.get(`/api/clinical/history/${patientId}`)).data,
+    diagnose: async (visitId, data) => (await apiClient.post(`/api/clinical/diagnose/${visitId}`, data)).data
+};
+
+export const patientAPI = {
+    search: async (term = '') => (await apiClient.get(`/api/patients/search${term ? `?term=${encodeURIComponent(term)}` : ''}`)).data,
+    getFullHistory: async (id, department) => {
+        let url = `/api/patients/${id}/full-history`;
+        const params = new URLSearchParams();
+        if (department) params.append('department', department);
+        if (params.toString()) url += `?${params.toString()}`;
+        return (await apiClient.get(url)).data;
+    },
+    uploadConsent: async (id, formData) => (await apiClient.post(`/api/patients/${id}/consent`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })).data,
+    getConsent: async (id) => (await apiClient.get(`/api/patients/${id}/consent`)).data,
+    deleteConsent: async (id, index, fileId) => (await apiClient.delete(`/api/patients/${id}/consent/${index}`, { data: { fileId } })).data,
+    uploadDocument: async (id, formData) => (await apiClient.post(`/api/patients/${id}/documents`, formData, { headers: { 'Content-Type': 'multipart/form-data' } })).data,
+    getDocuments: async (id, department) => {
+        let url = `/api/patients/${id}/documents`;
+        const params = new URLSearchParams();
+        if (department) params.append('department', department);
+        if (params.toString()) url += `?${params.toString()}`;
+        return (await apiClient.get(url)).data;
+    },
+    deleteDocument: async (id, index, fileId, url, fileName) => (await apiClient.delete(`/api/patients/${id}/documents/${index}`, { data: { fileId, url, fileName } })).data,
+    updateProfile: async (id, data) => (await apiClient.put(`/api/reception/intake/${id}`, data)).data,
+    // Family Health Tree
+    getFamilyMembers: async (id) => (await apiClient.get(`/api/patients/${id}/family`)).data,
+    addFamilyMember: async (id, data) => (await apiClient.post(`/api/patients/${id}/family`, data)).data,
+    updateFamilyMember: async (id, memberId, data) => (await apiClient.put(`/api/patients/${id}/family/${memberId}`, data)).data,
+    deleteFamilyMember: async (id, memberId) => (await apiClient.delete(`/api/patients/${id}/family/${memberId}`)).data,
+};
+
+export const notificationAPI = {
+    getNotifications: async () => (await apiClient.get('/api/notifications')).data,
+    markAsRead: async (id) => (await apiClient.patch(`/api/notifications/${id}/read`)).data,
+    markAllAsRead: async () => (await apiClient.patch('/api/notifications/read-all')).data
+};
+
+export const labTestAPI = {
+    getLabTests: async (hospitalId = '') => {
+        const url = hospitalId ? `/api/lab-tests?hospitalId=${hospitalId}` : '/api/lab-tests';
+        return (await apiClient.get(url)).data;
+    },
+    createLabTest: async (data) => (await apiClient.post('/api/lab-tests', data)).data,
+    updateLabTest: async (id, data) => (await apiClient.put(`/api/lab-tests/${id}`, data)).data,
+    setHospitalPrice: async (id, hospitalId, price) => (await apiClient.put(`/api/lab-tests/${id}/hospital-price`, { hospitalId, price })).data,
+    deleteLabTest: async (id) => (await apiClient.delete(`/api/lab-tests/${id}`)).data
+};
+
+export const medicineAPI = {
+    getMedicines: async () => (await apiClient.get('/api/medicines')).data,
+    createMedicine: async (data) => (await apiClient.post('/api/medicines', data)).data,
+    updateMedicine: async (id, data) => (await apiClient.put(`/api/medicines/${id}`, data)).data,
+    deleteMedicine: async (id) => (await apiClient.delete(`/api/medicines/${id}`)).data
+};
+
+export const questionLibraryAPI = {
+    getLibrary: async () => (await apiClient.get('/api/question-library')).data,
+    updateLibrary: async (data) => (await apiClient.post('/api/question-library', { data })).data
+};
+
+export const testPackageAPI = {
+    getPackages: async () => (await apiClient.get('/api/test-packages')).data,
+    getPackage: async (id) => (await apiClient.get(`/api/test-packages/${id}`)).data,
+    createPackage: async (data) => (await apiClient.post('/api/test-packages', data)).data,
+    updatePackage: async (id, data) => (await apiClient.put(`/api/test-packages/${id}`, data)).data,
+    deletePackage: async (id) => (await apiClient.delete(`/api/test-packages/${id}`)).data,
+};
+
+export const hospitalAPI = {
+    resolveHospital: async (slug) => (await apiClient.get(`/api/hospitals/resolve/${slug}`)).data,
+    getHospitals: async (plan) => {
+        let url = '/api/hospitals';
+        if (plan) url += `?plan=${encodeURIComponent(plan)}`;
+        return getCachedOrFetch(`hospitals_${plan || 'all'}`, async () => (await apiClient.get(url)).data);
+    },
+    createHospital: async (data) => {
+        invalidateMetaCache('hospitals');
+        return (await apiClient.post('/api/hospitals', data)).data;
+    },
+    updateHospital: async (id, data) => {
+        invalidateMetaCache('hospitals');
+        return (await apiClient.put(`/api/hospitals/${id}`, data)).data;
+    },
+    deleteHospital: async (id) => {
+        invalidateMetaCache('hospitals');
+        return (await apiClient.delete(`/api/hospitals/${id}`)).data;
+    },
+    getMyHospital: async () => (await apiClient.get('/api/hospitals/my-hospital')).data,
+    // UPI management (Hospital Admin) — legacy
+    getUpiIds: async () => (await apiClient.get('/api/hospitals/my-hospital/upi-ids')).data,
+    updateUpiIds: async (upiIds) => (await apiClient.put('/api/hospitals/my-hospital/upi-ids', { upiIds })).data,
+    // Department-wise UPI management (Hospital Admin)
+    getDepartmentUpis: async () => (await apiClient.get('/api/hospitals/my-hospital/department-upi')).data,
+    createDepartmentUpi: async (data) => (await apiClient.post('/api/hospitals/my-hospital/department-upi', data)).data,
+    updateDepartmentUpi: async (id, data) => (await apiClient.put(`/api/hospitals/my-hospital/department-upi/${id}`, data)).data,
+    deleteDepartmentUpi: async (id) => (await apiClient.delete(`/api/hospitals/my-hospital/department-upi/${id}`)).data,
+    getStaffForUpi: async () => (await apiClient.get('/api/hospitals/my-hospital/staff-for-upi')).data,
+    getDepartmentUpiByRole: async (roleName) => (await apiClient.get(`/api/hospitals/my-hospital/department-upi/by-role/${encodeURIComponent(roleName)}`)).data,
+    updateFacilities: async (data) => (await apiClient.put('/api/hospitals/my-hospital/facilities', data)).data,
+    updateDepartmentFees: async (data) => (await apiClient.put('/api/hospitals/my-hospital/department-fees', data)).data,
+    // Hospital inventory
+    getInventory: async () => (await apiClient.get('/api/hospitals/my-hospital/inventory')).data,
+    addInventory: async (data) => (await apiClient.post('/api/hospitals/my-hospital/inventory', data)).data,
+    updateInventory: async (id, data) => (await apiClient.put(`/api/hospitals/my-hospital/inventory/${id}`, data)).data,
+    deleteInventory: async (id) => (await apiClient.delete(`/api/hospitals/my-hospital/inventory/${id}`)).data,
+    // Hospital lab test pricing
+    getHospitalLabTests: async () => (await apiClient.get('/api/hospitals/my-hospital/lab-tests')).data,
+    setLabTestPrice: async (testId, price) => (await apiClient.put(`/api/hospitals/my-hospital/lab-tests/${testId}/price`, { price })).data,
+    // Hospital-specific lab tests (create/delete)
+    createLabTest: async (data) => (await apiClient.post('/api/lab-tests', data)).data,
+    deleteLabTest: async (id) => (await apiClient.delete(`/api/lab-tests/${id}`)).data,
+    getHospitalStats: async (id, startDate, endDate) => {
+        let url = `/api/hospitals/${id}/stats`;
+        const params = new URLSearchParams();
+        if (startDate) params.append('startDate', startDate);
+        if (endDate) params.append('endDate', endDate);
+        const qs = params.toString();
+        if (qs) url += `?${qs}`;
+        return (await apiClient.get(url)).data;
+    },
+    // White-label branding
+    getBranding: async (id) => (await apiClient.get(`/api/hospitals/${id}/branding`)).data,
+    updateBranding: async (id, data) => (await apiClient.put(`/api/hospitals/${id}/branding`, data)).data,
+    getMyBranding: async () => (await apiClient.get('/api/hospitals/my-hospital/branding')).data,
+    updateMyBranding: async (data) => (await apiClient.put('/api/hospitals/my-hospital/branding', data)).data,
+    previewEmail: async (data) => (await apiClient.post('/api/hospitals/my-hospital/preview-email', data)).data,
+    // Appointment mode (Supreme Admin)
+    updateAppointmentMode: async (id, appointmentMode) => (await apiClient.put(`/api/hospitals/${id}`, { appointmentMode })).data,
+    getNextToken: async (hospitalId, doctorId, date) => (await apiClient.get(`/api/hospitals/${hospitalId}/next-token?doctorId=${doctorId}&date=${date}`)).data,
+};
+
+export const policyAPI = {
+    getActivePolicies: async (params = {}) => {
+        const query = new URLSearchParams(params).toString();
+        return (await apiClient.get(`/api/hospital-policies/active?${query}`)).data;
+    },
+    getAllPolicies: async () => (await apiClient.get('/api/hospital-policies')).data,
+    createPolicy: async (data) => (await apiClient.post('/api/hospital-policies', data)).data,
+    updatePolicy: async (id, data) => (await apiClient.put(`/api/hospital-policies/${id}`, data)).data,
+    togglePolicyStatus: async (id, isActive) => (await apiClient.patch(`/api/hospital-policies/${id}/status`, { isActive })).data,
+    reorderPolicies: async (items) => (await apiClient.patch('/api/hospital-policies/reorder', { items })).data,
+    deletePolicy: async (id) => (await apiClient.delete(`/api/hospital-policies/${id}`)).data,
+    acceptPolicies: async (data) => (await apiClient.post('/api/hospital-policies/accept', data)).data,
+    getAcceptanceHistory: async (patientId) => (await apiClient.get(`/api/hospital-policies/history/${patientId}`)).data,
+    seedDefaults: async () => (await apiClient.post('/api/hospital-policies/seed-defaults')).data,
+};
+
+export const hospitalAdminAPI = {
+    login: async (email, password) => (await apiClient.post('/api/hospitals/admin/login', { email, password })).data,
+    createHospitalAdmin: async (data) => (await apiClient.post('/api/hospitals/admin/signup', data)).data,
+};
+
+export const financeAPI = {
+    getDashboardStats: async (startDate, endDate) => {
+        let url = `/api/finance/dashboard`;
+        const params = new URLSearchParams();
+        if (startDate) params.append('startDate', startDate);
+        if (endDate) params.append('endDate', endDate);
+        const qs = params.toString();
+        if (qs) url += `?${qs}`;
+        return (await apiClient.get(url)).data;
+    }
+};
+
+export const billingAPI = {
+    getPatients: async () => (await apiClient.get('/api/billing/patients')).data,
+    getPatientBills: async (identifier) => (await apiClient.get(`/api/billing/patient/${encodeURIComponent(String(identifier || '').trim())}`)).data,
+    addFacilityCharge: async (data) => (await apiClient.post('/api/billing/facility-charge', data)).data,
+    processPayment: async (data) => (await apiClient.put('/api/billing/pay', data)).data,
+    searchPatients: async (query) => (await apiClient.get(`/api/reception/search-patients?query=${query}`)).data,
+    searchPatient: async (query) => (await apiClient.get(`/api/reception/search-patients?query=${query}`)).data,
+    getPaymentHistory: async (params) => (await apiClient.get('/api/billing/history', { params })).data,
+};
+
+export const accountantAPI = {
+    getDashboard: async () => (await apiClient.get('/api/accountant/dashboard')).data,
+    getFinancialRecords: async (params = {}) => {
+        const query = new URLSearchParams(params).toString();
+        return (await apiClient.get(`/api/accountant/financial-records${query ? '?' + query : ''}`)).data;
+    },
+    getPatientRefundData: async (patientId) => (await apiClient.get(`/api/accountant/refunds/patient/${patientId}`)).data,
+    createRefundRequest: async (data) => (await apiClient.post('/api/accountant/refunds/request', data)).data,
+    getRefunds: async (params = {}) => {
+        const query = new URLSearchParams(params).toString();
+        return (await apiClient.get(`/api/accountant/refunds${query ? '?' + query : ''}`)).data;
+    },
+    getRefundById: async (id) => (await apiClient.get(`/api/accountant/refunds/${id}`)).data,
+    processRefund: async (id, data) => (await apiClient.put(`/api/accountant/refunds/${id}/process`, data)).data,
+    getHistory: async (params = {}) => {
+        const query = new URLSearchParams(params).toString();
+        return (await apiClient.get(`/api/accountant/history${query ? '?' + query : ''}`)).data;
+    },
+};
+
+export const refundAdminAPI = {
+    getRefunds: async (params = {}) => {
+        const query = new URLSearchParams(params).toString();
+        return (await apiClient.get(`/api/refunds/admin/refunds${query ? '?' + query : ''}`)).data;
+    },
+    approveRefund: async (id) => (await apiClient.put(`/api/refunds/admin/refunds/${id}/approve`)).data,
+    rejectRefund: async (id, rejectionReason) => (await apiClient.put(`/api/refunds/admin/refunds/${id}/reject`, { rejectionReason })).data,
+};
+
+export const refundReceptionAPI = {
+    getCashRefunds: async (showCompleted = false) => (await apiClient.get(`/api/refunds/reception/refunds?showCompleted=${showCompleted}`)).data,
+    handOverCash: async (id) => (await apiClient.put(`/api/refunds/reception/refunds/${id}/hand-over`)).data,
+    getRefundHistory: async () => (await apiClient.get('/api/refunds/reception/refund-history')).data,
+};
+
+
+export const admissionAPI = {
+    transferBed: async (id, data) => (await apiClient.put(`/api/admissions/${id}/transfer`, data)).data,
+    createAdmission: async (data) => (await apiClient.post('/api/admissions', data)).data,
+    getActiveAdmissions: async (params = {}) => (await apiClient.get('/api/admissions/active', { params })).data,
+    getAdmissions: async (params = {}) => (await apiClient.get('/api/admissions/active', { params })).data,
+    getAdmissionById: async (id) => (await apiClient.get(`/api/admissions/${id}`)).data,
+    getPatientAdmissions: async (patientId) => (await apiClient.get(`/api/admissions/patient/${patientId}`)).data,
+    dischargePatient: async (id, data = {}) => (await apiClient.put(`/api/admissions/${id}/discharge`, data)).data,
+    markAdmissionPaid: async (id) => (await apiClient.put(`/api/admissions/${id}/pay`, {})).data,
+};
+
+// Clinic self-service API (for clinic admin dashboard)
+export const clinicAPI = {
+    getStats: async () => (await apiClient.get('/api/clinic/stats')).data,
+    // Patients — uses ClinicPatient model (separate from staff)
+    getPatients: async (search = '') => (await apiClient.get(`/api/clinic/patients${search ? `?search=${encodeURIComponent(search)}` : ''}`)).data,
+    registerPatient: async (data) => (await apiClient.post('/api/clinic/patients', data)).data,
+    updatePatient: async (id, data) => (await apiClient.put(`/api/clinic/patients/${id}`, data)).data,
+    getPatientHistory: async (patientId) => (await apiClient.get(`/api/clinic/patients/${patientId}/history`)).data,
+    checkFeeWaiver: async (patientId, date) => (await apiClient.get(`/api/clinic/patients/${patientId}/check-fee-waiver${date ? `?date=${date}` : ''}`)).data,
+    uploadPatientReport: async (patientId, file, name) => {
+        const fd = new FormData();
+        fd.append('report', file);
+        if (name) fd.append('name', name);
+        return (await apiClient.post(`/api/clinic/patients/${patientId}/reports`, fd, { headers: { 'Content-Type': 'multipart/form-data' } })).data;
+    },
+    deletePatientReport: async (patientId, reportId) => (await apiClient.delete(`/api/clinic/patients/${patientId}/reports/${reportId}`)).data,
+    // Appointments — patientId is ClinicPatient._id
+    getAppointments: async (date = '', status = '') => {
+        const params = new URLSearchParams();
+        if (date) params.append('date', date);
+        if (status) params.append('status', status);
+        const qs = params.toString();
+        return (await apiClient.get(`/api/clinic/appointments${qs ? '?' + qs : ''}`)).data;
+    },
+    getConfig: async () => (await apiClient.get('/api/clinic/config')).data,
+    updateConfig: async (data) => (await apiClient.put('/api/clinic/config', data)).data,
+    getStaff: async () => (await apiClient.get('/api/clinic/staff')).data,
+    bookAppointment: async (data) => (await apiClient.post('/api/clinic/appointments', data)).data,
+    completeAppointment: async (id, data) => (await apiClient.put(`/api/clinic/appointments/${id}/complete`, data)).data,
+    updateConsultation: async (id, data) => (await apiClient.put(`/api/clinic/appointments/${id}/update-consultation`, data)).data,
+    payAppointment: async (id, paymentMethod = 'Cash') => (await apiClient.put(`/api/clinic/appointments/${id}/pay`, { paymentMethod })).data,
+    cancelAppointment: async (id) => (await apiClient.put(`/api/clinic/appointments/${id}/cancel`, {})).data,
+    // Inventory
+    getInventory: async () => (await apiClient.get('/api/clinic/inventory')).data,
+    addInventory: async (data) => (await apiClient.post('/api/clinic/inventory', data)).data,
+    // Pharmacy orders
+    getPharmacyOrders: async () => (await apiClient.get('/api/clinic/pharmacy-orders')).data,
+    dispenseOrder: async (id) => (await apiClient.put(`/api/clinic/pharmacy-orders/${id}/dispense`, {})).data,
+    // Treatment Plans
+    getTreatmentPlans: async () => (await apiClient.get('/api/clinic/treatment-plans')).data,
+    createTreatmentPlan: async (data) => (await apiClient.post('/api/clinic/treatment-plans', data)).data,
+    getTreatmentPlan: async (id) => (await apiClient.get(`/api/clinic/treatment-plans/${id}`)).data,
+    getTodayDuePlans: async () => (await apiClient.get('/api/clinic/treatment-plans/today-due')).data,
+    payVisit: async (planId, visitId, data) => (await apiClient.put(`/api/clinic/treatment-plans/${planId}/visits/${visitId}/pay`, data)).data,
+    completeVisit: async (planId, visitId, data) => (await apiClient.put(`/api/clinic/treatment-plans/${planId}/visits/${visitId}/complete`, data)).data,
+    missVisit: async (planId, visitId) => (await apiClient.put(`/api/clinic/treatment-plans/${planId}/visits/${visitId}/miss`, {})).data,
+    rescheduleVisit: async (planId, visitId, data) => (await apiClient.put(`/api/clinic/treatment-plans/${planId}/visits/${visitId}/reschedule`, data)).data,
+    cancelTreatmentPlan: async (id) => (await apiClient.put(`/api/clinic/treatment-plans/${id}/cancel`, {})).data,
+};
+
+export const simpleClinicAPI = {
+    getClinics: async (plan) => {
+        let url = '/api/simple-clinics';
+        if (plan) url += `?plan=${encodeURIComponent(plan)}`;
+        return (await apiClient.get(url)).data;
+    },
+    createClinic: async (data) => (await apiClient.post('/api/simple-clinics', data)).data,
+    updateClinic: async (id, data) => (await apiClient.put(`/api/simple-clinics/${id}`, data)).data,
+    deleteClinic: async (id) => (await apiClient.delete(`/api/simple-clinics/${id}`)).data,
+    getStats: async (id, startDate, endDate) => {
+        let url = `/api/simple-clinics/${id}/stats`;
+        const params = new URLSearchParams();
+        if (startDate) params.append('startDate', startDate);
+        if (endDate) params.append('endDate', endDate);
+        const qs = params.toString();
+        if (qs) url += `?${qs}`;
+        return (await apiClient.get(url)).data;
+    },
+    createManager: async (id, data) => (await apiClient.post(`/api/simple-clinics/${id}/manager`, data)).data,
+    getStaff: async (id) => (await apiClient.get(`/api/simple-clinics/${id}/staff`)).data,
+    createStaff: async (id, data) => (await apiClient.post(`/api/simple-clinics/${id}/staff`, data)).data,
+    deleteStaff: async (clinicId, userId) => (await apiClient.delete(`/api/simple-clinics/${clinicId}/staff/${userId}`)).data,
+    // Tier management
+    updateTier: async (id, data) => (await apiClient.put(`/api/simple-clinics/${id}`, data)).data,
+    // Subscription / billing
+    getSubscriptions: async (id) => (await apiClient.get(`/api/simple-clinics/${id}/subscriptions`)).data,
+    setRate: async (id, data) => (await apiClient.put(`/api/simple-clinics/${id}/subscriptions/rate`, data)).data,
+    updateSubscription: async (clinicId, subId, data) => (await apiClient.put(`/api/simple-clinics/${clinicId}/subscriptions/${subId}`, data)).data,
+    // Appointment mode (Central Admin only)
+    updateAppointmentMode: async (id, appointmentMode) =>
+        (await apiClient.put(`/api/simple-clinics/${id}`, { appointmentMode })).data,
+};
+
+export const revenueAPI = {
+    // Full system revenue analytics (monthly, quarterly, by model)
+    getSystemAnalytics: async (force = false) => {
+        if (force) {
+            invalidateMetaCache('revenue_system_analytics');
+        }
+        return getCachedOrFetch('revenue_system_analytics', async () => (await apiClient.get('/api/revenue/system')).data);
+    },
+    // All hospitals with revenue config (lightweight)
+    getHospitalsRevenue: async () => (await apiClient.get('/api/revenue/hospitals')).data,
+    // Set or update revenue model for a hospital/clinic
+    setHospitalPlan: async (id, data) => {
+        invalidateMetaCache('revenue_system_analytics');
+        return (await apiClient.put(`/api/revenue/hospital/${id}`, data)).data;
+    },
+};
+
+// Patient Auth Client (Keeps Patient Auth Separate from Staff Auth)
+const patientApiClient = axios.create({
+    baseURL: baseURL,
+    headers: { 'Content-Type': 'application/json' },
+});
+
+patientApiClient.interceptors.request.use(
+    (config) => {
+        const token = localStorage.getItem('patientToken');
+        if (token) config.headers.Authorization = `Bearer ${token}`;
+        return config;
+    },
+    (error) => Promise.reject(error)
+);
+
+patientApiClient.interceptors.response.use(
+    (response) => response,
+    (error) => {
+        if (!navigator.onLine || !isOnline()) {
+            return Promise.reject(error);
+        }
+        if (error.response?.status === 401) {
+            localStorage.removeItem('patientToken');
+            localStorage.removeItem('patientUser');
+            if (!window.location.pathname.includes('/patient')) {
+                window.location.href = '/patient';
+            }
+        }
+        return Promise.reject(error);
+    }
+);
+
+export const patientAuthAPI = {
+    register: async (name, email, mobile, password, hospitalId, age, aadhaarNumber) => {
+        const response = await patientApiClient.post('/api/patient-auth/register', { name, email, mobile, password, hospitalId, age, aadhaarNumber });
+        return response.data;
+    },
+    login: async (loginId, password, hospitalId) => {
+        const response = await patientApiClient.post('/api/patient-auth/login', { loginId, password, hospitalId });
+        return response.data;
+    },
+    sendOtp: async (loginId, password, hospitalId) => {
+        const response = await patientApiClient.post('/api/patient-auth/send-otp', { loginId, password, hospitalId });
+        return response.data;
+    },
+    verifyOtp: async (preAuthToken, otp) => {
+        const response = await patientApiClient.post('/api/patient-auth/verify-otp', { preAuthToken, otp });
+        return response.data;
+    },
+    resendOtp: async (preAuthToken) => {
+        const response = await patientApiClient.post('/api/patient-auth/resend-otp', { preAuthToken });
+        return response.data;
+    },
+    forgotPassword: async (email, hospitalId) => {
+        const response = await patientApiClient.post('/api/patient-auth/forgot-password', { email, hospitalId });
+        return response.data;
+    },
+    resetPassword: async (token, password) => {
+        const response = await patientApiClient.post('/api/patient-auth/reset-password', { token, password });
+        return response.data;
+    },
+    getMe: async () => (await patientApiClient.get('/api/patient-auth/me')).data,
+    getPatientAppointments: async () => (await patientApiClient.get('/api/patient-auth/appointments')).data,
+    getPatientProfile: async () => (await patientApiClient.get('/api/patient-auth/profile')).data,
+    updatePatientProfile: async (data) => (await patientApiClient.put('/api/patient-auth/profile', data)).data,
+    cancelAppointment: async (id) => (await patientApiClient.put(`/api/patient-auth/appointments/${id}/cancel`)).data,
+    getPatientDocuments: async () => (await patientApiClient.get('/api/patient-auth/documents')).data,
+    getPatientBills: async () => (await patientApiClient.get('/api/patient-auth/bills')).data,
+    payPatientBills: async (data) => (await patientApiClient.post('/api/patient-auth/bills/pay', data)).data,
+    getFollowupStatus: async (department, date = '') => {
+        let url = department === 'auto'
+            ? `/api/patient-auth/followup-status?auto=true`
+            : department
+                ? `/api/patient-auth/followup-status?department=${encodeURIComponent(department)}`
+                : `/api/patient-auth/followup-status`;
+        if (date) {
+            url += (url.includes('?') ? '&' : '?') + `date=${date}`;
+        }
+        const response = await patientApiClient.get(url);
+        return response.data;
+    },
+    bookAppointment: async (data) => (await patientApiClient.post('/api/patient-auth/book-appointment', data)).data,
+    getDepartmentUpiByRole: async (roleName) => (await patientApiClient.get(`/api/patient-auth/department-upi/${encodeURIComponent(roleName)}`)).data,
+};
+
+export const bedAPI = {
+    getBeds: async (params) => {
+        const response = await apiClient.get('/api/beds', { params });
+        return response.data;
+    },
+    createBed: async (data) => {
+        const response = await apiClient.post('/api/beds', data);
+        return response.data;
+    },
+    updateBed: async (id, data) => {
+        const response = await apiClient.put(`/api/beds/${id}`, data);
+        return response.data;
+    },
+    deleteBed: async (id) => {
+        const response = await apiClient.delete(`/api/beds/${id}`);
+        return response.data;
+    }
+};
+
+export const otAPI = {
+    updateSurgeryWorkflow: async (id, data) => (await apiClient.put(`/api/ot/surgery-plans/${id}/workflow`, data)).data,
+    getDashboardStats: async () => {
+        const response = await apiClient.get('/api/ot/dashboard-stats');
+        return response.data;
+    },
+    getRooms: async () => {
+        const response = await apiClient.get('/api/ot/rooms');
+        return response.data;
+    },
+    createSurgeryPlan: async (data) => {
+        const response = await apiClient.post('/api/ot/surgery-plans', data);
+        return response.data;
+    },
+    getPatientSurgeryPlans: async (patientId) => {
+        const response = await apiClient.get(`/api/ot/surgery-plans/patient/${patientId}`);
+        return response.data;
+    },
+    scheduleSurgery: async (id, data) => {
+        const response = await apiClient.post(`/api/ot/surgery-plans/${id}/schedule`, data);
+        return response.data;
+    },
+    updateScheduledSurgery: async (id, data) => {
+        const response = await apiClient.put(`/api/ot/surgery-plans/${id}/schedule`, data);
+        return response.data;
+    },
+    cancelSurgery: async (id) => {
+        const response = await apiClient.put(`/api/ot/surgery-plans/${id}/cancel`);
+        return response.data;
+    },
+    getScheduledSurgeries: async (date) => {
+        const response = await apiClient.get('/api/ot/surgery-plans/scheduled', { params: { date } });
+        return response.data;
+    },
+    getTodaySchedule: async (date) => {
+        const response = await apiClient.get('/api/ot/today-schedule', { params: { date } });
+        return response.data;
+    },
+    getRoomStatus: async (date) => {
+        const response = await apiClient.get('/api/ot/room-status', { params: { date } });
+        return response.data;
+    },
+    getWorkflowAlerts: async (date) => {
+        const response = await apiClient.get('/api/ot/workflow-alerts', { params: { date } });
+        return response.data;
+    },
+    getPlannedSurgeries: async () => {
+        const response = await apiClient.get('/api/ot/surgery-plans/planned');
+        return response.data;
+    },
+    getMySurgeryPlans: async () => {
+        const response = await apiClient.get('/api/ot/surgery-plans/surgeon/my');
+        return response.data;
+    },
+    getSurgeryPlanById: async (id) => {
+        const response = await apiClient.get(`/api/ot/surgery-plans/${id}`);
+        return response.data;
+    }
+};
+
+export const referralAPI = {
+    create: async (data) => {
+        const response = await apiClient.post('/api/referrals', data);
+        return response.data;
+    },
+    getMyReferrals: async () => {
+        const response = await apiClient.get('/api/referrals/my-referrals');
+        return response.data;
+    },
+    getMySent: async () => {
+        const response = await apiClient.get('/api/referrals/my-sent');
+        return response.data;
+    },
+    getPatientReferrals: async (patientId) => {
+        const response = await apiClient.get(`/api/referrals/patient/${patientId}`);
+        return response.data;
+    },
+    getById: async (id) => {
+        const response = await apiClient.get(`/api/referrals/${id}`);
+        return response.data;
+    },
+    review: async (id, data) => {
+        const response = await apiClient.put(`/api/referrals/${id}/review`, data);
+        return response.data;
+    }
+};
+
+export default apiClient;
+
+export const consentAPI = {
+    getStats: async () => {
+        const response = await apiClient.get('/api/consent/stats');
+        return response.data;
+    },
+    getCategories: async () => {
+        const response = await apiClient.get('/api/consent/categories');
+        return response.data;
+    },
+    createCategory: async (data) => {
+        const response = await apiClient.post('/api/consent/categories', data);
+        return response.data;
+    },
+    updateCategory: async (id, data) => {
+        const response = await apiClient.put('/api/consent/categories/' + id, data);
+        return response.data;
+    },
+    toggleCategory: async (id) => {
+        const response = await apiClient.patch('/api/consent/categories/' + id + '/toggle');
+        return response.data;
+    },
+    deleteCategory: async (id) => {
+        const response = await apiClient.delete('/api/consent/categories/' + id);
+        return response.data;
+    },
+    getTemplates: async (params) => {
+        const response = await apiClient.get('/api/consent/templates', { params });
+        return response.data;
+    },
+    getTemplateById: async (id) => {
+        const response = await apiClient.get('/api/consent/templates/' + id);
+        return response.data;
+    },
+    createTemplate: async (formData) => {
+        const response = await apiClient.post('/api/consent/templates', formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return response.data;
+    },
+    updateTemplate: async (id, formData) => {
+        const response = await apiClient.put('/api/consent/templates/' + id, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return response.data;
+    },
+    deleteTemplate: async (id) => {
+        const response = await apiClient.delete('/api/consent/templates/' + id);
+        return response.data;
+    }
+};
+
+export const vialAPI = {
+    getAll: async (params) => {
+        const response = await apiClient.get('/api/vials', { params });
+        return response.data;
+    },
+    getStats: async () => {
+        const response = await apiClient.get('/api/vials/stats');
+        return response.data;
+    },
+    getPatientVials: async (patientId) => {
+        const response = await apiClient.get(`/api/vials/patient/${patientId}`);
+        return response.data;
+    },
+    getById: async (id) => {
+        const response = await apiClient.get(`/api/vials/${id}`);
+        return response.data;
+    },
+    create: async (data) => {
+        const response = await apiClient.post('/api/vials', data);
+        return response.data;
+    },
+    update: async (id, data) => {
+        const response = await apiClient.put(`/api/vials/${id}`, data);
+        return response.data;
+    },
+    store: async (id, data) => {
+        const response = await apiClient.post(`/api/vials/${id}/store`, data);
+        return response.data;
+    },
+    move: async (id, data) => {
+        const response = await apiClient.post(`/api/vials/${id}/move`, data);
+        return response.data;
+    },
+    retrieve: async (id, data) => {
+        const response = await apiClient.post(`/api/vials/${id}/retrieve`, data);
+        return response.data;
+    },
+    returnToStorage: async (id, data) => {
+        const response = await apiClient.post(`/api/vials/${id}/return`, data);
+        return response.data;
+    },
+    discard: async (id, data) => {
+        const response = await apiClient.post(`/api/vials/${id}/discard`, data);
+        return response.data;
+    }
+};
+
+// Inpatient Clinical API (Orders, MAR, Time-Series Vitals)
+export const ipdClinicalAPI = {
+    // Inpatient Clinical Orders
+    createOrder: async (data) => (await apiClient.post('/api/ipd-clinical/orders', data)).data,
+    getOrders: async (admissionId) => (await apiClient.get(`/api/ipd-clinical/admissions/${admissionId}/orders`)).data,
+    getPatientOrders: async (patientId) => (await apiClient.get(`/api/ipd-clinical/patients/${patientId}/orders`)).data,
+    getActiveOrders: async (admissionId) => (await apiClient.get(`/api/ipd-clinical/admissions/${admissionId}/orders/active`)).data,
+    updateOrder: async (orderId, data) => (await apiClient.patch(`/api/ipd-clinical/orders/${orderId}`, data)).data,
+
+    // Clinical Coordination (Phase 7)
+    acknowledgeOrder: async (admissionId, orderId, data = {}) => (await apiClient.post(`/api/ipd-clinical/admissions/${admissionId}/orders/${orderId}/acknowledge`, data)).data,
+    requestClarification: async (admissionId, orderId, data) => (await apiClient.post(`/api/ipd-clinical/admissions/${admissionId}/orders/${orderId}/clarification`, data)).data,
+    respondClarification: async (admissionId, orderId, data) => (await apiClient.post(`/api/ipd-clinical/admissions/${admissionId}/orders/${orderId}/clarification-response`, data)).data,
+    getClarificationsInbox: async (params = {}) => (await apiClient.get('/api/ipd-clinical/clarifications/inbox', { params })).data,
+
+    // Medication Administration Records (MAR)
+    scheduleMAR: async (data) => (await apiClient.post('/api/ipd-clinical/mar', data)).data,
+    getMARRecords: async (admissionId, params = {}) => (await apiClient.get(`/api/ipd-clinical/admissions/${admissionId}/mar`, { params })).data,
+    getDueMARRecords: async (admissionId) => (await apiClient.get(`/api/ipd-clinical/admissions/${admissionId}/mar/due`)).data,
+    updateMARRecord: async (marId, data) => (await apiClient.patch(`/api/ipd-clinical/mar/${marId}`, data)).data,
+
+    // Inpatient Vitals
+    recordVitals: async (admissionId, data) => (await apiClient.post(`/api/ipd-clinical/admissions/${admissionId}/vitals`, data)).data,
+    getVitalsHistory: async (admissionId) => (await apiClient.get(`/api/ipd-clinical/admissions/${admissionId}/vitals`)).data,
+    getLatestVitals: async (admissionId) => (await apiClient.get(`/api/ipd-clinical/admissions/${admissionId}/vitals/latest`)).data,
+
+    // Doctor Clinical Discharge Order & Structured Summary (Phase 7)
+    createDischargeOrder: async (admissionId, data) => (await apiClient.post(`/api/ipd-clinical/admissions/${admissionId}/discharge-order`, data)).data,
+    saveDischargeSummary: async (admissionId, data) => (await apiClient.post(`/api/ipd-clinical/admissions/${admissionId}/discharge-summary`, data)).data,
+    getDischargeSummary: async (admissionId) => (await apiClient.get(`/api/ipd-clinical/admissions/${admissionId}/discharge-summary`)).data,
+};
+
+// ── IPD Nursing Workflow APIs ──
+export const nursingNoteAPI = {
+    createNote: async (admissionId, data) => (await apiClient.post(`/api/ipd-nursing/admissions/${admissionId}/notes`, data)).data,
+    getNotes: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/notes`)).data,
+};
+
+export const nursingTaskAPI = {
+    createTask: async (data) => (await apiClient.post('/api/ipd-nursing/tasks', data)).data,
+    getTasks: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/tasks`)).data,
+    updateTask: async (taskId, data) => (await apiClient.patch(`/api/ipd-nursing/tasks/${taskId}`, data)).data,
+};
+
+export const intakeOutputAPI = {
+    record: async (admissionId, data) => (await apiClient.post(`/api/ipd-nursing/admissions/${admissionId}/intake-output`, data)).data,
+    getHistory: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/intake-output`)).data,
+    getSummary: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/intake-output/summary`)).data,
+};
+
+export const ipdLineAPI = {
+    insertLine: async (admissionId, data) => (await apiClient.post(`/api/ipd-nursing/admissions/${admissionId}/lines`, data)).data,
+    getLines: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/lines`)).data,
+    removeLine: async (lineId, data) => (await apiClient.patch(`/api/ipd-nursing/lines/${lineId}/remove`, data)).data,
+};
+
+export const ipdCatheterAPI = {
+    insertCatheter: async (admissionId, data) => (await apiClient.post(`/api/ipd-nursing/admissions/${admissionId}/catheters`, data)).data,
+    getCatheters: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/catheters`)).data,
+    removeCatheter: async (catheterId, data) => (await apiClient.patch(`/api/ipd-nursing/catheters/${catheterId}/remove`, data)).data,
+};
+
+export const woundCareAPI = {
+    recordDressingChange: async (admissionId, data) => (await apiClient.post(`/api/ipd-nursing/admissions/${admissionId}/wound-care`, data)).data,
+    getHistory: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/wound-care`)).data,
+};
+
+export const nurseHandoverAPI = {
+    createHandover: async (admissionId, data) => (await apiClient.post(`/api/ipd-nursing/admissions/${admissionId}/handovers`, data)).data,
+    getHandovers: async (admissionId, params = {}) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/handovers`, { params })).data,
+};
+
+export const ipdNursingAPI = {
+    getInvestigations: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/investigations`)).data,
+    updateInvestigationStatus: async (reportId, data) => (await apiClient.patch(`/api/ipd-nursing/investigations/${reportId}/status`, data)).data,
+    getOTPlans: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/ot-plans`)).data,
+    getTimeline: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/timeline`)).data,
+
+    // Nurse Assignment
+    assignNurse: async (admissionId, data) => (await apiClient.post(`/api/ipd-nursing/admissions/${admissionId}/assign-nurse`, data)).data,
+    unassignNurse: async (admissionId, data) => (await apiClient.patch(`/api/ipd-nursing/admissions/${admissionId}/unassign-nurse`, data)).data,
+    getAssignedNurses: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/assigned-nurses`)).data,
+    getMyAssignedAdmissions: async () => (await apiClient.get('/api/ipd-nursing/my-assigned-admissions')).data,
+    getHospitalNurses: async () => (await apiClient.get('/api/ipd-nursing/staff/nurses')).data,
+
+    // Discharge Readiness & Blocker Engine (Phase 7)
+    getDischargeReadiness: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/discharge-readiness`)).data,
+    getDischargeBlockers: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/discharge-blockers`)).data,
+    recordNursingClearance: async (admissionId, data) => (await apiClient.post(`/api/ipd-nursing/admissions/${admissionId}/nursing-clearance`, data)).data,
+
+    // Operations Dashboard & Alerts
+    getDashboardSummary: async () => (await apiClient.get('/api/ipd-nursing/dashboard-summary')).data,
+    getOperationsMetrics: async () => (await apiClient.get('/api/ipd-nursing/operations/metrics')).data,
+    getAdmissionAlerts: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/alerts`)).data,
+    getHospitalAlerts: async () => (await apiClient.get('/api/ipd-nursing/alerts')).data,
+};
+
+// ── IPD Command Center & Analytics (Phase 7) ──
+export const ipdCommandCenterAPI = {
+    getOverview: async () => (await apiClient.get('/api/ipd-nursing/command-center/overview')).data,
+    getFlowBoard: async (params = {}) => (await apiClient.get('/api/ipd-nursing/command-center/flow-board', { params })).data,
+    getDischargeBlockers: async (admissionId) => (await apiClient.get(`/api/ipd-nursing/admissions/${admissionId}/discharge-blockers`)).data,
+    reconcileBeds: async () => (await apiClient.post('/api/ipd-nursing/beds/reconcile')).data,
+    getCensusTrends: async (params = {}) => (await apiClient.get('/api/ipd-nursing/analytics/census-trends', { params })).data,
+    getNurseWorkload: async () => (await apiClient.get('/api/ipd-nursing/analytics/nurse-workload')).data,
+};
+
+// ── Voice Scribe API ──
+export const voiceScribeAPI = {
+    analyze: async (formData) => (await apiClient.post('/api/voice-scribe/analyze', formData, {
+        timeout: 180000,
+        headers: (typeof FormData !== 'undefined' && formData instanceof FormData)
+            ? { 'Content-Type': 'multipart/form-data' }
+            : undefined
+    })).data,
+    saveDraft: async (data) => (await apiClient.post('/api/voice-scribe/save-draft', data)).data,
+    approve: async (id, data) => (await apiClient.put(`/api/voice-scribe/${id}/approve`, data)).data,
+    discard: async (id) => (await apiClient.put(`/api/voice-scribe/${id}/discard`)).data,
+    getForAppointment: async (appointmentId) => (await apiClient.get(`/api/voice-scribe/appointment/${appointmentId}`)).data,
+};
+
+// ── Doctor Assistant / Clinical Assistant API ──
+export const assistantAPI = {
+    getDashboard: async () => (await apiClient.get('/api/assistant/dashboard')).data,
+    getDoctors: async () => (await apiClient.get('/api/assistant/doctors')).data,
+    getAppointments: async (params = {}) => (await apiClient.get('/api/assistant/appointments', { params })).data,
+    getQuestionLibrary: async (params = {}) => (await apiClient.get('/api/assistant/question-library', { params })).data,
+    getPreparation: async (appointmentId, params = {}) => (await apiClient.get(`/api/assistant/preparation/${appointmentId}`, { params })).data,
+    updateVitals: async (appointmentId, data) => (await apiClient.put(`/api/assistant/preparation/${appointmentId}/vitals`, data)).data,
+    updateHistory: async (appointmentId, data) => (await apiClient.put(`/api/assistant/preparation/${appointmentId}/history`, data)).data,
+    updateQuestionnaire: async (appointmentId, data) => (await apiClient.put(`/api/assistant/preparation/${appointmentId}/questionnaire`, data)).data,
+    uploadReports: async (appointmentId, formData) => (await apiClient.post(`/api/assistant/preparation/${appointmentId}/reports`, formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+    })).data,
+    updateInvestigations: async (appointmentId, data) => (await apiClient.put(`/api/assistant/preparation/${appointmentId}/investigations`, data)).data,
+    updateNotes: async (appointmentId, data) => (await apiClient.put(`/api/assistant/preparation/${appointmentId}/notes`, data)).data,
+    markReady: async (appointmentId) => (await apiClient.post(`/api/assistant/preparation/${appointmentId}/mark-ready`)).data,
+};
+
+// ── Package Management API ────────────────────────────────────────────────────
+export const packageAPI = {
+    // Package CRUD
+    getPackages: async (params = {}) => {
+        const query = new URLSearchParams(params).toString();
+        return (await apiClient.get(`/api/packages${query ? '?' + query : ''}`)).data;
+    },
+    getPackage: async (id) => (await apiClient.get(`/api/packages/${id}`)).data,
+    createPackage: async (data) => (await apiClient.post('/api/packages', data)).data,
+    updatePackage: async (id, data) => (await apiClient.put(`/api/packages/${id}`, data)).data,
+    togglePackage: async (id) => (await apiClient.patch(`/api/packages/${id}/toggle`)).data,
+    deletePackage: async (id) => (await apiClient.delete(`/api/packages/${id}`)).data,
+
+    // Assignment
+    assignPackage: async (data) => (await apiClient.post('/api/packages/assign', data)).data,
+    getAssignments: async (params = {}) => {
+        const query = new URLSearchParams(params).toString();
+        return (await apiClient.get(`/api/packages/assignments/all${query ? '?' + query : ''}`)).data;
+    },
+    getPatientAssignments: async (patientId) => (await apiClient.get(`/api/packages/assignments/patient/${patientId}`)).data,
+    getAssignment: async (assignmentId) => (await apiClient.get(`/api/packages/assignments/${assignmentId}`)).data,
+    logUsage: async (assignmentId, data) => (await apiClient.post(`/api/packages/assignments/${assignmentId}/usage`, data)).data,
+    cancelAssignment: async (assignmentId, data) => (await apiClient.patch(`/api/packages/assignments/${assignmentId}/cancel`, data)).data,
+
+    // Stats
+    getDashboardStats: async () => (await apiClient.get('/api/packages/stats/dashboard')).data,
+};
+
+// Data Migration API (Phase 1 AI-Assisted Mapping)
+export const migrationAPI = {
+    listSessions: async () => (await apiClient.get('/api/migrations')).data,
+    createSession: async () => (await apiClient.post('/api/migrations')).data,
+    getSession: async (migrationId) => (await apiClient.get(`/api/migrations/${migrationId}`)).data,
+    uploadFiles: async (migrationId, formData) => {
+        const response = await apiClient.post(`/api/migrations/${migrationId}/files`, formData, {
+            headers: { 'Content-Type': 'multipart/form-data' }
+        });
+        return response.data;
+    },
+    analyzeSession: async (migrationId) => (await apiClient.post(`/api/migrations/${migrationId}/analyze`)).data,
+    generateAiMapping: async (migrationId) => (await apiClient.post(`/api/migrations/${migrationId}/ai-mapping`)).data,
+    updateMapping: async (migrationId, data) => (await apiClient.put(`/api/migrations/${migrationId}/mapping`, data)).data,
+    acceptHighConfidence: async (migrationId) => (await apiClient.post(`/api/migrations/${migrationId}/accept-high-confidence`)).data,
+    createCustomField: async (migrationId, data) => (await apiClient.post(`/api/migrations/${migrationId}/custom-field`, data)).data,
+    approveMapping: async (migrationId) => (await apiClient.post(`/api/migrations/${migrationId}/approve`)).data,
+    saveTemplate: async (migrationId, data) => (await apiClient.post(`/api/migrations/${migrationId}/save-template`, data)).data,
+    listTemplates: async () => (await apiClient.get('/api/migrations/templates')).data,
+    getCanonicalSchema: async (entity = '') => (await apiClient.get(`/api/migrations/canonical-schema${entity ? '?entity=' + entity : ''}`)).data,
+    
+    // Phase 2: Transformation, Validation, Duplicate Review & Preview
+    prepareAndValidate: async (migrationId) => (await apiClient.post(`/api/migrations/${migrationId}/prepare`)).data,
+    getPreview: async (migrationId) => (await apiClient.get(`/api/migrations/${migrationId}/preview`)).data,
+    getStagedRecords: async (migrationId, params = {}) => (await apiClient.get(`/api/migrations/${migrationId}/records`, { params })).data,
+    getRecordDetail: async (migrationId, recordId) => (await apiClient.get(`/api/migrations/${migrationId}/records/${recordId}`)).data,
+    updateDuplicateDecision: async (migrationId, recordId, data) => (await apiClient.put(`/api/migrations/${migrationId}/records/${recordId}/duplicate-decision`, data)).data,
+    markReadyForImport: async (migrationId) => (await apiClient.post(`/api/migrations/${migrationId}/mark-ready`)).data,
+    getExportReportUrl: (migrationId) => `/api/migrations/${migrationId}/export-report`,
+
+    // Phase 3: Production Import, Real-time Progress & Verification
+    executeImport: async (migrationId) => (await apiClient.post(`/api/migrations/${migrationId}/import`)).data,
+    getImportProgress: async (migrationId) => (await apiClient.get(`/api/migrations/${migrationId}/import-progress`)).data,
+    getFailedRecords: async (migrationId, params = {}) => (await apiClient.get(`/api/migrations/${migrationId}/failed-records`, { params })).data,
+    getExportFailedReportUrl: (migrationId) => `/api/migrations/${migrationId}/export-failed-report`
+};
+
+// ── LOCAL DATABASE & OFFLINE SYNC API (PHASE 1) ──────────────────────────────
+export const localAgentAPI = {
+    getStatus: async () => (await apiClient.get('/api/local-agent/status')).data,
+    provision: async (customName = '') => (await apiClient.post('/api/local-agent/provision', { customName })).data,
+    testConnection: async () => (await apiClient.post('/api/local-agent/test-connection')).data,
+    revoke: async () => (await apiClient.post('/api/local-agent/revoke')).data
+};
+
+// ── CLOUD -> LOCAL DATA SYNCHRONIZATION API (PHASE 2, 3, 5, 6) ───────────────
+export const localSyncAPI = {
+    getSyncStatus: async () => (await apiClient.get('/api/local-sync/status')).data,
+    startInitialSync: async () => (await apiClient.post('/api/local-sync/start-initial-sync')).data,
+    syncNow: async () => (await apiClient.post('/api/local-sync/sync-now')).data,
+    retryFailed: async () => (await apiClient.post('/api/local-sync/retry-failed')).data,
+    // Phase 3 & 5: Sync Conflicts Endpoints
+    getConflicts: async (params = {}) => (await apiClient.get('/api/local-sync/conflicts', { params })).data,
+    getConflictDetail: async (conflictId) => (await apiClient.get(`/api/local-sync/conflicts/${conflictId}`)).data,
+    resolveConflict: async (conflictId, data = {}) => (await apiClient.post(`/api/local-sync/conflicts/${conflictId}/resolve`, data)).data,
+    dismissConflict: async (conflictId, data = {}) => (await apiClient.post(`/api/local-sync/conflicts/${conflictId}/dismiss`, data)).data,
+    getUploadStats: async () => (await apiClient.get('/api/local-sync/upload-stats')).data,
+    triggerUploadNow: async () => (await apiClient.post('/api/local-sync/upload-now')).data,
+    // Phase 6: Production Readiness
+    getSyncHealth: async () => (await apiClient.get('/api/local-sync/health')).data,
+    verifyIntegrity: async () => (await apiClient.post('/api/local-sync/verify-integrity')).data,
+    getRebuildStatus: async () => (await apiClient.get('/api/local-sync/rebuild-status')).data,
+    rebuildLocalDatabase: async (confirmationToken) => (await apiClient.post('/api/local-sync/rebuild', { confirmationToken })).data,
+    getBackupStatus: async () => (await apiClient.get('/api/local-sync/backup-status')).data
+};
+
+// ── ABDM ABHA INTEGRATION API ──────────────────────────────────────────────────
+export const abdmAPI = {
+    getStatus: async () => Promise.reject(new Error('ABDM functionality is currently blocked/disabled.')),
+    startLink: async () => Promise.reject(new Error('ABDM functionality is currently blocked/disabled.')),
+    verifyLink: async () => Promise.reject(new Error('ABDM functionality is currently blocked/disabled.')),
+    startCreate: async () => Promise.reject(new Error('ABDM functionality is currently blocked/disabled.')),
+    verifyCreate: async () => Promise.reject(new Error('ABDM functionality is currently blocked/disabled.')),
+    // Bridge & HIP administration
+    getBridgeConfig: async () => Promise.reject(new Error('ABDM functionality is currently blocked/disabled.')),
+    registerBridgeUrl: async () => Promise.reject(new Error('ABDM functionality is currently blocked/disabled.')),
+    probeBridge: async () => Promise.reject(new Error('ABDM functionality is currently blocked/disabled.')),
+    verifyBridgeServices: async () => Promise.reject(new Error('ABDM functionality is currently blocked/disabled.')),
+    registerHospitalHip: async () => Promise.reject(new Error('ABDM functionality is currently blocked/disabled.')),
+    getHospitalStatus: async () => Promise.reject(new Error('ABDM functionality is currently blocked/disabled.')),
+};
+
+

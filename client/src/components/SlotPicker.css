@@ -1,0 +1,136 @@
+/* ==========================================================================
+   MedMatrix 360 — SlotPicker Stylesheet
+   Palette: Primary Teal (#D85F89), Accent (#D85F89), Slate & Neutral Accents
+   ========================================================================== */
+
+.slot-picker-container {
+    margin: 14px 0;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.slot-picker-message {
+    padding: 14px 16px;
+    background: #f8fafc;
+    border: 1px dashed #cbd5e1;
+    border-radius: 10px;
+    color: #64748b;
+    text-align: center;
+    font-size: 0.88rem;
+    font-weight: 500;
+    margin: 12px 0;
+    box-sizing: border-box;
+}
+
+.slot-picker-legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    margin-bottom: 12px;
+    font-size: 0.82rem;
+    color: #475569;
+    font-weight: 600;
+}
+
+.legend-item {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.legend-box {
+    width: 12px;
+    height: 12px;
+    border-radius: 4px;
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.legend-box.available {
+    background-color: #D85F89;
+}
+
+.legend-box.booked {
+    background-color: #ef4444;
+}
+
+.legend-box.blocked {
+    background-color: #94a3b8;
+}
+
+.slot-picker-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(78px, 1fr));
+    gap: 8px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.slot-picker-btn {
+    padding: 9px 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background-color: #ffffff;
+    color: #1e293b;
+    font-size: 0.88rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s cubic-bezier(0.16, 1, 0.3, 1);
+    font-family: inherit;
+    box-sizing: border-box;
+    text-align: center;
+}
+
+.slot-picker-btn:focus-visible {
+    outline: 2px solid #0ea5e9;
+    outline-offset: 2px;
+}
+
+.slot-picker-btn.available:hover {
+    border-color: #D85F89;
+    background-color: #FFF7FA;
+    color: #D85F89;
+    transform: translateY(-1px);
+}
+
+.slot-picker-btn.selected {
+    background: linear-gradient(135deg, #D85F89 0%, #D85F89 100%);
+    border-color: #D85F89;
+    color: #ffffff;
+    font-weight: 700;
+    box-shadow: 0 3px 8px rgba(216, 95, 137, 0.28);
+}
+
+.slot-picker-btn.booked {
+    background-color: #fef2f2;
+    border-color: #fecaca;
+    color: #ef4444;
+    cursor: not-allowed;
+    text-decoration: line-through;
+    opacity: 0.72;
+}
+
+.slot-picker-btn.blocked {
+    background-color: #f8fafc;
+    border-color: #e2e8f0;
+    color: #94a3b8;
+    cursor: not-allowed;
+    opacity: 0.65;
+}
+
+@media (max-width: 480px) {
+    .slot-picker-grid {
+        grid-template-columns: repeat(auto-fill, minmax(70px, 1fr));
+        gap: 6px;
+    }
+
+    .slot-picker-btn {
+        padding: 8px 6px;
+        font-size: 0.82rem;
+    }
+
+    .slot-picker-legend {
+        gap: 10px;
+        font-size: 0.78rem;
+    }
+}

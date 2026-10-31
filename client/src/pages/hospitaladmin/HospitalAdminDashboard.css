@@ -1,0 +1,1147 @@
+/* ============================================================
+   HOSPITAL ADMIN DASHBOARD — MedMatrix 360 Healthcare SaaS Theme
+   Design System:
+     Main background:    #FFF7FA (Baby Pink canvas)
+     Surface/Cards:      #FFFFFF (Pure White)
+     Primary / Accent:   #D85F89 (Rose Pink)
+     Primary Hover:      #C94D78 (Darker Rose)
+     Primary Light:      #FCE7EF (Soft Pink tint)
+     Borders / Dividers: #F1DCE4 (Subtle Pinkish Gray)
+     Headings / Text:    #172238 (Dark Navy)
+     Secondary Text:     #64748B (Slate Gray)
+
+   Mandatory Safeguards:
+     - All --had-* design tokens scoped strictly inside .hospitaladmin-page
+     - All selectors scoped to .hospitaladmin-page to prevent style leaks to RoleDashboard
+     - Clinical semantic colors strictly preserved (Green, Amber, Red, Receptionist Blue, OT Slate)
+   ============================================================ */
+
+.hospitaladmin-page {
+    /* Design Tokens */
+    --had-bg: #FFF7FA;
+    --had-surface: #FFFFFF;
+    --had-primary: #D85F89;
+    --had-primary-hover: #C94D78;
+    --had-primary-light: #FCE7EF;
+    --had-primary-border: #F1DCE4;
+    --had-navy: #172238;
+    --had-slate-dark: #1E293B;
+    --had-slate-muted: #64748B;
+    --had-slate-light: #94A3B8;
+    --had-border: #F1DCE4;
+    --had-border-subtle: #FDF2F5;
+
+    /* Clinical and operational semantic status indicators (Strictly Preserved) */
+    --had-success: #16A34A;
+    --had-success-bg: #F0FDF4;
+    --had-success-border: #BBF7D0;
+    --had-warning: #D97706;
+    --had-warning-bg: #FFFBEB;
+    --had-warning-border: #FDE68A;
+    --had-danger: #DC2626;
+    --had-danger-bg: #FEF2F2;
+    --had-danger-border: #FECACA;
+    --had-role-receptionist: #0284C7;
+    --had-role-receptionist-bg: #F0F9FF;
+    --had-role-receptionist-border: #BAE6FD;
+    --had-role-ot: #475569;
+    --had-role-ot-bg: #F8FAFC;
+    --had-role-ot-border: #CBD5E1;
+
+    --had-shadow-sm: 0 1px 3px rgba(23, 34, 56, 0.04);
+    --had-shadow-md: 0 4px 14px rgba(216, 95, 137, 0.08);
+    --had-shadow-lg: 0 10px 25px -3px rgba(216, 95, 137, 0.12);
+
+    min-height: calc(100vh - 64px);
+    padding: 24px;
+    background: var(--had-bg);
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    color: var(--had-navy);
+    box-sizing: border-box;
+}
+
+.hospitaladmin-page .hospitaladmin-container {
+    max-width: 1400px;
+    margin: 0 auto;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+/* ── 1. Modern Enterprise Hero Banner ───────────────────────── */
+.hospitaladmin-page .ha-ai-hero-banner {
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    border-radius: 16px;
+    padding: 24px 28px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 24px;
+    margin-bottom: 22px;
+    box-shadow: var(--had-shadow-sm);
+    position: relative;
+    overflow: hidden;
+}
+
+/* Neutralize legacy sci-fi overlays */
+.hospitaladmin-page .ha-ai-circuit-bg,
+.hospitaladmin-page .ha-hero-dot-matrix,
+.hospitaladmin-page .ha-hero-sparkles,
+.hospitaladmin-page .ha-hero-wave-container,
+.hospitaladmin-page .ha-hero-orb-container {
+    display: none !important;
+}
+
+.hospitaladmin-page .ha-ai-hero-left {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    z-index: 2;
+}
+
+.hospitaladmin-page .ha-ai-hero-title {
+    font-size: 1.55rem;
+    font-weight: 800;
+    color: var(--had-navy);
+    margin: 0;
+    letter-spacing: -0.02em;
+    line-height: 1.25;
+}
+
+.hospitaladmin-page .ha-ai-hero-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.9rem;
+    color: var(--had-slate-muted);
+    margin: 0;
+}
+
+.hospitaladmin-page .ha-subtitle-pulse-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--had-primary);
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.2);
+    display: inline-block;
+    flex-shrink: 0;
+}
+
+.hospitaladmin-page .ha-ai-right-building {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    max-width: 220px;
+    flex-shrink: 0;
+    z-index: 2;
+}
+
+.hospitaladmin-page .ha-ai-hospital-img {
+    max-width: 100%;
+    height: auto;
+    max-height: 100px;
+    object-fit: contain;
+    border-radius: 10px;
+    opacity: 0.95;
+}
+
+/* ── 2. Tab Navigation Bar (Single Unified Pink Theme) ───────── */
+.hospitaladmin-page .ha-ai-tabs-card {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    border-radius: 12px;
+    padding: 8px 12px;
+    margin-bottom: 24px;
+    box-shadow: var(--had-shadow-sm);
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: thin;
+    scrollbar-color: var(--had-primary) var(--had-border);
+}
+
+.hospitaladmin-page .ha-ai-tabs-card::-webkit-scrollbar {
+    height: 5px;
+}
+
+.hospitaladmin-page .ha-ai-tabs-card::-webkit-scrollbar-track {
+    background: var(--had-border);
+    border-radius: 4px;
+}
+
+.hospitaladmin-page .ha-ai-tabs-card::-webkit-scrollbar-thumb {
+    background: var(--had-primary);
+    border-radius: 4px;
+}
+
+.hospitaladmin-page .ha-ai-tab-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    background: #FFFFFF;
+    border: 1px solid transparent;
+    color: var(--had-slate-muted);
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.hospitaladmin-page .ha-ai-tab-btn:hover {
+    background: #FFF0F5;
+    color: var(--had-navy);
+    border-color: var(--had-border);
+}
+
+/* Single unified active tab */
+.hospitaladmin-page .ha-ai-tab-btn.active,
+.hospitaladmin-page .ha-ai-tab-btn[class*="tab-"].active {
+    background: var(--had-primary-light) !important;
+    border-color: var(--had-primary-border) !important;
+    color: var(--had-primary) !important;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(216, 95, 137, 0.15);
+}
+
+.hospitaladmin-page .ha-ai-tab-btn.active svg,
+.hospitaladmin-page .ha-ai-tab-btn[class*="tab-"].active svg {
+    stroke: var(--had-primary) !important;
+}
+
+.hospitaladmin-page .ha-ai-tab-icon-wrap {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+}
+
+.hospitaladmin-page .ha-tab-icon-glow {
+    display: none !important;
+}
+
+.hospitaladmin-page .ha-ai-tab-label {
+    font-size: 13.5px;
+}
+
+/* ── 3. Overview Tab: KPIs & Date Controls ────────────────────── */
+.hospitaladmin-page .ha-dashboard-overview-container {
+    display: flex;
+    flex-direction: column;
+    gap: 22px;
+}
+
+.hospitaladmin-page .ha-overview-filter-bar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    border-radius: 12px;
+    padding: 14px 20px;
+    box-shadow: var(--had-shadow-sm);
+}
+
+.hospitaladmin-page .ha-filter-bar-left {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+}
+
+.hospitaladmin-page .ha-timeframe-pills {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.hospitaladmin-page .ha-timeframe-pill {
+    background: #FFF7FA;
+    border: 1px solid var(--had-border);
+    color: var(--had-slate-muted);
+    padding: 6px 14px;
+    border-radius: 6px;
+    font-size: 12.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hospitaladmin-page .ha-timeframe-pill:hover {
+    background: #FFFFFF;
+    border-color: var(--had-primary);
+    color: var(--had-navy);
+}
+
+.hospitaladmin-page .ha-timeframe-pill.active {
+    background: var(--had-primary);
+    border-color: var(--had-primary);
+    color: #FFFFFF;
+    font-weight: 700;
+    box-shadow: 0 2px 6px rgba(216, 95, 137, 0.25);
+}
+
+.hospitaladmin-page .ha-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--had-primary-light);
+    border: 1px solid var(--had-primary-border);
+    color: var(--had-primary);
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hospitaladmin-page .ha-refresh-btn:hover {
+    background: var(--had-primary);
+    border-color: var(--had-primary);
+    color: #FFFFFF;
+}
+
+/* KPI Cards Grid */
+.hospitaladmin-page .ha-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+}
+
+.hospitaladmin-page .ha-kpi-card {
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: var(--had-shadow-sm);
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    transition: all 0.18s ease;
+}
+
+.hospitaladmin-page .ha-kpi-card:hover {
+    border-color: var(--had-primary);
+    box-shadow: var(--had-shadow-md);
+    transform: translateY(-2px);
+}
+
+.hospitaladmin-page .ha-kpi-title {
+    font-size: 11.5px;
+    font-weight: 600;
+    color: var(--had-slate-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    margin: 0;
+}
+
+.hospitaladmin-page .ha-kpi-value {
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--had-navy);
+    margin: 0;
+    letter-spacing: -0.02em;
+}
+
+.hospitaladmin-page .ha-kpi-sub {
+    font-size: 11.5px;
+    color: var(--had-primary);
+    font-weight: 600;
+    margin: 0;
+}
+
+/* Revenue Chart & Quick Summary Section */
+.hospitaladmin-page .charts-grid {
+    display: grid;
+    grid-template-columns: 2fr 1fr;
+    gap: 18px;
+}
+
+.hospitaladmin-page .chart-card,
+.hospitaladmin-page .panel {
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    border-radius: 14px;
+    padding: 22px;
+    box-shadow: var(--had-shadow-sm);
+}
+
+.hospitaladmin-page .chart-head,
+.hospitaladmin-page .panel-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--had-navy);
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.hospitaladmin-page .chart-controls {
+    display: flex;
+    gap: 6px;
+}
+
+.hospitaladmin-page .chart-btn {
+    background: #FFF7FA;
+    border: 1px solid var(--had-border);
+    color: var(--had-slate-muted);
+    padding: 4px 10px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hospitaladmin-page .chart-btn.active {
+    background: var(--had-primary);
+    border-color: var(--had-primary);
+    color: #FFFFFF;
+}
+
+/* Quick Summary Items */
+.hospitaladmin-page .quick-list {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.hospitaladmin-page .quick {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    background: #FFF7FA;
+    border: 1px solid var(--had-border);
+    border-radius: 10px;
+    transition: all 0.15s ease;
+}
+
+.hospitaladmin-page .quick:hover {
+    background: #FFFFFF;
+    border-color: var(--had-primary);
+}
+
+.hospitaladmin-page .quick-icon {
+    width: 32px;
+    height: 32px;
+    border-radius: 8px;
+    background: var(--had-primary-light);
+    color: var(--had-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 14px;
+    flex-shrink: 0;
+    border: 1px solid var(--had-primary-border);
+}
+
+.hospitaladmin-page .quick-text {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+}
+
+.hospitaladmin-page .quick-text b {
+    font-size: 12.5px;
+    color: var(--had-navy);
+    font-weight: 700;
+}
+
+.hospitaladmin-page .quick-text span {
+    font-size: 11px;
+    color: var(--had-slate-muted);
+}
+
+.hospitaladmin-page .quick strong {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--had-navy);
+}
+
+/* ── 4. Staff Tab Styling ────────────────────────────────────── */
+.hospitaladmin-page .ha-staff-section-card {
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: var(--had-shadow-sm);
+}
+
+.hospitaladmin-page .ha-staff-header-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 20px;
+    flex-wrap: wrap;
+}
+
+.hospitaladmin-page .ha-staff-title-group h2 {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--had-navy);
+    margin: 0 0 2px;
+}
+
+.hospitaladmin-page .ha-staff-title-group p {
+    font-size: 13px;
+    color: var(--had-slate-muted);
+    margin: 0;
+}
+
+.hospitaladmin-page .ha-staff-actions {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.hospitaladmin-page .ha-btn-primary {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--had-primary);
+    color: #FFFFFF;
+    border: 1px solid var(--had-primary);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.18s ease;
+}
+
+.hospitaladmin-page .ha-btn-primary:hover {
+    background: var(--had-primary-hover);
+    border-color: var(--had-primary-hover);
+    box-shadow: 0 4px 12px rgba(216, 95, 137, 0.25);
+}
+
+.hospitaladmin-page .ha-search-input-wrap {
+    position: relative;
+    flex: 1;
+    min-width: 220px;
+}
+
+.hospitaladmin-page .ha-search-input {
+    width: 100%;
+    padding: 8px 12px 8px 34px;
+    border: 1px solid var(--had-border);
+    border-radius: 8px;
+    font-size: 13px;
+    outline: none;
+    background: #FFFFFF;
+    color: var(--had-navy);
+    font-family: inherit;
+    box-sizing: border-box;
+}
+
+.hospitaladmin-page .ha-search-input:focus {
+    border-color: var(--had-primary);
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.15);
+}
+
+.hospitaladmin-page .ha-search-icon {
+    position: absolute;
+    left: 10px;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--had-slate-muted);
+    font-size: 14px;
+}
+
+.hospitaladmin-page .ha-role-select {
+    padding: 8px 14px;
+    border: 1px solid var(--had-border);
+    border-radius: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    background: #FFFFFF;
+    color: var(--had-navy);
+    cursor: pointer;
+    outline: none;
+}
+
+.hospitaladmin-page .ha-role-select:focus {
+    border-color: var(--had-primary);
+}
+
+/* Staff Table */
+.hospitaladmin-page .ha-table-container {
+    width: 100%;
+    overflow-x: auto;
+    border: 1px solid var(--had-border);
+    border-radius: 10px;
+    -webkit-overflow-scrolling: touch;
+}
+
+.hospitaladmin-page .ha-staff-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+    min-width: 680px;
+}
+
+.hospitaladmin-page .ha-staff-table th {
+    background: #FFF7FA;
+    color: var(--had-slate-muted);
+    font-weight: 700;
+    text-align: left;
+    padding: 12px 16px;
+    border-bottom: 1px solid var(--had-border);
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.hospitaladmin-page .ha-staff-table td {
+    padding: 13px 16px;
+    border-bottom: 1px solid var(--had-border-subtle);
+    color: var(--had-navy);
+    vertical-align: middle;
+}
+
+.hospitaladmin-page .ha-staff-table tr:hover td {
+    background: #FFF7FA;
+}
+
+/* Action buttons in tables */
+.hospitaladmin-page .btn-edit {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--had-primary-light);
+    color: var(--had-primary);
+    border: 1px solid var(--had-primary-border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hospitaladmin-page .btn-edit:hover {
+    background: var(--had-primary);
+    color: #FFFFFF;
+}
+
+.hospitaladmin-page .btn-delete {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    background: var(--had-danger-bg);
+    color: var(--had-danger);
+    border: 1px solid var(--had-danger-border);
+    border-radius: 6px;
+    padding: 6px 12px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hospitaladmin-page .btn-delete:hover {
+    background: var(--had-danger);
+    color: #FFFFFF;
+}
+
+/* ── 5. AI Intelligence & Wallet Tabs ────────────────────────── */
+.hospitaladmin-page .ha-ai-intelligence-container {
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+}
+
+.hospitaladmin-page .ha-ai-header-card {
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    border-radius: 14px;
+    padding: 22px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 18px;
+    box-shadow: var(--had-shadow-sm);
+    flex-wrap: wrap;
+}
+
+.hospitaladmin-page .ha-ai-header-left {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+}
+
+.hospitaladmin-page .ha-ai-header-icon-box {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: var(--had-primary-light);
+    border: 1px solid var(--had-primary-border);
+    color: var(--had-primary);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.hospitaladmin-page .ha-ai-main-title {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--had-navy);
+    margin: 0;
+    letter-spacing: -0.01em;
+}
+
+.hospitaladmin-page .ha-ai-header-desc {
+    font-size: 13px;
+    color: var(--had-slate-muted);
+    margin: 4px 0 0;
+}
+
+.hospitaladmin-page .ha-ai-refresh-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--had-primary-light);
+    border: 1px solid var(--had-primary-border);
+    color: var(--had-primary);
+    padding: 7px 14px;
+    border-radius: 8px;
+    font-size: 12.5px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hospitaladmin-page .ha-ai-refresh-btn:hover {
+    background: var(--had-primary);
+    color: #FFFFFF;
+    border-color: var(--had-primary);
+}
+
+.hospitaladmin-page .ha-ai-section-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--had-navy);
+    margin: 0 0 14px;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+/* ── 6. Modals & Dialogs ─────────────────────────────────────── */
+.hospitaladmin-page .modal-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(23, 34, 56, 0.45);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 999;
+    padding: 20px;
+}
+
+.hospitaladmin-page .modal-content {
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    border-radius: 16px;
+    padding: 26px;
+    width: 100%;
+    max-width: 540px;
+    box-shadow: 0 20px 25px -5px rgba(23, 34, 56, 0.1);
+    color: var(--had-navy);
+}
+
+.hospitaladmin-page .modal-content h3 {
+    font-size: 18px;
+    font-weight: 800;
+    color: var(--had-navy);
+    margin: 0 0 12px;
+}
+
+.hospitaladmin-page .btn-save {
+    background: var(--had-primary);
+    color: #FFFFFF;
+    border: 1px solid var(--had-primary);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hospitaladmin-page .btn-save:hover {
+    background: var(--had-primary-hover);
+    border-color: var(--had-primary-hover);
+}
+
+.hospitaladmin-page .btn-cancel {
+    background: #FFFFFF;
+    color: var(--had-slate-muted);
+    border: 1px solid var(--had-border);
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hospitaladmin-page .btn-cancel:hover {
+    background: #FFF7FA;
+    color: var(--had-navy);
+}
+
+/* ── 7. Profile Card Styling ─────────────────────────────────── */
+.hospitaladmin-page .ha-profile-modern-card {
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: var(--had-shadow-sm);
+}
+
+.hospitaladmin-page .ha-profile-header {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 18px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--had-border-subtle);
+}
+
+.hospitaladmin-page .ha-card-title {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--had-navy);
+    margin: 0;
+}
+
+.hospitaladmin-page .ha-profile-body {
+    display: flex;
+    align-items: center;
+    gap: 22px;
+    flex-wrap: wrap;
+}
+
+.hospitaladmin-page .ha-avatar-container {
+    width: 68px;
+    height: 68px;
+    border-radius: 50%;
+    background: var(--had-primary-light);
+    border: 2px solid var(--had-primary-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--had-primary);
+    position: relative;
+    cursor: pointer;
+}
+
+.hospitaladmin-page .ha-avatar-img {
+    width: 100%;
+    height: 100%;
+    border-radius: 50%;
+    object-fit: cover;
+}
+
+.hospitaladmin-page .ha-avatar-edit-badge {
+    position: absolute;
+    bottom: -2px;
+    right: -2px;
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+}
+
+.hospitaladmin-page .ha-profile-info-block {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+}
+
+.hospitaladmin-page .ha-profile-name {
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--had-navy);
+    margin: 0;
+}
+
+.hospitaladmin-page .ha-profile-email {
+    font-size: 13px;
+    color: var(--had-slate-muted);
+    margin: 0;
+}
+
+.hospitaladmin-page .ha-choose-photo-btn {
+    display: inline-block;
+    margin-top: 8px;
+    background: #FFF7FA;
+    border: 1px solid var(--had-border);
+    color: var(--had-slate-muted);
+    padding: 5px 12px;
+    border-radius: 6px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hospitaladmin-page .ha-choose-photo-btn:hover {
+    background: var(--had-primary-light);
+    border-color: var(--had-primary);
+    color: var(--had-primary);
+}
+
+/* ── 8. Hospital Info Card ("My Hospital") ───────────────────── */
+.hospitaladmin-page .ha-hospital-modern-card {
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    border-radius: 14px;
+    padding: 20px;
+    box-shadow: var(--had-shadow-sm);
+    margin-top: 16px;
+}
+
+.hospitaladmin-page .ha-hospital-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 16px;
+}
+
+.hospitaladmin-page .ha-hospital-pill-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 14px;
+}
+
+.hospitaladmin-page .ha-hospital-pill-col {
+    background: #FFF7FA;
+    border: 1px solid var(--had-border);
+    border-radius: 10px;
+    padding: 10px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+}
+
+.hospitaladmin-page .ha-hospital-icon-badge {
+    width: 36px;
+    height: 36px;
+    border-radius: 8px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+}
+
+.hospitaladmin-page .ha-hospital-icon-badge.badge-hospital {
+    background: #F0F9FF;
+    border: 1px solid #BAE6FD;
+}
+
+.hospitaladmin-page .ha-hospital-icon-badge.badge-city {
+    background: #EFF6FF;
+    border: 1px solid #BFDBFE;
+}
+
+.hospitaladmin-page .ha-hospital-icon-badge.badge-phone {
+    background: var(--had-primary-light);
+    border: 1px solid var(--had-primary-border);
+}
+
+.hospitaladmin-page .ha-hospital-icon-badge.badge-email {
+    background: #F0F9FF;
+    border: 1px solid #BAE6FD;
+}
+
+.hospitaladmin-page .ha-hospital-pill-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.hospitaladmin-page .ha-hospital-pill-label {
+    font-size: 11px;
+    color: var(--had-slate-muted);
+    font-weight: 600;
+    text-transform: uppercase;
+}
+
+.hospitaladmin-page .ha-hospital-pill-value {
+    font-size: 13px;
+    font-weight: 700;
+    color: var(--had-navy);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* ── 9. General Cards & Other Tabs (Departments, Facilities, Beds, Lab Pricing, Accounts) ── */
+.hospitaladmin-page .admin-card {
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    border-radius: 14px;
+    padding: 24px;
+    box-shadow: var(--had-shadow-sm);
+    color: var(--had-navy);
+}
+
+.hospitaladmin-page .admin-card h2,
+.hospitaladmin-page .admin-card h3,
+.hospitaladmin-page .admin-card h4 {
+    color: var(--had-navy);
+}
+
+.hospitaladmin-page .admin-card p {
+    color: var(--had-slate-muted);
+}
+
+.hospitaladmin-page .ha-tab {
+    background: transparent;
+    color: var(--had-slate-muted);
+    border: 1px solid transparent;
+    padding: 8px 16px;
+    border-radius: 8px;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.hospitaladmin-page .ha-tab:hover {
+    background: #FFF0F5;
+    color: var(--had-navy);
+    border-color: var(--had-border);
+}
+
+.hospitaladmin-page .ha-tab.ha-tab-active,
+.hospitaladmin-page .ha-tab-active {
+    background: var(--had-primary-light) !important;
+    color: var(--had-primary) !important;
+    font-weight: 700;
+    border: 1px solid var(--had-primary-border) !important;
+}
+
+/* Form inputs */
+.hospitaladmin-page input[type="text"],
+.hospitaladmin-page input[type="email"],
+.hospitaladmin-page input[type="password"],
+.hospitaladmin-page input[type="number"],
+.hospitaladmin-page input[type="search"],
+.hospitaladmin-page select,
+.hospitaladmin-page textarea,
+.hospitaladmin-page .staff-input {
+    background: #FFFFFF;
+    border: 1px solid var(--had-border);
+    color: var(--had-navy);
+    border-radius: 8px;
+    padding: 8px 12px;
+    font-size: 13px;
+    outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.hospitaladmin-page input:focus,
+.hospitaladmin-page select:focus,
+.hospitaladmin-page textarea:focus,
+.hospitaladmin-page .staff-input:focus {
+    border-color: var(--had-primary);
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.15);
+}
+
+/* ── 10. Responsive Breakpoints ───────────────────────────────── */
+@media (max-width: 1100px) {
+    .hospitaladmin-page .ha-kpi-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+    .hospitaladmin-page .charts-grid {
+        grid-template-columns: 1fr;
+    }
+    .hospitaladmin-page .ha-hospital-pill-grid {
+        grid-template-columns: repeat(2, 1fr);
+    }
+}
+
+@media (max-width: 768px) {
+    .hospitaladmin-page {
+        padding: 14px;
+    }
+    .hospitaladmin-page .ha-ai-hero-banner {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 18px;
+        gap: 14px;
+    }
+    .hospitaladmin-page .ha-ai-hero-title {
+        font-size: 1.3rem;
+    }
+    .hospitaladmin-page .ha-ai-right-building {
+        display: none;
+    }
+    .hospitaladmin-page .ha-kpi-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    .hospitaladmin-page .ha-overview-filter-bar {
+        padding: 14px;
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    .hospitaladmin-page .ha-staff-section-card {
+        padding: 16px;
+    }
+    .hospitaladmin-page .ha-staff-header-row {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+    .hospitaladmin-page .ha-staff-actions {
+        width: 100%;
+        flex-wrap: wrap;
+    }
+    .hospitaladmin-page .ha-hospital-pill-grid {
+        grid-template-columns: 1fr;
+    }
+}
+
+@media (max-width: 480px) {
+    .hospitaladmin-page .ha-kpi-grid {
+        grid-template-columns: 1fr;
+    }
+    .hospitaladmin-page .ha-timeframe-pills {
+        width: 100%;
+    }
+    .hospitaladmin-page .ha-ai-tab-btn {
+        padding: 6px 12px;
+        font-size: 12.5px;
+    }
+}

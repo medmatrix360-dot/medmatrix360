@@ -1,0 +1,887 @@
+/* ============================================================
+   Role & Permission Manager — Clinical Teal Healthcare SaaS Theme
+   Scoped under .role-management-page
+   ============================================================ */
+
+.role-management-page.rpm-main-wrapper {
+  flex: 1;
+  padding: 24px 32px;
+  overflow-y: auto;
+  min-height: 100vh;
+  width: 100%;
+  max-width: 100%;
+  box-sizing: border-box;
+  background-color: #F8FAFC;
+  color: #0F172A;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Header Section */
+.role-management-page .rpm-header-row {
+  position: relative;
+  z-index: 1;
+  margin-bottom: 24px;
+}
+
+.role-management-page .rpm-header-content {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.role-management-page .rpm-header-icon-box {
+  width: 48px;
+  height: 48px;
+  border-radius: 12px;
+  background: #FFF7FA;
+  border: 1px solid #FCE7EF;
+  color: #D85F89;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 22px;
+  flex-shrink: 0;
+}
+
+.role-management-page .rpm-header-title {
+  font-size: 24px;
+  font-weight: 700;
+  color: #0F172A;
+  letter-spacing: -0.02em;
+  margin: 0 0 4px 0;
+}
+
+.role-management-page .rpm-header-subtitle {
+  font-size: 14px;
+  color: #64748B;
+  font-weight: 400;
+  margin: 0;
+  line-height: 1.5;
+}
+
+/* Dashboard 2-Column Grid */
+.role-management-page .rpm-dashboard-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr);
+  gap: 24px;
+  position: relative;
+  z-index: 1;
+  align-items: start;
+  width: 100%;
+  box-sizing: border-box;
+}
+
+/* Clinical Surface Panel */
+.role-management-page .rpm-panel {
+  background: #FFFFFF;
+  border-radius: 14px;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05), 0 1px 2px rgba(15, 23, 42, 0.03);
+  padding: 24px;
+  position: relative;
+  box-sizing: border-box;
+}
+
+.role-management-page .rpm-panel-header {
+  font-size: 16px;
+  font-weight: 700;
+  color: #0F172A;
+  margin-bottom: 20px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding-bottom: 14px;
+  border-bottom: 1px solid #F1F5F9;
+}
+
+.role-management-page .rpm-panel-header-left {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.role-management-page .rpm-panel-header-icon {
+  color: #D85F89;
+  font-size: 18px;
+  display: flex;
+  align-items: center;
+}
+
+.role-management-page .rpm-badge-editing {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  background: #FFF7FA;
+  border: 1px solid #FCE7EF;
+  color: #D85F89;
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  border-radius: 20px;
+}
+
+.role-management-page .rpm-btn-cancel-edit {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #EF4444;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 36px;
+  transition: all 0.15s ease;
+}
+
+.role-management-page .rpm-btn-cancel-edit:hover {
+  background: #FEF2F2;
+  border-color: #FECACA;
+  color: #DC2626;
+}
+
+.role-management-page .rpm-btn-cancel-edit:focus-visible {
+  outline: 2px solid #EF4444;
+  outline-offset: 2px;
+}
+
+/* Form Input Elements */
+.role-management-page .rpm-form-group {
+  margin-bottom: 18px;
+}
+
+.role-management-page .rpm-form-group label {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  font-size: 13px;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 6px;
+}
+
+.role-management-page .rpm-required-star {
+  color: #DC2626;
+  margin-left: 2px;
+}
+
+.role-management-page .rpm-field-hint {
+  font-size: 12px;
+  font-weight: 400;
+  color: #64748B;
+}
+
+.role-management-page .rpm-form-input {
+  width: 100%;
+  padding: 10px 14px;
+  border-radius: 8px;
+  border: 1px solid #E2E8F0;
+  background: #FFFFFF;
+  color: #0F172A;
+  font-size: 13.5px;
+  outline: none;
+  box-sizing: border-box;
+  min-height: 42px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.role-management-page .rpm-form-input::placeholder {
+  color: #94A3B8;
+}
+
+.role-management-page .rpm-form-input:focus {
+  border-color: #D85F89;
+  box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.12);
+}
+
+/* Navigation Link Blocks */
+.role-management-page .rpm-nav-links-container {
+  background: #F8FAFC;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 14px;
+  margin-top: 6px;
+}
+
+.role-management-page .rpm-nav-links-helper {
+  font-size: 12px;
+  color: #64748B;
+  margin: 0 0 12px 0;
+  line-height: 1.4;
+}
+
+.role-management-page .rpm-nav-link-block {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 10px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
+}
+
+.role-management-page .rpm-input-row {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.role-management-page .rpm-nav-field-wrapper {
+  flex: 1;
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.role-management-page .rpm-nav-field-icon {
+  position: absolute;
+  left: 12px;
+  color: #94A3B8;
+  font-size: 14px;
+  pointer-events: none;
+}
+
+.role-management-page .rpm-nav-field-wrapper .rpm-form-input {
+  padding-left: 36px;
+}
+
+.role-management-page .rpm-icon-btn {
+  width: 44px;
+  height: 44px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #64748B;
+  font-size: 14px;
+  flex-shrink: 0;
+  transition: all 0.15s ease;
+}
+
+.role-management-page .rpm-icon-btn:hover {
+  background: #F8FAFC;
+  color: #D85F89;
+  border-color: #CBD5E1;
+}
+
+.role-management-page .rpm-icon-btn.delete-btn {
+  color: #DC2626;
+  border-color: #FECACA;
+  background: #FEF2F2;
+}
+
+.role-management-page .rpm-icon-btn.delete-btn:hover {
+  color: #B91C1C;
+  border-color: #F87171;
+  background: #FEE2E2;
+}
+
+.role-management-page .rpm-icon-btn:focus-visible {
+  outline: 2px solid #D85F89;
+  outline-offset: 2px;
+}
+
+.role-management-page .rpm-add-link-btn {
+  width: 100%;
+  min-height: 44px;
+  padding: 10px 16px;
+  background: #FFF7FA;
+  border: 1.5px dashed #F1DCE4;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: 13px;
+  color: #D85F89;
+  font-weight: 600;
+  margin-top: 10px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.role-management-page .rpm-add-link-btn:hover {
+  background: #FCE7EF;
+  color: #C94D78;
+}
+
+.role-management-page .rpm-add-link-btn:focus-visible {
+  outline: 2px solid #D85F89;
+  outline-offset: 2px;
+}
+
+/* Permissions Section */
+.role-management-page .rpm-perm-section {
+  background: #F8FAFC;
+  border-radius: 12px;
+  padding: 16px;
+  border: 1px solid #E2E8F0;
+  margin-bottom: 22px;
+}
+
+.role-management-page .rpm-perm-header-flex {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 14px;
+  padding-bottom: 10px;
+  border-bottom: 1px solid #E2E8F0;
+}
+
+.role-management-page .rpm-perm-title {
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  color: #475569;
+  text-transform: uppercase;
+}
+
+.role-management-page .rpm-perm-counter {
+  font-size: 12px;
+  font-weight: 600;
+  color: #D85F89;
+  background: #FFF7FA;
+  padding: 3px 10px;
+  border-radius: 12px;
+  border: 1px solid #FCE7EF;
+}
+
+.role-management-page .rpm-perm-categories-list {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  max-height: 480px;
+  overflow-y: auto;
+  padding-right: 6px;
+}
+
+.role-management-page .rpm-perm-categories-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.role-management-page .rpm-perm-categories-list::-webkit-scrollbar-track {
+  background: #F1F5F9;
+  border-radius: 3px;
+}
+
+.role-management-page .rpm-perm-categories-list::-webkit-scrollbar-thumb {
+  background-color: #CBD5E1;
+  border-radius: 3px;
+}
+
+.role-management-page .rpm-cat-block {
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  border-radius: 10px;
+  padding: 14px;
+}
+
+.role-management-page .rpm-cat-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 10px;
+}
+
+.role-management-page .rpm-perm-sub {
+  font-size: 12px;
+  font-weight: 700;
+  color: #0F172A;
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+  margin: 0;
+}
+
+.role-management-page .rpm-cat-active-count {
+  font-size: 11px;
+  font-weight: 600;
+  color: #64748B;
+  background: #F1F5F9;
+  padding: 2px 7px;
+  border-radius: 10px;
+}
+
+.role-management-page .rpm-checkbox-list {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 6px;
+}
+
+.role-management-page .rpm-checkbox-item {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  font-size: 13px;
+  color: #334155;
+  font-weight: 500;
+  cursor: pointer;
+  padding: 10px 12px;
+  border-radius: 8px;
+  border: 1px solid #F1F5F9;
+  background: #FFFFFF;
+  transition: all 0.15s ease;
+  min-height: 44px;
+  box-sizing: border-box;
+}
+
+.role-management-page .rpm-checkbox-item:hover {
+  background: #F8FAFC;
+  border-color: #E2E8F0;
+  color: #0F172A;
+}
+
+.role-management-page .rpm-checkbox-item.active {
+  color: #D85F89;
+  font-weight: 600;
+  background: #FFF7FA;
+  border-color: #FCE7EF;
+}
+
+.role-management-page .rpm-checkbox-item input {
+  accent-color: #D85F89;
+  width: 18px;
+  height: 18px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+.role-management-page .rpm-checkbox-item input:focus-visible {
+  outline: 2px solid #D85F89;
+  outline-offset: 2px;
+}
+
+/* Form Action Buttons */
+.role-management-page .rpm-form-actions-row {
+  display: flex;
+  gap: 12px;
+  align-items: center;
+}
+
+.role-management-page .rpm-btn-submit {
+  flex: 1;
+  min-height: 46px;
+  padding: 12px 20px;
+  background: #D85F89;
+  color: #FFFFFF;
+  border: 1px solid #C94D78;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08);
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.role-management-page .rpm-btn-submit:hover:not(:disabled) {
+  background: #C94D78;
+}
+
+.role-management-page .rpm-btn-submit:disabled {
+  background: #94A3B8;
+  border-color: #94A3B8;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.role-management-page .rpm-btn-submit:focus-visible {
+  outline: 2px solid #D85F89;
+  outline-offset: 2px;
+}
+
+.role-management-page .rpm-btn-secondary {
+  min-height: 46px;
+  padding: 12px 18px;
+  background: #FFFFFF;
+  color: #475569;
+  border: 1px solid #CBD5E1;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 600;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  transition: all 0.15s ease;
+}
+
+.role-management-page .rpm-btn-secondary:hover {
+  background: #F8FAFC;
+  color: #0F172A;
+  border-color: #94A3B8;
+}
+
+.role-management-page .rpm-btn-secondary:focus-visible {
+  outline: 2px solid #64748B;
+  outline-offset: 2px;
+}
+
+/* ─── RIGHT PANEL: ACTIVE ROLES LIST ─── */
+.role-management-page .rpm-badge-count {
+  background: #F8FAFC;
+  padding: 4px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #475569;
+  border: 1px solid #E2E8F0;
+}
+
+.role-management-page .rpm-roles-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  max-height: 820px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.role-management-page .rpm-roles-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.role-management-page .rpm-roles-list::-webkit-scrollbar-track {
+  background: #F1F5F9;
+  border-radius: 3px;
+}
+
+.role-management-page .rpm-roles-list::-webkit-scrollbar-thumb {
+  background-color: #CBD5E1;
+  border-radius: 3px;
+}
+
+.role-management-page .rpm-empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: #64748B;
+  background: #F8FAFC;
+  border: 1px dashed #CBD5E1;
+  border-radius: 12px;
+}
+
+.role-management-page .rpm-empty-icon {
+  font-size: 36px;
+  color: #94A3B8;
+  margin-bottom: 12px;
+}
+
+.role-management-page .rpm-empty-state p {
+  margin: 0;
+  font-size: 14px;
+}
+
+/* Role Card */
+.role-management-page .rpm-role-card {
+  background: #FFFFFF;
+  border-radius: 12px;
+  padding: 16px 18px;
+  border: 1px solid #E2E8F0;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  position: relative;
+  transition: all 0.15s ease;
+  box-sizing: border-box;
+}
+
+.role-management-page .rpm-role-card:hover {
+  border-color: #CBD5E1;
+  box-shadow: 0 4px 8px rgba(15, 23, 42, 0.06);
+}
+
+.role-management-page .rpm-role-card.highlight {
+  background: #FFF7FA;
+  border-color: #FCE7EF;
+  border-left: 4px solid #D85F89;
+  box-shadow: 0 2px 6px rgba(216, 95, 137, 0.08);
+}
+
+.role-management-page .rpm-card-actions {
+  position: absolute;
+  right: 14px;
+  top: 14px;
+  display: flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.role-management-page .rpm-action-btn {
+  width: 36px;
+  height: 36px;
+  border-radius: 8px;
+  background: #FFFFFF;
+  border: 1px solid #E2E8F0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  font-size: 13px;
+  color: #475569;
+  transition: all 0.15s ease;
+}
+
+.role-management-page .rpm-action-btn:focus-visible {
+  outline: 2px solid #D85F89;
+  outline-offset: 2px;
+}
+
+.role-management-page .rpm-action-btn.edit:hover {
+  color: #D85F89;
+  background: #FFF7FA;
+  border-color: #FCE7EF;
+}
+
+.role-management-page .rpm-action-btn.delete {
+  color: #DC2626;
+}
+
+.role-management-page .rpm-action-btn.delete:hover {
+  color: #B91C1C;
+  background: #FEF2F2;
+  border-color: #FECACA;
+}
+
+.role-management-page .rpm-role-card-top {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding-right: 88px; /* space for action buttons */
+  flex-wrap: wrap;
+}
+
+.role-management-page .rpm-role-name {
+  font-weight: 700;
+  font-size: 15px;
+  color: #0F172A;
+}
+
+.role-management-page .rpm-badges-group {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.role-management-page .rpm-tag-badge {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 2px 8px;
+  border-radius: 6px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.role-management-page .rpm-tag-teal {
+  background: #FFF7FA;
+  color: #D85F89;
+  border: 1px solid #FCE7EF;
+}
+
+.role-management-page .rpm-tag-amber {
+  background: #FEF3C7;
+  color: #92400E;
+  border: 1px solid #FDE68A;
+}
+
+.role-management-page .rpm-tag-slate {
+  background: #F1F5F9;
+  color: #475569;
+  border: 1px solid #E2E8F0;
+}
+
+.role-management-page .rpm-role-desc {
+  font-size: 13px;
+  color: #64748B;
+  margin: 8px 0 10px;
+  line-height: 1.45;
+}
+
+.role-management-page .rpm-role-meta-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 10px;
+  font-size: 12px;
+  color: #64748B;
+}
+
+.role-management-page .rpm-dashboard-route-tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-family: monospace;
+  background: #F8FAFC;
+  padding: 2px 6px;
+  border-radius: 4px;
+  border: 1px solid #E2E8F0;
+  color: #334155;
+}
+
+.role-management-page .rpm-tag-pills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.role-management-page .rpm-pill {
+  font-size: 11.5px;
+  background: #F8FAFC;
+  color: #334155;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-weight: 500;
+  border: 1px solid #E2E8F0;
+}
+
+.role-management-page .rpm-pill-more {
+  background: #FFF7FA;
+  color: #D85F89;
+  border-color: #FCE7EF;
+  font-weight: 600;
+}
+
+/* ============================================================
+   RESPONSIVE BREAKPOINTS (TABLET & MOBILE)
+   ============================================================ */
+@media (max-width: 1024px) {
+  .role-management-page.rpm-main-wrapper {
+    padding: 20px 16px;
+  }
+  
+  .role-management-page .rpm-dashboard-grid {
+    grid-template-columns: 1fr;
+    gap: 20px;
+  }
+  
+  .role-management-page .rpm-panel {
+    padding: 20px 18px;
+    border-radius: 12px;
+  }
+}
+
+@media (max-width: 768px) {
+  .role-management-page.rpm-main-wrapper {
+    padding: 16px 12px;
+  }
+  
+  .role-management-page .rpm-header-row {
+    margin-bottom: 18px;
+  }
+
+  .role-management-page .rpm-header-icon-box {
+    width: 42px;
+    height: 42px;
+    font-size: 20px;
+  }
+  
+  .role-management-page .rpm-header-title {
+    font-size: 20px;
+  }
+  
+  .role-management-page .rpm-header-subtitle {
+    font-size: 13px;
+  }
+  
+  .role-management-page .rpm-perm-categories-list {
+    max-height: 320px;
+  }
+  
+  .role-management-page .rpm-panel {
+    padding: 16px 14px;
+    border-radius: 10px;
+  }
+}
+
+@media (max-width: 480px) {
+  .role-management-page.rpm-main-wrapper {
+    padding: 12px 10px;
+  }
+  
+  .role-management-page .rpm-header-row {
+    margin-bottom: 14px;
+  }
+
+  .role-management-page .rpm-header-content {
+    gap: 12px;
+  }
+  
+  .role-management-page .rpm-header-title {
+    font-size: 18px;
+  }
+
+  .role-management-page .rpm-header-subtitle {
+    font-size: 12px;
+  }
+  
+  .role-management-page .rpm-panel-header {
+    font-size: 15px;
+    margin-bottom: 14px;
+    flex-wrap: wrap;
+    gap: 8px;
+  }
+  
+  .role-management-page .rpm-role-card {
+    padding: 14px 12px;
+  }
+  
+  .role-management-page .rpm-role-card-top {
+    padding-right: 76px;
+  }
+  
+  .role-management-page .rpm-role-name {
+    font-size: 14px;
+  }
+  
+  .role-management-page .rpm-tag-badge {
+    font-size: 10px;
+    padding: 2px 6px;
+  }
+  
+  .role-management-page .rpm-role-desc {
+    font-size: 12px;
+    margin: 6px 0 8px;
+  }
+  
+  .role-management-page .rpm-pill {
+    font-size: 10.5px;
+    padding: 2px 6px;
+  }
+  
+  .role-management-page .rpm-card-actions {
+    top: 12px;
+    right: 10px;
+    gap: 6px;
+  }
+  
+  .role-management-page .rpm-action-btn {
+    width: 32px;
+    height: 32px;
+    font-size: 12px;
+  }
+  
+  .role-management-page .rpm-btn-submit {
+    min-height: 44px;
+    padding: 10px 14px;
+    font-size: 13.5px;
+  }
+}
+
+/* Reduced Motion Preference */
+@media (prefers-reduced-motion: reduce) {
+  .role-management-page,
+  .role-management-page * {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

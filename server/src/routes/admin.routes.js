@@ -1,0 +1,997 @@
+const express = require('express');
+const mongoose = require('mongoose');
+const router = express.Router();
+const User = require('../models/user.model');
+const Role = require('../models/role.model');
+const Hospital = require('../models/hospital.model');
+const jwt = require('jsonwebtoken');
+const { verifyAdmin, verifyAdminOrSuperAdmin, verifyToken } = require('../middleware/auth.middleware');
+const { nanoid } = require('nanoid');
+
+// Entity models
+const Doctor = require('../models/doctor.model');
+const Lab = require('../models/lab.model');
+const Pharmacy = require('../models/pharmacy.model');
+const Reception = require('../models/reception.model');
+
+const { JWT_SECRET } = require('../config/jwt');
+const validatePassword = require('../utils/validatePassword');
+const SUBSCRIPTION_PLANS = require('../utils/subscriptionPlans');
+const { sendStaffWelcomeEmail } = require('../services/email.service');
+
+// ==========================================
+// HELPERS
+// ==========================================
+
+/**
+ * Build user response with full role data
+ */
+async function buildUserResponse(user, hospitalCache = null, roleCache = null) {
+    let roleData = null;
+    let roleName = null;
+
+    const specialRoles = ['superadmin', 'centraladmin', 'hospitaladmin'];
+
+    if (specialRoles.includes(user.role)) {
+        roleName = user.role;
+        const isCentral = user.role === 'centraladmin' || user.role === 'superadmin';
+        roleData = {
+            name: user.role,
+            permissions: isCentral ? ['*'] : ['admin_manage_roles', 'admin_view_stats'],
+            dashboardPath: isCentral ? '/supremeadmin' : '/hospitaladmin',
+            navLinks: [],
+            isSystemRole: true
+        };
+    } else if (user.role) {
+        const roleKey = String(user.role);
+        if (roleCache && roleCache.has(roleKey)) {
+            roleData = roleCache.get(roleKey);
+        } else if (mongoose.Types.ObjectId.isValid(user.role)) {
+            roleData = await Role.findById(user.role);
+            if (roleCache) roleCache.set(roleKey, roleData);
+        }
+        if (!roleData) {
+            // Legacy string fallback - find role by name scoped to the user's hospital
+            const escapedRole = String(user.role).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const query = { name: { $regex: new RegExp(`^${escapedRole}$`, 'i') } };
+            if (user.hospitalId) query.hospitalId = user.hospitalId;
+            roleData = await Role.findOne(query);
+            
+            // Fallback to global roles if hospital-specific role is not found
+            if (!roleData && user.hospitalId) {
+                roleData = await Role.findOne({
+                    hospitalId: null,
+                    name: { $regex: new RegExp(`^${escapedRole}$`, 'i') }
+                });
+            }
+
+            if (roleData) {
+                const newRoleId = roleData._id;
+                user.role = newRoleId;
+                User.updateOne({ _id: user._id }, { $set: { role: newRoleId } }).catch(saveErr => {
+                    console.warn(`[buildUserResponse] Non-fatal: could not persist role migration for user ${user._id}:`, saveErr.message);
+                });
+                if (roleCache) roleCache.set(roleKey, roleData);
+            }
+        }
+        roleName = roleData ? roleData.name : String(user.role);
+    }
+
+    let hospitalName = null;
+    let subscriptionPlan = null;
+    if (user.hospitalId) {
+        try {
+            const hidStr = String(user.hospitalId);
+            let hosp = hospitalCache ? hospitalCache.get(hidStr) : null;
+            if (!hosp && hospitalCache) {
+                hosp = await Hospital.findById(user.hospitalId).select('name subscriptionPlan clinicType clinicPlan').lean();
+                if (hosp) hospitalCache.set(hidStr, hosp);
+            } else if (!hosp) {
+                hosp = await Hospital.findById(user.hospitalId).select('name subscriptionPlan clinicType clinicPlan').lean();
+            }
+            if (hosp) {
+                hospitalName = hosp.name;
+                subscriptionPlan = hosp.subscriptionPlan;
+                if (!subscriptionPlan || subscriptionPlan === 'none') {
+                    subscriptionPlan = hosp.clinicType === 'clinic' ? 'starter' : 'enterprise';
+                }
+            }
+        } catch (e) {
+            // ignore lookup error
+        }
+    }
+
+    return {
+        id: user._id,
+        name: user.name,
+        email: user.email,
+        phone: user.phone,
+        role: roleName,
+        roleId: user.role,
+        patientId: user.patientId || null,
+        hospitalId: user.hospitalId || null,
+        hospitalName: hospitalName,
+        subscriptionPlan: subscriptionPlan,
+        plan: subscriptionPlan,
+        permissions: roleData ? roleData.permissions : [],
+        dashboardPath: roleData ? roleData.dashboardPath : '/',
+        navLinks: roleData ? roleData.navLinks : [],
+        avatar: user.avatar || null,
+        departments: user.departments || [],
+        assignedDoctors: user.assignedDoctors || []
+    };
+}
+
+/**
+ * Get hospitalId filter for a request.
+ * - centraladmin/superadmin: no filter (sees all) unless ?hospitalId= query param
+ * - hospitaladmin: always scoped to their hospitalId
+ * - others: scoped to their hospitalId
+ */
+function getHospitalFilter(req) {
+    const userRoleName = (
+        typeof req.user?.role === 'string'
+            ? req.user.role
+            : (req.user?._roleData?.name || '')
+    ).toLowerCase().trim();
+    const isCentral = userRoleName === 'centraladmin' || userRoleName === 'superadmin';
+
+    if (isCentral) {
+        // Central admin can optionally filter by ?hospitalId=xxx
+        const qHospitalId = req.query.hospitalId;
+        if (qHospitalId && mongoose.Types.ObjectId.isValid(qHospitalId)) {
+            return { hospitalId: new mongoose.Types.ObjectId(qHospitalId) };
+        }
+        return qHospitalId ? { hospitalId: qHospitalId } : {};
+    }
+
+    // Hospital admin or staff — always scoped
+    const hid = req.user?.hospitalId;
+    return hid ? { hospitalId: hid } : { hospitalId: null };
+}
+
+// ==========================================
+// 1. ROLE MANAGEMENT — HOSPITAL-SCOPED
+// ==========================================
+
+// Get All Roles (scoped to hospital)
+router.get('/roles', verifyToken, async (req, res) => {
+    try {
+        const role = req.user.role;
+        const isCentral = role === 'centraladmin' || role === 'superadmin';
+
+        let query = {};
+        if (!isCentral) {
+            // Hospital admin: see roles for their hospital + global roles (hospitalId=null)
+            const hid = req.user.hospitalId;
+            query = { $or: [{ hospitalId: hid }, { hospitalId: null }] };
+        }
+        // Central admin: see everything (or filter by plan if requested)
+        if (isCentral && req.query.plan) {
+            const hospitals = await Hospital.find({ subscriptionPlan: req.query.plan }).select('_id');
+            const hospitalIds = hospitals.map(h => h._id);
+            // Include plan-specific roles AND global roles (null)
+            query = { $or: [{ hospitalId: { $in: hospitalIds } }, { hospitalId: null }] };
+        }
+
+        const roles = await Role.find(query).sort({ hospitalId: 1, name: 1 });
+
+        const rolesWithCounts = await Promise.all(roles.map(async (r) => {
+            const count = await User.countDocuments({ role: r._id });
+            return { ...r.toObject(), userCount: count };
+        }));
+
+        res.json({ success: true, data: rolesWithCounts });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// Create a New Role (scoped to hospital)
+router.post('/roles', verifyAdminOrSuperAdmin, async (req, res) => {
+    try {
+        const { name, permissions, description, dashboardPath, navLinks } = req.body;
+        if (!name) return res.status(400).json({ success: false, message: 'Role name is required' });
+
+        const role = req.user.role;
+        const isCentral = role === 'centraladmin' || role === 'superadmin';
+
+        // hospitalId for this role
+        const roleHospitalId = isCentral
+            ? (req.body.hospitalId || null)
+            : (req.user.hospitalId || null);
+
+        // Check uniqueness within the hospital scope
+        const existingRole = await Role.findOne({ name, hospitalId: roleHospitalId });
+        if (existingRole) {
+            return res.status(400).json({ success: false, message: 'Role with this name already exists for this hospital' });
+        }
+
+        const newRole = new Role({
+            name, permissions, description, dashboardPath, navLinks,
+            hospitalId: roleHospitalId
+        });
+        await newRole.save();
+
+        res.json({ success: true, message: 'Role created successfully', data: newRole });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// Update an Existing Role
+router.put('/roles/:roleId', verifyAdminOrSuperAdmin, async (req, res) => {
+    try {
+        const { roleId } = req.params;
+        const { name, permissions, description, dashboardPath, navLinks } = req.body;
+
+        const roleDoc = await Role.findById(roleId);
+        if (!roleDoc) return res.status(404).json({ success: false, message: 'Role not found' });
+
+        // Hospital admin can only edit their own hospital's roles
+        const isCentral = req.user.role === 'centraladmin' || req.user.role === 'superadmin';
+        if (!isCentral && String(roleDoc.hospitalId) !== String(req.user.hospitalId)) {
+            return res.status(403).json({ success: false, message: 'Cannot edit roles from another hospital' });
+        }
+
+        if (roleDoc.isSystemRole && name && name !== roleDoc.name) {
+            return res.status(403).json({ success: false, message: 'Cannot rename system roles' });
+        }
+
+        if (name) roleDoc.name = name;
+        if (permissions) roleDoc.permissions = permissions;
+        if (description !== undefined) roleDoc.description = description;
+        if (dashboardPath !== undefined) roleDoc.dashboardPath = dashboardPath;
+        if (navLinks !== undefined) roleDoc.navLinks = navLinks;
+
+        await roleDoc.save();
+        res.json({ success: true, message: 'Role updated successfully', data: roleDoc });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// Delete a Role
+router.delete('/roles/:roleId', verifyAdminOrSuperAdmin, async (req, res) => {
+    try {
+        const { roleId } = req.params;
+        const roleDoc = await Role.findById(roleId);
+        if (!roleDoc) return res.status(404).json({ success: false, message: 'Role not found' });
+
+        if (roleDoc.isSystemRole) {
+            return res.status(403).json({ success: false, message: 'Cannot delete system roles' });
+        }
+
+        const isCentral = req.user.role === 'centraladmin' || req.user.role === 'superadmin';
+        if (!isCentral && String(roleDoc.hospitalId) !== String(req.user.hospitalId)) {
+            return res.status(403).json({ success: false, message: 'Cannot delete roles from another hospital' });
+        }
+
+        const userCount = await User.countDocuments({ role: roleId });
+        if (userCount > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot delete role. ${userCount} user(s) still assigned to it.`
+            });
+        }
+
+        await Role.findByIdAndDelete(roleId);
+        res.json({ success: true, message: 'Role deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ==========================================
+// 2. ADMIN AUTH ROUTES
+// ==========================================
+
+// Central Admin Signup — creates centraladmin account
+router.post('/signup', async (req, res) => {
+    try {
+        let { name, email, password, phone } = req.body;
+
+        let sanitizedPhone = phone ? String(phone).trim() : '';
+        if (sanitizedPhone.startsWith('+91') && sanitizedPhone.length > 10) sanitizedPhone = sanitizedPhone.substring(3);
+        else if (sanitizedPhone.startsWith('91') && sanitizedPhone.length > 10) sanitizedPhone = sanitizedPhone.substring(2);
+        else if (sanitizedPhone.startsWith('0') && sanitizedPhone.length > 10) sanitizedPhone = sanitizedPhone.substring(1);
+        sanitizedPhone = sanitizedPhone.replace(/\D/g, '').slice(0, 10);
+        
+        if (!sanitizedPhone || !/^\d{10}$/.test(sanitizedPhone)) {
+            return res.status(400).json({
+                success: false,
+                message: "Validation Error",
+                errors: { phone: "Phone number must be exactly 10 digits." }
+            });
+        }
+        phone = sanitizedPhone;
+
+        if (!name || !email || !password) {
+            return res.status(400).json({ success: false, message: 'Name, email, and password are required' });
+        }
+        const pwErr1 = validatePassword(password);
+        if (pwErr1) return res.status(400).json({ success: false, message: pwErr1 });
+
+        const existingUser = await User.findOne({ email });
+        if (existingUser) {
+            return res.status(400).json({ success: false, message: 'Email already registered.' });
+        }
+
+        const admin = new User({
+            name, email, password, phone: phone || '', role: 'centraladmin', hospitalId: null
+        });
+
+        await admin.save();
+
+        const token = jwt.sign(
+            { userId: admin._id, email: admin.email, role: 'centraladmin' },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        res.status(201).json({
+            success: true,
+            message: 'Central Admin account created successfully',
+            user: {
+                id: admin._id, name: admin.name, email: admin.email,
+                role: 'centraladmin', permissions: ['*'],
+                dashboardPath: '/supremeadmin', navLinks: []
+            },
+            token
+        });
+    } catch (error) {
+        console.error("ADMIN SIGNUP ERROR:", error);
+        res.status(500).json({ success: false, message: 'Error creating admin' });
+    }
+});
+
+// Central Admin Login
+router.post('/login', async (req, res) => {
+    try {
+        const { email, password } = req.body;
+        if (!email || !password) return res.status(400).json({ success: false, message: 'Email and password required' });
+
+        const user = await User.findOne({ email });
+        if (!user) return res.status(401).json({ success: false, message: 'Invalid email or password' });
+
+        let roleDoc = null;
+        if (mongoose.Types.ObjectId.isValid(user.role)) {
+            roleDoc = await Role.findById(user.role);
+        }
+
+        let roleName = null;
+        if (roleDoc && typeof roleDoc.name === 'string') {
+            roleName = roleDoc.name.toLowerCase();
+        } else if (typeof user.role === 'string' && user.role) {
+            roleName = user.role.toLowerCase();
+        }
+
+        // Only centraladmin/superadmin allowed through this endpoint
+        if (roleName !== 'superadmin' && roleName !== 'centraladmin' && roleName !== 'admin') {
+            return res.status(403).json({ success: false, message: 'Access denied. Central Admin only.' });
+        }
+
+        const isPasswordValid = await user.comparePassword(password);
+        if (!isPasswordValid) return res.status(401).json({ success: false, message: 'Invalid email or password' });
+
+        const token = jwt.sign(
+            { userId: user._id, email: user.email, roleId: String(user.role) },
+            JWT_SECRET,
+            { expiresIn: '7d' }
+        );
+
+        res.json({
+            success: true,
+            message: 'Login successful',
+            user: {
+                id: user._id, name: user.name, email: user.email,
+                role: roleName, permissions: ['*'],
+                dashboardPath: '/supremeadmin', navLinks: []
+            },
+            token
+        });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error during login' });
+    }
+});
+
+// ==========================================
+// 3. USER MANAGEMENT — HOSPITAL-SCOPED
+// ==========================================
+
+// Get all users — scoped by hospital, excluding patients and admin roles with optional server-side pagination & search
+router.get('/users', verifyAdminOrSuperAdmin, async (req, res) => {
+    try {
+        const userRoleName = (
+            typeof req.user?.role === 'string'
+                ? req.user.role
+                : (req.user?._roleData?.name || '')
+        ).toLowerCase().trim();
+        const isCentral = userRoleName === 'centraladmin' || userRoleName === 'superadmin';
+        const filter = getHospitalFilter(req);
+
+        const excludeDoctors = req.query.excludeDoctors === 'true';
+
+        // Exclude system admin roles and patient/user roles from the staff list
+        const systemRoles = ['centraladmin', 'superadmin', 'hospitaladmin', 'patient', 'user'];
+
+        // Find Role ObjectIds to exclude (patients, users, and optionally doctors if requested)
+        const excludeRoleDocs = await Role.find({
+            name: {
+                $in: [
+                    /^patient$/i,
+                    /^user$/i,
+                    ...(excludeDoctors ? [/^doctor$/i, /^clinic doctor$/i] : [])
+                ]
+            }
+        }).select('_id');
+        const excludeRoleIds = excludeRoleDocs.map(r => r._id);
+
+        const allExcludedRoles = [
+            ...systemRoles,
+            ...excludeRoleIds,
+            ...(excludeDoctors ? ['doctor', 'Doctor', 'clinic doctor', 'Clinic Doctor'] : [])
+        ];
+
+        let planFilter = {};
+        if (isCentral) {
+            if (req.query.hospitalId) {
+                planFilter = { hospitalId: req.query.hospitalId };
+            } else if (req.query.plan && req.query.plan !== 'all') {
+                const hFilter = {};
+                if (req.query.plan === 'enterprise') {
+                    hFilter.clinicType = { $ne: 'clinic' };
+                    hFilter.$or = [
+                        { subscriptionPlan: 'enterprise' },
+                        { subscriptionPlan: 'none' },
+                        { subscriptionPlan: { $exists: false } }
+                    ];
+                } else if (req.query.plan === 'starter') {
+                    hFilter.clinicType = 'clinic';
+                    hFilter.$or = [
+                        { subscriptionPlan: 'starter' },
+                        { subscriptionPlan: 'none' },
+                        { subscriptionPlan: { $exists: false } }
+                    ];
+                } else {
+                    hFilter.clinicType = { $ne: 'clinic' };
+                    hFilter.subscriptionPlan = req.query.plan;
+                }
+                const hospitals = await Hospital.find(hFilter).select('_id');
+                const hospitalIds = hospitals.map(h => h._id);
+                planFilter = { hospitalId: { $in: hospitalIds } };
+            }
+        }
+
+        // Search query filter
+        let searchFilter = {};
+        if (req.query.search && req.query.search.trim()) {
+            const s = req.query.search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            const sRegex = new RegExp(s, 'i');
+            searchFilter.$or = [
+                { name: sRegex },
+                { email: sRegex },
+                { phone: sRegex }
+            ];
+        }
+
+        const finalFilter = {
+            ...filter,
+            ...planFilter,
+            ...searchFilter,
+            role: { $nin: allExcludedRoles }
+        };
+
+        const isPaginated = req.query.page !== undefined && req.query.page !== null && req.query.page !== '';
+        const pageNum = Math.max(1, parseInt(req.query.page, 10) || 1);
+        const limitNum = Math.max(1, parseInt(req.query.limit, 10) || 10);
+        const skipNum = (pageNum - 1) * limitNum;
+
+        let totalRecords = 0;
+        let users = [];
+
+        if (isPaginated) {
+            totalRecords = await User.countDocuments(finalFilter);
+            users = await User.find(finalFilter, { password: 0 })
+                .sort({ createdAt: -1 })
+                .skip(skipNum)
+                .limit(limitNum);
+        } else {
+            users = await User.find(finalFilter, { password: 0 }).sort({ createdAt: -1 });
+            totalRecords = users.length;
+        }
+
+        // Build full response with request-level caching to prevent N+1 queries
+        const hospitalCache = new Map();
+        const roleCache = new Map();
+        const usersWithRoles = (await Promise.all(users.map(async (u) => {
+            try {
+                return await buildUserResponse(u, hospitalCache, roleCache);
+            } catch (userErr) {
+                console.error(`[buildUserResponse] Fallback for user ${u?._id}:`, userErr.message);
+                return {
+                    id: u._id,
+                    name: u.name || 'Staff User',
+                    email: u.email || '',
+                    phone: u.phone || '',
+                    role: typeof u.role === 'string' ? u.role : (u.role?.name || 'Staff'),
+                    roleId: u.role,
+                    patientId: u.patientId || null,
+                    hospitalId: u.hospitalId || null,
+                    hospitalName: null,
+                    subscriptionPlan: null,
+                    plan: null,
+                    permissions: [],
+                    dashboardPath: '/',
+                    navLinks: [],
+                    avatar: u.avatar || null,
+                    departments: u.departments || [],
+                    assignedDoctors: u.assignedDoctors || []
+                };
+            }
+        }))).filter(Boolean);
+
+        const staffOnly = usersWithRoles.filter(u => {
+            const r = (typeof u.role === 'string' ? u.role : (u.role?.name || '')).toLowerCase();
+            if (['patient', 'user'].includes(r)) return false;
+            if (excludeDoctors && (r === 'doctor' || r === 'clinic doctor' || (r.includes('doctor') && !r.includes('assistant')))) return false;
+            return true;
+        });
+
+        const totalPages = isPaginated ? (Math.ceil(totalRecords / limitNum) || 1) : 1;
+
+        res.json({
+            success: true,
+            users: staffOnly,
+            data: staffOnly,
+            pagination: {
+                currentPage: isPaginated ? pageNum : 1,
+                pageSize: isPaginated ? limitNum : staffOnly.length,
+                totalRecords: isPaginated ? totalRecords : staffOnly.length,
+                totalPages: totalPages
+            }
+        });
+    } catch (error) {
+        console.error('Error fetching users:', error.stack || error);
+        res.status(500).json({ success: false, message: 'Error fetching users' });
+    }
+});
+
+// Create User (by admin) — hospitalId is REQUIRED for all staff
+router.post('/users', verifyAdminOrSuperAdmin, async (req, res) => {
+    try {
+        const { name, email, password, phone, roleId, services, avatar, departments, assignedDoctors } = req.body;
+
+        if (!phone || phone.trim() === '') {
+            return res.status(400).json({ success: false, message: 'Phone number is required.' });
+        }
+        
+        const isDigits = /^\d+$/.test(phone);
+        if (!isDigits || phone.length !== 10) {
+            return res.status(400).json({ success: false, message: 'Mobile number must be exactly 10 digits and contain digits only.' });
+        }
+
+        if (!name || !email || !password || !roleId) {
+            return res.status(400).json({ success: false, message: 'Name, email, password, and roleId are required' });
+        }
+        const pwErr2 = validatePassword(password);
+        if (pwErr2) return res.status(400).json({ success: false, message: pwErr2 });
+
+        const roleDoc = await Role.findById(roleId);
+        if (!roleDoc) {
+            return res.status(400).json({ success: false, message: 'Invalid role. Role not found.' });
+        }
+
+        // Patients don't need hospital assignment
+        const isPatientRole = (roleDoc.name || '').toLowerCase() === 'patient';
+
+        // Determine hospitalId
+        const isCentral = req.user.role === 'centraladmin' || req.user.role === 'superadmin';
+        let assignedHospitalId = null;
+
+        if (!isCentral) {
+            // Hospital admin: always use their hospital
+            assignedHospitalId = req.user.hospitalId;
+        } else {
+            // Central admin: hospitalId must be in body for staff (not patients)
+            assignedHospitalId = req.body.hospitalId || roleDoc.hospitalId || null;
+        }
+
+        if (!isPatientRole && !assignedHospitalId) {
+            return res.status(400).json({
+                success: false,
+                message: 'Staff must be linked to a hospital. Please provide hospitalId.'
+            });
+        }
+
+        // Validate clinic vs hospital role mapping
+        if (assignedHospitalId && !isPatientRole) {
+            const hospitalDoc = await Hospital.findById(assignedHospitalId).select('clinicType subscriptionPlan tier');
+            if (hospitalDoc) {
+                const isClinic = hospitalDoc.clinicType === 'clinic';
+                const assignedRoleNameLower = (roleDoc.name || '').toLowerCase();
+                const subscriptionPlan = hospitalDoc.subscriptionPlan || 'none';
+                
+                // NEW: Reject Doctors from Staff Management (Allow Doctor Assistant in Staff)
+                const isActualDoctor = (assignedRoleNameLower === 'doctor' || assignedRoleNameLower === 'clinic doctor' || (assignedRoleNameLower.includes('doctor') && !assignedRoleNameLower.includes('assistant')));
+                if (isActualDoctor) {
+                    return res.status(403).json({
+                        success: false,
+                        message: 'Doctors cannot be created from Staff Management. Please use the Doctors Feed.'
+                    });
+                }
+                
+                // NEW SUBSCRIPTION VALIDATION (Basic & Multi-Speciality)
+                if (subscriptionPlan === 'clinic_basic' || subscriptionPlan === 'multi_speciality_starter') {
+                    const limits = SUBSCRIPTION_PLANS[subscriptionPlan] || { maxDoctors: Infinity, maxStaff: Infinity };
+                    const maxDoctors = limits.maxDoctors;
+                    const maxStaff = limits.maxStaff;
+                    
+                    const systemRoles = ['centraladmin', 'superadmin', 'hospitaladmin'];
+                    const existingStaffDocs = await User.find({ 
+                        hospitalId: assignedHospitalId,
+                        role: { $nin: systemRoles }
+                    }).populate('role', 'name').select('role').lean();
+
+                    let doctorCount = 0;
+                    let staffCount = 0;
+                    
+                    existingStaffDocs.forEach(u => {
+                        const rName = (typeof u.role === 'string' ? u.role : (u.role?.name || '')).toLowerCase();
+                        
+                        // Exact same exclusion logic as UI and GET /users
+                        if (['patient', 'user', 'hospitaladmin', 'centraladmin', 'superadmin'].includes(rName)) return;
+                        
+                        if ((rName === 'doctor' || rName === 'clinic doctor' || (rName.includes('doctor') && !rName.includes('assistant')))) {
+                            doctorCount++;
+                        } else {
+                            staffCount++;
+                        }
+                    });
+
+                    const isDoctorRole = isActualDoctor;
+                    if (isDoctorRole) {
+                        if (doctorCount >= maxDoctors) {
+                            return res.status(403).json({
+                                success: false,
+                                message: `Doctor quota reached.\n\nYour current subscription allows a maximum of ${maxDoctors} doctor accounts.\n\nPlease upgrade your subscription to add more doctors.`
+                            });
+                        }
+                    } else {
+                        if (staffCount >= maxStaff) {
+                            return res.status(403).json({
+                                success: false,
+                                message: `Staff quota reached.\n\nYour current subscription allows a maximum of ${maxStaff} staff accounts.\n\nPlease upgrade your subscription to add more staff.`
+                            });
+                        }
+                    }
+                    
+                    // Restrict "Clinic Doctor" role strictly to Clinics
+                    if (!isClinic && assignedRoleNameLower === 'clinic doctor') {
+                        return res.status(400).json({
+                            success: false,
+                            message: 'Hospital users cannot be assigned the "Clinic Doctor" role.'
+                        });
+                    }
+                } 
+                // LEGACY LOGIC (Starter & Enterprise)
+                else {
+                    if (isClinic) {
+                        if (assignedRoleNameLower !== 'clinic doctor') {
+                            return res.status(400).json({
+                                success: false,
+                                message: 'Clinics only support the "Clinic Doctor" role for staff. Other roles are not allowed.'
+                            });
+                        }
+                        const maxForRole = hospitalDoc.tier?.maxDoctors || 1;
+                        const currentCount = await User.countDocuments({
+                            hospitalId: assignedHospitalId,
+                            $or: [
+                                { role: 'doctor' },
+                                { role: roleDoc._id }
+                            ]
+                        });
+                        if (currentCount >= maxForRole) {
+                            return res.status(400).json({
+                                success: false,
+                                message: 'This clinic already has an assigned Clinic Doctor.'
+                            });
+                        }
+                    } else {
+                        if (assignedRoleNameLower === 'clinic doctor') {
+                            return res.status(400).json({
+                                success: false,
+                                message: 'Hospital users cannot be assigned the "Clinic Doctor" role.'
+                            });
+                        }
+                    }
+                }
+            }
+        }
+
+        const checkQuery = { email: email.toLowerCase() };
+        if (assignedHospitalId) checkQuery.hospitalId = assignedHospitalId;
+        const existingUser = await User.findOne(checkQuery);
+        if (existingUser) return res.status(400).json({ success: false, message: 'User with this email already exists in this hospital' });
+
+        let finalDepartments = departments || [];
+        if (Array.isArray(assignedDoctors) && assignedDoctors.length > 0) {
+            const assignedDocs = await Doctor.find({ _id: { $in: assignedDoctors }, hospitalId: assignedHospitalId }).lean();
+            const derivedDepts = new Set(finalDepartments);
+            assignedDocs.forEach(d => (d.departments || []).forEach(dept => dept && derivedDepts.add(dept)));
+            finalDepartments = Array.from(derivedDepts);
+        }
+
+        const user = new User({
+            name,
+            email: email.toLowerCase(),
+            password,
+            phone: phone || '',
+            role: roleId,
+            hospitalId: assignedHospitalId,
+            services: (roleDoc.name || '').toLowerCase() === 'doctor' ? services : [],
+            departments: finalDepartments,
+            assignedDoctors: Array.isArray(assignedDoctors) ? assignedDoctors : [],
+            avatar: avatar || null
+        });
+
+        await user.save();
+
+        // Auto-create linked entity profiles with hospitalId
+        const roleName = (roleDoc.name || '').toLowerCase();
+        try {
+            if (roleName === 'doctor') {
+                let doctorId = nanoid(10);
+                while (await Doctor.findOne({ doctorId })) doctorId = nanoid(10);
+                const defaultAvailability = {
+                    monday: { available: false, startTime: '09:00', endTime: '17:00' },
+                    tuesday: { available: false, startTime: '09:00', endTime: '17:00' },
+                    wednesday: { available: false, startTime: '09:00', endTime: '17:00' },
+                    thursday: { available: false, startTime: '09:00', endTime: '17:00' },
+                    friday: { available: false, startTime: '09:00', endTime: '17:00' },
+                    saturday: { available: false, startTime: '09:00', endTime: '17:00' },
+                    sunday: { available: false, startTime: '09:00', endTime: '17:00' }
+                };
+                await Doctor.create({
+                    doctorId, userId: user._id, name: user.name,
+                    email: user.email, phone: user.phone,
+                    hospitalId: assignedHospitalId,
+                    services: user.services, availability: defaultAvailability,
+                    departments: user.departments,
+                    specialty: 'General', consultationFee: 0
+                });
+            } else if (roleName === 'lab' || roleName === 'lab technician') {
+                await Lab.create({
+                    name: user.name, email: user.email, phone: user.phone,
+                    userId: user._id, hospitalId: assignedHospitalId
+                });
+            } else if (roleName === 'pharmacy' || roleName === 'pharmacist') {
+                await Pharmacy.create({
+                    name: user.name, email: user.email, phone: user.phone,
+                    userId: user._id, hospitalId: assignedHospitalId
+                });
+            } else if (roleName === 'reception' || roleName === 'receptionist') {
+                await Reception.create({ userId: user._id, hospitalId: assignedHospitalId });
+            }
+        } catch (profileError) {
+            console.error('Error creating linked profile:', profileError);
+        }
+
+        // Dynamic URL Logic for Welcome Email (dispatched in background so HTTP response returns instantly)
+        (async () => {
+            try {
+                let loginUrl = 'https://medical365.in/login';
+                let hName = 'Medical 365';
+                if (assignedHospitalId) {
+                    const emailHosp = await Hospital.findById(assignedHospitalId).select('name slug customDomain').lean();
+                    if (emailHosp) {
+                        hName = emailHosp.name || 'Medical 365';
+                        loginUrl = emailHosp.customDomain 
+                            ? `https://${emailHosp.customDomain}/login` 
+                            : `https://${emailHosp.slug}.medical365.in/login`;
+                    }
+                }
+                await sendStaffWelcomeEmail({
+                    email: user.email,
+                    password: password, 
+                    name: user.name,
+                    role: roleDoc.name,
+                    hospitalName: hName,
+                    loginUrl: loginUrl
+                });
+            } catch (emailError) {
+                console.error('[admin.routes] Error calling sendStaffWelcomeEmail in background:', emailError.message);
+            }
+        })();
+
+        const userData = await buildUserResponse(user);
+        res.status(201).json({
+            success: true,
+            message: `${roleDoc.name} account created successfully`,
+            user: userData
+        });
+    } catch (error) {
+        console.error('POST /users error:', error);
+        res.status(500).json({ success: false, message: 'Error creating user: ' + error.message });
+    }
+});
+
+// Update user details
+// Update user details
+router.put('/users/:userId', verifyAdminOrSuperAdmin, async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const { name, email, phone, roleId, avatar, specialty, departments, assignedDoctors } = req.body;
+
+        if (phone && phone.trim() !== '') {
+            const isDigits = /^\d+$/.test(phone.trim());
+            if (!isDigits || phone.trim().length !== 10) {
+                return res.status(400).json({ success: false, message: 'Mobile number must be exactly 10 digits and contain digits only.' });
+            }
+        }
+
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        // Hospital admin can ONLY update users in their hospital
+        const isCentral = req.user.role === 'centraladmin' || req.user.role === 'superadmin';
+        if (!isCentral && String(user.hospitalId) !== String(req.user.hospitalId)) {
+            return res.status(403).json({ success: false, message: 'Cannot edit users from another hospital' });
+        }
+
+        if (['centraladmin', 'superadmin'].includes(user.role) && !isCentral) {
+            return res.status(403).json({ success: false, message: 'Cannot modify Central Admin accounts' });
+        }
+
+        // Apply updated user fields
+        if (name !== undefined && name !== null && String(name).trim() !== '') {
+            user.name = String(name).trim();
+        }
+
+        if (email !== undefined && email !== null && String(email).trim() !== '') {
+            const cleanNewEmail = String(email).trim().toLowerCase();
+            if (cleanNewEmail !== user.email) {
+                const query = { email: cleanNewEmail, _id: { $ne: user._id } };
+                if (user.hospitalId) query.hospitalId = user.hospitalId;
+                const existingEmailUser = await User.findOne(query);
+                if (existingEmailUser) {
+                    return res.status(400).json({ success: false, message: 'Email is already in use by another user' });
+                }
+                user.email = cleanNewEmail;
+            }
+        }
+
+        if (phone !== undefined && phone !== null && String(phone).trim() !== '') {
+            let sanitizedPhone = String(phone).trim();
+            if (sanitizedPhone.startsWith('+91') && sanitizedPhone.length > 10) sanitizedPhone = sanitizedPhone.substring(3);
+            else if (sanitizedPhone.startsWith('91') && sanitizedPhone.length > 10) sanitizedPhone = sanitizedPhone.substring(2);
+            else if (sanitizedPhone.startsWith('0') && sanitizedPhone.length > 10) sanitizedPhone = sanitizedPhone.substring(1);
+            sanitizedPhone = sanitizedPhone.replace(/\D/g, '').slice(0, 10);
+
+            if (sanitizedPhone.length !== 10) {
+                return res.status(400).json({ success: false, message: 'Mobile number must be exactly 10 digits and contain digits only.' });
+            }
+
+            if (sanitizedPhone !== user.phone) {
+                const query = { phone: sanitizedPhone, _id: { $ne: user._id } };
+                if (user.hospitalId) query.hospitalId = user.hospitalId;
+                const existingPhoneUser = await User.findOne(query);
+                if (existingPhoneUser) {
+                    return res.status(400).json({ success: false, message: 'Mobile number is already in use by another user' });
+                }
+                user.phone = sanitizedPhone;
+            }
+        }
+
+        if (avatar !== undefined) user.avatar = avatar;
+        if (specialty !== undefined) user.specialty = specialty;
+        if (departments !== undefined) {
+            user.departments = Array.isArray(departments) ? departments : [departments].filter(Boolean);
+        }
+
+        if (assignedDoctors !== undefined) {
+            user.assignedDoctors = Array.isArray(assignedDoctors) ? assignedDoctors : [];
+            if (Array.isArray(assignedDoctors) && assignedDoctors.length > 0) {
+                const assignedDocs = await Doctor.find({ _id: { $in: assignedDoctors }, hospitalId: user.hospitalId }).lean();
+                const derivedDepts = new Set(user.departments || []);
+                assignedDocs.forEach(d => (d.departments || []).forEach(dept => dept && derivedDepts.add(dept)));
+                user.departments = Array.from(derivedDepts);
+            }
+        }
+
+        // Safely resolve role name without triggering CastErrors on string roles
+        let newRoleName = null;
+        if (user.role && !['centraladmin', 'superadmin', 'hospitaladmin'].includes(user.role)) {
+            if (mongoose.Types.ObjectId.isValid(user.role)) {
+                const roleDoc = await Role.findById(user.role);
+                newRoleName = (roleDoc && typeof roleDoc.name === 'string') ? roleDoc.name.toLowerCase() : null;
+            } else {
+                newRoleName = String(user.role).toLowerCase();
+            }
+        }
+
+        await user.save();
+
+        // Update linked entity profiles if present
+        try {
+            const hospitalId = user.hospitalId;
+            const cleanName = user.name;
+            const cleanEmail = user.email;
+            const cleanPhone = user.phone;
+            const cleanDepts = user.departments;
+
+            const isDoctor = newRoleName === 'doctor' || (newRoleName && newRoleName.includes('doctor') && !newRoleName.includes('assistant'));
+            if (isDoctor) {
+                let doctorProfile = await Doctor.findOne({ userId: user._id });
+                if (doctorProfile) {
+                    if (cleanName) doctorProfile.name = cleanName;
+                    if (cleanEmail) doctorProfile.email = cleanEmail;
+                    if (cleanPhone) doctorProfile.phone = cleanPhone;
+                    if (specialty !== undefined) doctorProfile.specialty = specialty;
+                    if (cleanDepts !== undefined) doctorProfile.departments = cleanDepts;
+                    await doctorProfile.save();
+                }
+            }
+            if (newRoleName && ['lab', 'lab technician'].includes(newRoleName)) {
+                await Lab.findOneAndUpdate({ userId: user._id }, { name: cleanName, email: cleanEmail, phone: cleanPhone, hospitalId }, { upsert: false });
+            }
+            if (newRoleName && ['pharmacy', 'pharmacist'].includes(newRoleName)) {
+                await Pharmacy.findOneAndUpdate({ userId: user._id }, { name: cleanName, email: cleanEmail, phone: cleanPhone, hospitalId }, { upsert: false });
+            }
+            if (newRoleName && ['reception', 'receptionist'].includes(newRoleName)) {
+                await Reception.findOneAndUpdate({ userId: user._id }, { name: cleanName, email: cleanEmail, phone: cleanPhone, hospitalId }, { upsert: false });
+            }
+        } catch (profileError) {
+            console.error('Error updating linked profile:', profileError);
+        }
+
+        const updatedUser = await buildUserResponse(user);
+        res.json({ success: true, message: 'User updated successfully', user: updatedUser });
+    } catch (error) {
+        console.error('Error in PUT /api/admin/users/:userId:', error);
+        res.status(500).json({ success: false, message: 'Error updating user: ' + error.message });
+    }
+});
+
+// Delete user
+router.delete('/users/:userId', verifyAdminOrSuperAdmin, async (req, res) => {
+    try {
+        const { userId } = req.params;
+
+        if (userId === String(req.user._id)) {
+            return res.status(403).json({ success: false, message: 'Cannot delete own account' });
+        }
+
+        const user = await User.findById(userId);
+        if (!user) return res.status(404).json({ success: false, message: 'User not found' });
+
+        const isCentral = req.user.role === 'centraladmin' || req.user.role === 'superadmin';
+
+        // Hospital admin can only delete users in their hospital
+        if (!isCentral && String(user.hospitalId) !== String(req.user.hospitalId)) {
+            return res.status(403).json({ success: false, message: 'Cannot delete users from another hospital' });
+        }
+
+        if (['centraladmin', 'superadmin'].includes(user.role) && !isCentral) {
+            return res.status(403).json({ success: false, message: 'Cannot delete Central Admin accounts' });
+        }
+
+        // Cascade delete entity profiles
+        let roleName = null;
+        if (user.role && !['centraladmin', 'superadmin', 'hospitaladmin'].includes(user.role)) {
+            const roleDoc = await Role.findById(user.role);
+            roleName = (roleDoc && typeof roleDoc.name === 'string') ? roleDoc.name.toLowerCase() : null;
+        }
+
+        if (roleName === 'doctor' || roleName === 'clinic doctor') await Doctor.findOneAndDelete({ userId: user._id });
+        if (roleName === 'lab' || roleName === 'lab technician') await Lab.findOneAndDelete({ userId: user._id });
+        if (roleName === 'pharmacy' || roleName === 'pharmacist') await Pharmacy.findOneAndDelete({ userId: user._id });
+        if (roleName === 'reception' || roleName === 'receptionist') await Reception.findOneAndDelete({ userId: user._id });
+
+        await User.findByIdAndDelete(userId);
+        res.json({ success: true, message: 'User and associated profile deleted successfully' });
+    } catch (error) {
+        res.status(500).json({ success: false, message: 'Error deleting user' });
+    }
+});
+module.exports = router;

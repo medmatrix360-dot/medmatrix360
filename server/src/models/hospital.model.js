@@ -1,0 +1,317 @@
+const mongoose = require('mongoose');
+
+const brandingSchema = new mongoose.Schema({
+    // Identity
+    appName:    { type: String, default: '' },   // e.g. "AKG Medical Suite"
+    tagline:    { type: String, default: '' },   // e.g. "Caring for Every Life"
+    logoUrl:    { type: String, default: '' },   // hosted image URL
+    faviconUrl: { type: String, default: '' },
+    // Color Palette
+    primaryColor:    { type: String, default: '#14b8a6' }, // teal
+    secondaryColor:  { type: String, default: '#0a2647' }, // navy
+    accentColor:     { type: String, default: '#6366f1' }, // purple
+    successColor:    { type: String, default: '#10b981' },
+    backgroundColor: { type: String, default: '#f8fafc' },
+    textColor:       { type: String, default: '#1e293b' },
+    // Contact
+    supportEmail: { type: String, trim: true, lowercase: true, match: /^\S+@\S+\.\S+$/ },
+    supportPhone: { type: String, match: /^\d{10}$/ },
+    address:       { type: String, default: '' },
+    // Social / Links
+    websiteUrl:    { type: String, default: '' },
+    instagramUrl:  { type: String, default: '' },
+    facebookUrl:   { type: String, default: '' },
+    twitterUrl:    { type: String, default: '' },
+    // Footer
+    footerText:    { type: String, default: '' },  // e.g. "© 2025 AKG Hospital. All rights reserved."
+    
+    // NEW FIELDS added as per White-Label Architecture request
+    customDomain:  { type: String, default: '' },
+    emailDisplayName: { type: String, trim: true, default: '' }, // Custom sender display name for emails/OTPs
+    themeColors: {
+        primary: { type: String, default: '#14b8a6' },
+        secondary: { type: String, default: '#0a2647' },
+        background: { type: String, default: '#ffffff' }
+    }
+}, { _id: false });
+
+const hospitalSchema = new mongoose.Schema({
+    name: { type: String, required: true, trim: true },
+    // slug: URL-safe identifier used in path-based routing: myurl.com/:slug/login
+    // Auto-generated from name on creation if not provided
+    slug: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
+    
+    // Custom domain mapping for white-labeled deployments (e.g., portal.hospitalA.com)
+    customDomain: { type: String, unique: true, sparse: true, lowercase: true, trim: true },
+
+    address: { type: String, default: '' },
+    city: { type: String, default: '' },
+    state: { type: String, default: '' },
+    phone: { type: String, required: true, match: /^\d{10}$/ },
+    email: { type: String, required: true, lowercase: true, trim: true, match: /^\S+@\S+\.\S+$/ },
+    website: { type: String, default: '' },
+    logo: { type: String, default: null },
+    isActive: { type: Boolean, default: true },
+    departments: [{ type: String }],
+    departmentFees: { type: Map, of: Number, default: {} },
+    departmentValidity: { type: Map, of: Number, default: {} },
+    facilities: [{
+        name: { type: String, required: true },
+        pricePerDay: { type: Number, required: true, min: 0 }
+    }],
+    // White-label branding config (per hospital)
+    branding: { type: brandingSchema, default: () => ({}) },
+    brandingSchema: { type: brandingSchema, default: () => ({}) }, // Added as per White-Label Architecture Phase 1 request
+
+    // White-Label Engine Flags & Mobile App Config
+    isWhitelabeled: { type: Boolean, default: false },
+    whiteLabelEnabled: { type: Boolean, default: false }, // Added as per White-Label Architecture Phase 1 request
+    appConfig: {
+        // Android package identifier (e.g. com.medical365.apollo).
+        // NOTE: Mongoose autoIndex is enabled by default in db.js. To prevent startup crashes (E11000)
+        // on existing empty-string defaults, DO NOT declare unique/sparse indexes here directly.
+        // Production index enforcement is handled via scripts/migrate-package-id-index.js using a
+        // partial filter expression: { 'appConfig.androidPackageId': { $type: 'string', $gt: '' } }.
+        androidPackageId: { type: String, trim: true, default: '' },
+        appVersion: { type: String, trim: true, default: '1.0.0' },
+        appName: { type: String, trim: true, default: '' },
+        buildStatus: { type: String, enum: ['NOT_BUILT', 'BUILDING', 'COMPLETED', 'FAILED'], default: 'NOT_BUILT' },
+        buildStartedAt: { type: Date, default: null },
+        lastBuiltAt: { type: Date, default: null },
+        buildError: { type: String, default: '' },
+        apkUrl: { type: String, default: '' },
+        aabUrl: { type: String, default: '' },
+
+        // React Native White-Label Build Pipeline
+        rnBuildStatus: { type: String, enum: ['NOT_BUILT', 'BUILDING', 'PROCESSING', 'COMPLETED', 'FAILED'], default: 'NOT_BUILT' },
+        rnBuildId: { type: String, default: '' },
+        rnBuildStartedAt: { type: Date, default: null },
+        rnLastBuiltAt: { type: Date, default: null },
+        rnBuildError: { type: String, default: '' },
+        rnApkUrl: { type: String, default: '' },
+        rnAabUrl: { type: String, default: '' },
+        rnReleaseId: { type: String, default: '' },
+        rnChecksumSha256: { type: String, default: '' },
+
+        // Automated Native Version Management (Phase 3)
+        versionCode: { type: Number, default: 1, min: 1 },
+        versionName: { type: String, trim: true, default: '1.0.0' },
+        lastAllocatedVersionCode: { type: Number, default: 0 },
+        pendingVersionCode: { type: Number, default: null },
+        pendingVersionName: { type: String, trim: true, default: null }
+    },
+    // Hospital-managed UPI configurations
+    upiIds: [{ label: { type: String, required: true }, upiId: { type: String, required: true } }],
+    // Appointment system mode — set by Supreme Admin per hospital
+    // 'slot'  : patients/reception pick a specific time slot (09:00, 09:30, …)
+    // 'token' : sequential daily token; resets to 1 at midnight; no time selection
+    appointmentMode: { type: String, enum: ['slot', 'token'], default: 'slot' },
+
+    // Hospital admin user reference
+    adminUserId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', default: null },
+
+    // Entity type — 'hospital' for full hospitals, 'clinic' for small simple clinics
+    clinicType: { type: String, enum: ['hospital', 'clinic'], default: 'hospital' },
+
+    // ABDM / HIP Configuration (National Health Authority)
+    abdm: {
+        enabled: { type: Boolean, default: false },
+        hipId:   { type: String, trim: true, unique: true, sparse: true },   // = HFR facility ID in production
+    },
+
+    // Subscription plan specific to clinics
+    clinicPlan: { type: String, enum: ['starter', 'basic'], default: 'starter' },
+
+    // Global subscription plan (for new backend quotas)
+    subscriptionPlan: { type: String, enum: ['multi_speciality_starter', 'clinic_basic', 'enterprise', 'starter', 'none'], default: 'none' },
+
+    // Permanent unique Hospital Code (e.g. "APL", "APL1", "FOR") — never auto-regenerated once set
+    hospitalCode: { type: String, uppercase: true, trim: true, unique: true, sparse: true },
+
+    // Clinic-specific fields
+    // Short code used as prefix for patient IDs: e.g. "RAM" → patient IDs: RAM-001, RAM-002
+    clinicCode: { type: String, uppercase: true, trim: true, default: '' },
+
+    // Default fee and service name pre-filled on reception booking form
+    defaultFee: { type: Number, default: 0, min: 0 },
+    followUpDays: { type: Number, default: 0, min: 0 },
+    defaultServiceName: { type: String, default: 'General Consultation', trim: true },
+
+    // Staff tier limits (enforced at staff creation)
+    tier: {
+        maxDoctors:       { type: Number, default: 1 },
+        maxReceptionists: { type: Number, default: 1 },
+        maxStaff:         { type: Number, default: Infinity },
+    },
+
+    // Subscription / billing config (set by centraladmin)
+    subscription: {
+        ratePerPatient:  { type: Number, default: 0 },
+        billingEnabled:  { type: Boolean, default: false },
+    },
+
+    // Local deployment — API key (bcrypt hashed) issued when clinic goes on-premise
+    // null means clinic runs on cloud (default SaaS mode)
+    clinicApiKey: { type: String, default: null },
+
+    // Local server status — updated by heartbeat / stats sync
+    localServer: {
+        isOnline:      { type: Boolean, default: false },
+        lastSeenAt:    { type: Date, default: null },
+        serverVersion: { type: String, default: '' },
+    },
+
+    // ── Revenue / Billing Model ───────────────────────────────────────────────
+    // 'per_patient'   : Model B — charged per new patient registered each month
+    //                   Rate stored in subscription.ratePerPatient
+    // 'fixed_monthly' : Model A — flat monthly fee regardless of patient volume
+    //                   Fee stored in revenueConfig.monthlyFee
+    // 'per_login'     : Model C — charged per login session (future)
+    //                   Rate stored in revenueConfig.ratePerLogin
+    revenueModel: {
+        type: String,
+        enum: ['per_patient', 'fixed_monthly', 'per_login'],
+        default: 'per_patient',
+    },
+    revenueConfig: {
+        monthlyFee:    { type: Number, default: 0 },   // for fixed_monthly
+        ratePerLogin:  { type: Number, default: 0 },   // for per_login (future)
+        billingCycle:  { type: String, enum: ['monthly', 'quarterly', 'annual'], default: 'monthly' },
+    },
+}, { timestamps: true });
+
+function deriveBaseCode(name) {
+    if (!name || typeof name !== 'string') return 'HSP';
+    const clean = name.trim();
+    const upper = clean.toUpperCase();
+
+    // Specific well-known hospital mappings for exact match with prompt rules
+    if (upper.includes('APOLLO')) return 'APL';
+    if (upper.includes('FORTIS')) return 'FOR';
+    if (upper.includes('MEDANTA')) return 'MDT';
+    if (upper.includes('AIIMS')) return 'AIM';
+    if (upper.includes('MAX')) return 'MAX';
+
+    // General smart generation for any other hospital
+    const ignoredWords = new Set(['HOSPITAL', 'HOSPITALS', 'HEALTHCARE', 'HEALTH', 'CARE', 'CLINIC', 'MEDICAL', 'CENTER', 'INSTITUTE', 'MULTI', 'SPECIALTY', 'SUPERSPECIALTY', 'PVT', 'LTD', 'THE', 'DR', 'OF', 'AND', '&', '-', 'GENERAL', 'CITY']);
+    const words = upper.replace(/[^A-Z\s]/g, ' ').split(/\s+/).filter(w => w.length > 0 && !ignoredWords.has(w));
+    
+    if (words.length === 0) {
+        const letters = upper.replace(/[^A-Z]/g, '');
+        return (letters.substring(0, 3) || 'HSP').padEnd(3, 'X');
+    }
+
+    const firstWord = words[0];
+    if (firstWord.length <= 3) {
+        return firstWord.padEnd(3, 'X');
+    }
+
+    // Try 1st letter + next two consonants of firstWord
+    const firstLetter = firstWord[0];
+    const rest = firstWord.substring(1);
+    const consonants = rest.replace(/[^BCDFGHJKLMNPQRSTVWXYZ]/g, '');
+    if (consonants.length >= 2) {
+        return firstLetter + consonants.substring(0, 2);
+    }
+
+    return firstWord.substring(0, 3);
+}
+
+hospitalSchema.pre('save', async function (next) {
+    // Only generate for hospital entity types (do NOT touch clinic module)
+    if (this.clinicType === 'clinic') return next();
+
+    // Once created/set, hospitalCode should NEVER change automatically even if name changes
+    if (this.hospitalCode && this.hospitalCode.trim() !== '') return next();
+
+    const baseCode = deriveBaseCode(this.name);
+    let candidate = baseCode;
+    let counter = 1;
+
+    // Check if any existing hospital already uses this candidate code
+    while (true) {
+        const existing = await this.constructor.findOne({
+            hospitalCode: candidate,
+            _id: { $ne: this._id }
+        });
+        if (!existing) {
+            break;
+        }
+        candidate = `${baseCode}${counter++}`;
+    }
+
+    this.hospitalCode = candidate;
+    next();
+});
+
+hospitalSchema.statics.ensureHospitalCode = async function (hospital) {
+    if (!hospital) return 'HSP';
+    if (hospital.clinicType === 'clinic') return hospital.clinicCode || 'CLC';
+    if (hospital.hospitalCode && hospital.hospitalCode.trim() !== '') {
+        return hospital.hospitalCode.trim().toUpperCase();
+    }
+    const doc = await this.findById(hospital._id || hospital);
+    if (doc) {
+        if (!doc.hospitalCode || doc.hospitalCode.trim() === '') {
+            const baseCode = deriveBaseCode(doc.name);
+            let candidate = baseCode;
+            let counter = 1;
+            while (true) {
+                const existing = await this.findOne({
+                    hospitalCode: candidate,
+                    _id: { $ne: doc._id }
+                });
+                if (!existing) break;
+                candidate = `${baseCode}${counter++}`;
+            }
+            doc.hospitalCode = candidate;
+            await doc.save();
+        }
+        return doc.hospitalCode || 'HSP';
+    }
+    return 'HSP';
+};
+
+// ── Post-save Hook: Auto-create AI Wallet for new hospitals ──
+hospitalSchema.post('save', async function (doc) {
+    try {
+        // Only trigger for newly created hospitals (check if createdAt ≈ updatedAt)
+        const isNew = doc.createdAt && doc.updatedAt &&
+            Math.abs(doc.createdAt.getTime() - doc.updatedAt.getTime()) < 5000;
+        if (!isNew) return;
+
+        const AIWallet = mongoose.model('AIWallet');
+        await AIWallet.findOneAndUpdate(
+            { hospitalId: doc._id },
+            {
+                $setOnInsert: {
+                    hospitalId: doc._id,
+                    initialAmount: 200000,  // ₹2,000.00 in paise
+                    budgetAmount: 200000,
+                    usedAmount: 0,
+                    remainingAmount: 200000,
+                    currency: 'INR',
+                    status: 'ACTIVE',
+                    lowBalanceThreshold: 50000,
+                    criticalBalanceThreshold: 25000,
+                    veryCriticalBalanceThreshold: 10000,
+                    totalRequests: 0,
+                    lastUsageAt: null
+                }
+            },
+            { upsert: true, new: true }
+        );
+        console.log(`✅ [AI Wallet] Auto-created ₹2,000 wallet for new hospital: ${doc.name}`);
+    } catch (err) {
+        // Non-fatal: wallet will be created on first access via getOrCreateWallet()
+        if (err.code !== 11000) { // Ignore duplicate key (already exists)
+            console.warn(`⚠️ [AI Wallet] Auto-create warning for hospital ${doc.name}:`, err.message);
+        }
+    }
+});
+
+// Cloud -> Local Sync Plugin
+const syncModelPlugin = require('../services/localAgent/syncModelPlugin');
+hospitalSchema.plugin(syncModelPlugin, { entityType: 'Hospital' });
+
+module.exports = mongoose.model('Hospital', hospitalSchema);

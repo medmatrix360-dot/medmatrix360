@@ -1,0 +1,530 @@
+/* ============================================================
+   CLINIC DASHBOARD — Healthcare Enterprise SaaS Theme
+   Design System:
+     Primary teal: #D85F89
+     Teal accent:  #D85F89
+     Light teal:   #FFF7FA
+     Page bg:      #F8FAFC
+     Card surface: #FFFFFF
+     Primary text: #0F172A
+     Secondary:    #475569
+     Muted text:   #64748B
+     Borders:      #E2E8F0
+   ============================================================ */
+
+.clinic-dashboard {
+    width: 100%;
+    min-height: calc(100vh - 64px);
+    background: #F8FAFC;
+    color: #0F172A;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+/* ── 1. Role / Mode Switcher Bar ────────────────────────────── */
+.clinic-role-switcher {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    background: #FFFFFF;
+    border-radius: 12px;
+    padding: 12px 20px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    border: 1px solid #E2E8F0;
+    flex-wrap: nowrap;
+}
+
+.switcher-label {
+    font-size: 11.5px;
+    font-weight: 700;
+    color: #64748B;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    margin-right: 4px;
+    white-space: nowrap;
+}
+
+.switcher-buttons {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+    scrollbar-width: none;
+    flex-grow: 1;
+}
+
+.switcher-buttons::-webkit-scrollbar {
+    display: none;
+}
+
+.switcher-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    padding: 8px 16px;
+    border-radius: 8px;
+    border: 1px solid #E2E8F0;
+    background: #FFFFFF;
+    color: #475569;
+    font-size: 13.5px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+    flex-shrink: 0;
+}
+
+.switcher-btn:hover {
+    background: #F8FAFC;
+    border-color: #CBD5E1;
+    color: #0F172A;
+}
+
+/* Unified Clinical Teal Active Mode (No Rainbow Colors) */
+.switcher-btn.active {
+    background: #D85F89 !important;
+    border-color: #D85F89 !important;
+    color: #FFFFFF !important;
+    font-weight: 700;
+    box-shadow: 0 2px 8px rgba(216, 95, 137, 0.25);
+}
+
+.switcher-icon {
+    display: inline-flex;
+    align-items: center;
+    font-size: 15px;
+}
+
+.switcher-user {
+    margin-left: auto;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 13px;
+    color: #475569;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.switcher-avatar {
+    width: 34px;
+    height: 34px;
+    border-radius: 50%;
+    background: #FFF7FA;
+    border: 1px solid #F1DCE4;
+    color: #D85F89;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-weight: 700;
+    font-size: 14px;
+}
+
+/* ── 2. Cards & Containers ──────────────────────────────────── */
+.clinic-card {
+    background: #FFFFFF;
+    border-radius: 14px;
+    padding: 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    border: 1px solid #E2E8F0;
+    color: #0F172A;
+}
+
+.clinic-card h2 {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #0F172A;
+    margin: 0 0 4px;
+    letter-spacing: -0.01em;
+}
+
+.clinic-card h3 {
+    font-size: 1.05rem;
+    font-weight: 700;
+    color: #0F172A;
+    margin: 0 0 6px;
+}
+
+.clinic-card p {
+    font-size: 13px;
+    color: #475569;
+    margin: 0;
+}
+
+/* ── 3. Clinic Overview Banner ──────────────────────────────── */
+.clinic-banner {
+    display: flex;
+    align-items: center;
+    gap: 18px;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 14px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+}
+
+.clinic-banner-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 12px;
+    background: #FFF7FA;
+    border: 1px solid #FCE7EF;
+    color: #D85F89;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 22px;
+    flex-shrink: 0;
+}
+
+.clinic-banner h2 {
+    font-size: 1.35rem;
+    font-weight: 800;
+    color: #0F172A;
+    margin: 0;
+    letter-spacing: -0.01em;
+}
+
+.clinic-banner p {
+    font-size: 13px;
+    color: #475569;
+    margin: 3px 0 0;
+}
+
+/* ── 4. Overview KPI Grid ───────────────────────────────────── */
+.clinic-kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(4, 1fr);
+    gap: 16px;
+    margin-bottom: 20px;
+}
+
+.clinic-kpi-card {
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 12px;
+    padding: 18px 20px;
+    box-shadow: 0 1px 3px rgba(15, 23, 42, 0.04);
+    transition: all 0.18s ease;
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    box-sizing: border-box;
+}
+
+.clinic-kpi-card:hover {
+    border-color: #CBD5E1;
+    box-shadow: 0 4px 12px rgba(15, 23, 42, 0.06);
+    transform: translateY(-2px);
+}
+
+.clinic-kpi-icon-box {
+    width: 42px;
+    height: 42px;
+    border-radius: 10px;
+    background: #FFF7FA;
+    border: 1px solid #FCE7EF;
+    color: #D85F89;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    flex-shrink: 0;
+}
+
+.clinic-kpi-val {
+    font-size: 20px;
+    font-weight: 800;
+    color: #0F172A;
+    letter-spacing: -0.02em;
+    margin-bottom: 2px;
+}
+
+.clinic-kpi-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: #475569;
+}
+
+.clinic-kpi-sub {
+    font-size: 11px;
+    color: #64748B;
+    margin-top: 2px;
+}
+
+.clinic-kpi-toggle-btn {
+    display: none;
+    width: 100%;
+    padding: 10px;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    color: #D85F89;
+    font-weight: 700;
+    font-size: 13px;
+    cursor: pointer;
+    margin-bottom: 16px;
+}
+
+/* ── 5. Revenue Chart & Month Selector ──────────────────────── */
+.clinic-revenue-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 18px;
+    flex-wrap: wrap;
+    gap: 14px;
+}
+
+.clinic-revenue-legend {
+    display: flex;
+    gap: 14px;
+    font-size: 11.5px;
+    font-weight: 600;
+    color: #475569;
+    flex-wrap: wrap;
+}
+
+.clinic-month-select-container {
+    position: relative;
+}
+
+.clinic-custom-month-dropdown {
+    position: relative;
+    min-width: 150px;
+}
+
+.custom-dropdown-selected {
+    background: #FFFFFF;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    padding: 7px 12px;
+    font-size: 13px;
+    font-weight: 600;
+    color: #0F172A;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+}
+
+.custom-dropdown-options {
+    position: absolute;
+    top: calc(100% + 4px);
+    right: 0;
+    background: #FFFFFF;
+    border: 1px solid #E2E8F0;
+    border-radius: 8px;
+    box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+    z-index: 100;
+    max-height: 220px;
+    overflow-y: auto;
+    width: 160px;
+}
+
+.custom-dropdown-option {
+    padding: 8px 12px;
+    font-size: 12.5px;
+    color: #1E293B;
+    cursor: pointer;
+    transition: background 0.12s;
+}
+
+.custom-dropdown-option:hover {
+    background: #FFF7FA;
+    color: #D85F89;
+    font-weight: 600;
+}
+
+.clinic-revenue-chart {
+    display: flex;
+    align-items: stretch;
+    justify-content: flex-start;
+    height: 180px;
+    padding-top: 12px;
+    border-bottom: 1px solid #E2E8F0;
+}
+
+/* ── 6. Tables ──────────────────────────────────────────────── */
+.clinic-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.clinic-table th {
+    background: #F8FAFC;
+    color: #475569;
+    font-weight: 700;
+    text-align: left;
+    padding: 12px 14px;
+    border-bottom: 1px solid #E2E8F0;
+    font-size: 11.5px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    white-space: nowrap;
+}
+
+.clinic-table td {
+    padding: 13px 14px;
+    border-bottom: 1px solid #F1F5F9;
+    color: #1E293B;
+    vertical-align: middle;
+}
+
+.clinic-table tr:hover td {
+    background: #F8FAFC;
+}
+
+/* ── 7. Buttons & Form Controls ─────────────────────────────── */
+.clinic-btn-primary {
+    background: #D85F89;
+    color: #FFFFFF;
+    border: 1px solid #D85F89;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+}
+
+.clinic-btn-primary:hover:not(:disabled) {
+    background: #C94D78;
+    box-shadow: 0 4px 12px rgba(216, 95, 137, 0.2);
+}
+
+.clinic-btn-secondary {
+    background: #FFFFFF;
+    color: #475569;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    padding: 8px 16px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.18s ease;
+    white-space: nowrap;
+}
+
+.clinic-btn-secondary:hover {
+    background: #F8FAFC;
+    border-color: #94A3B8;
+    color: #0F172A;
+}
+
+.clinic-input {
+    width: 100%;
+    padding: 8px 12px;
+    border: 1px solid #CBD5E1;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #0F172A;
+    background: #FFFFFF;
+    outline: none;
+    font-family: inherit;
+    box-sizing: border-box;
+    transition: all 0.18s ease;
+}
+
+.clinic-input:focus {
+    border-color: #D85F89;
+    box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.12);
+}
+
+/* ── 8. Status Badges & Pills ───────────────────────────────── */
+.clinic-status-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 3px 8px;
+    border-radius: 6px;
+    font-size: 11.5px;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+.clinic-status-badge.paid {
+    background: #F0FDF4;
+    color: #16A34A;
+    border: 1px solid #DCFCE7;
+}
+
+.clinic-status-badge.pending {
+    background: #FEF3C7;
+    color: #D97706;
+    border: 1px solid #FDE68A;
+}
+
+/* ── 9. Low Stock & Alert Items ─────────────────────────────── */
+.clinic-lowstock-list {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+}
+
+/* ── 10. Responsive Breakpoints ─────────────────────────────── */
+@media (max-width: 1100px) {
+    .clinic-kpi-grid { grid-template-columns: repeat(2, 1fr); }
+}
+
+@media (max-width: 768px) {
+    .clinic-role-switcher {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 14px;
+        gap: 10px;
+    }
+    .switcher-buttons {
+        width: 100%;
+    }
+    .switcher-user {
+        margin-left: 0;
+        width: 100%;
+        justify-content: flex-end;
+    }
+    .clinic-kpi-grid {
+        grid-template-columns: 1fr 1fr;
+        gap: 10px;
+    }
+    .clinic-kpi-grid .clinic-kpi-card:nth-child(n+5) {
+        display: none;
+    }
+    .clinic-kpi-grid.clinic-kpi-expanded .clinic-kpi-card:nth-child(n+5) {
+        display: flex;
+    }
+    .clinic-kpi-toggle-btn {
+        display: block;
+    }
+    .clinic-card {
+        padding: 16px;
+    }
+    .clinic-banner {
+        flex-direction: column;
+        align-items: flex-start;
+        padding: 16px;
+        gap: 12px;
+    }
+    .clinic-revenue-header {
+        flex-direction: column;
+        align-items: flex-start;
+        gap: 12px;
+    }
+}
+
+@media (max-width: 480px) {
+    .clinic-kpi-grid {
+        grid-template-columns: 1fr;
+    }
+    .switcher-btn {
+        padding: 7px 12px;
+        font-size: 12.5px;
+    }
+}

@@ -1,0 +1,1219 @@
+const express = require('express');
+const router = express.Router();
+const Appointment = require('../models/appointment.model');
+const User = require('../models/user.model');
+const Doctor = require('../models/doctor.model'); // Required to fetch doctor details
+const { verifyToken } = require('../middleware/auth.middleware');
+const { resolveTenant } = require('../middleware/tenantMiddleware');
+const MasterAdmission = require('../models/admission.model');
+const { getTenantModels } = require('../db/tenantModels');
+const { sendAppointmentConfirmationEmail } = require('../services/email.service');
+const { checkPatientDoubleBooking } = require('../utils/appointmentValidator');
+
+const verifyReception = (req, res, next) => {
+    if (!req.user) return res.status(401).json({ message: 'Unauthorized' });
+
+    const userRole = req.user.role;
+    const dynamicRoleName = req.user._roleData?.name;
+    const permissions = req.user._roleData?.permissions || [];
+
+    const roleStr = typeof userRole === 'string' ? userRole.toLowerCase() : '';
+    const dynRoleStr = dynamicRoleName ? dynamicRoleName.toLowerCase() : '';
+
+    const ALLOWED_ROLES = new Set(['reception', 'receptionist', 'admin', 'hospitaladmin', 'superadmin', 'centraladmin', 'frontdesk']);
+
+    if (ALLOWED_ROLES.has(roleStr) || ALLOWED_ROLES.has(dynRoleStr)) return next();
+    if (permissions.includes('reception_access') || permissions.includes('*')) return next();
+
+    // Specific portal routes that patients are allowed to access via ReceptionDashboard
+    if (roleStr === 'patient') {
+        const allowedPatientPaths = ['/register', '/intake', '/search-patients', '/appointments', '/book-appointment', '/transactions', '/send-aadhaar-otp', '/verify-aadhaar-otp'];
+        const isAllowedPath = allowedPatientPaths.some(p => req.path.startsWith(p));
+        if (isAllowedPath) return next();
+    }
+
+    // Allow cross-department roles to search for patients (e.g., pharmacy, doctor, lab, accountant, cashier)
+    if (req.path.startsWith('/search-patients') || req.path.startsWith('/patients')) {
+        const CROSS_DEPT_ROLES = new Set(['doctor', 'pharmacist', 'pharmacy', 'lab', 'technician', 'accountant', 'cashier']);
+        if (CROSS_DEPT_ROLES.has(roleStr) || CROSS_DEPT_ROLES.has(dynRoleStr) || permissions.includes('finance_view') || permissions.includes('billing_view')) return next();
+    }
+
+    return res.status(403).json({ success: false, message: 'Access denied: Reception access only' });
+};
+
+async function generateSmartMRN(hospitalId, hospital, User) {
+    // 1. If this entity is a Clinic, strictly preserve original clinic logic (Do NOT change Clinic MRN generation)
+    if (hospital && hospital.clinicType === 'clinic') {
+        const prefix = hospital.clinicCode || hospital.slug?.toUpperCase() || 'MRN';
+        const count = await User.countDocuments({ hospitalId, role: 'patient' });
+        return `${prefix}-${String(count + 1).padStart(3, '0')}`;
+    }
+
+    // 2. Otherwise, this is strictly the Hospital module.
+    const Hospital = require('../models/hospital.model');
+    const hospitalCode = await Hospital.ensureHospitalCode(hospital);
+
+    // Sequence begins strictly from 1 (001 -> 002 -> 003...) without skipping the initial sequence
+    let nextNum = 1;
+    while (true) {
+        const runningStr = String(nextNum).padStart(3, '0');
+        const candidate = `${hospitalCode}-M365-${runningStr}`;
+        const exists = await User.findOne({
+            $or: [
+                { hospitalId, mrn: candidate },
+                { hospitalId, patientId: candidate },
+                { mrn: candidate },
+                { patientId: candidate }
+            ]
+        });
+        if (!exists) {
+            return candidate;
+        }
+        nextNum++;
+    }
+}
+
+// 1. REGISTER (WALK-IN)
+router.post('/register', verifyToken, verifyReception, async (req, res) => {
+    try {
+        let { name, email, phone, age, aadhaarNumber } = req.body;
+
+        // Sanitize — trim whitespace and format fields
+        name = name ? String(name).trim() : undefined;
+        let cleanPhone = phone ? String(phone).replace(/\D/g, '') : '';
+        if (cleanPhone.startsWith('91') && cleanPhone.length === 12) cleanPhone = cleanPhone.substring(2);
+        if (cleanPhone.startsWith('0') && cleanPhone.length === 11) cleanPhone = cleanPhone.substring(1);
+        phone = cleanPhone.slice(-10);
+
+        email = (email && String(email).trim()) ? String(email).trim().toLowerCase() : undefined;
+
+        let parsedAge = undefined;
+        if (age !== undefined && age !== null && String(age).trim() !== '') {
+            const num = parseInt(String(age).trim(), 10);
+            if (!isNaN(num) && num > 0 && num <= 150) {
+                parsedAge = num;
+            }
+        }
+
+        let cleanAadhaar = undefined;
+        if (aadhaarNumber && String(aadhaarNumber).trim() !== '') {
+            const rawAadhaar = String(aadhaarNumber).trim().replace(/\D/g, '');
+            if (rawAadhaar.length === 12) {
+                cleanAadhaar = rawAadhaar;
+            } else {
+                return res.status(400).json({ success: false, message: 'Aadhaar number must be exactly 12 digits (or leave it blank).' });
+            }
+        }
+
+        // Phone is required for identification, Email is optional
+        if (!name || !phone) {
+            return res.status(400).json({ success: false, message: 'Name and Phone are required' });
+        }
+        if (!/^\d{10}$/.test(phone)) {
+            return res.status(400).json({ success: false, message: 'Mobile number must be exactly 10 digits.' });
+        }
+        if (name.length > 100) return res.status(400).json({ success: false, message: 'Name too long (max 100 chars)' });
+        if (email && email.length > 200) return res.status(400).json({ success: false, message: 'Email too long (max 200 chars)' });
+
+        const currentHospitalId = req.user.hospitalId || req.body.hospitalId;
+
+        // Check if patient exists by Phone AND Name (case-insensitive)
+        let userQuery = { 
+            phone,
+            name: new RegExp('^' + String(name).trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&') + '$', 'i')
+        };
+
+        if (req.user.role === 'patient') {
+            const PatientAuth = require('../models/patientAuth.model');
+            const authRecord = await PatientAuth.findById(req.user.patientId || req.user._id);
+            if (authRecord && authRecord.mobile !== phone) {
+                return res.status(403).json({ success: false, message: 'You can only register using your own mobile number.' });
+            }
+        }
+        
+        if (currentHospitalId) {
+            userQuery.hospitalId = currentHospitalId;
+        }
+
+        // Check if Aadhaar is already registered for a different patient within THIS hospital
+        if (cleanAadhaar && currentHospitalId) {
+            const existingAadhaar = await User.findOne({
+                hospitalId: currentHospitalId,
+                aadhaarNumber: cleanAadhaar
+            });
+            if (existingAadhaar && (existingAadhaar.phone !== phone || existingAadhaar.name.toLowerCase() !== name.toLowerCase())) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'A patient with this Aadhaar number already exists in this hospital.'
+                });
+            }
+        }
+
+        // Check if Email is already registered for a different patient within THIS hospital
+        if (email && currentHospitalId) {
+            const existingEmail = await User.findOne({
+                hospitalId: currentHospitalId,
+                email: email
+            });
+            if (existingEmail && (existingEmail.phone !== phone || existingEmail.name.toLowerCase() !== name.toLowerCase())) {
+                return res.status(400).json({
+                    success: false,
+                    message: 'A patient with this email address already exists in this hospital.'
+                });
+            }
+        }
+
+        let user = await User.findOne(userQuery);
+        // Fallback: If not found by name+phone, check if a user with this phone exists in the same hospital
+        if (!user && currentHospitalId) {
+            user = await User.findOne({ hospitalId: currentHospitalId, phone });
+        }
+
+        if (user) {
+            // Update name and fields if provided
+            if (name && name !== user.name) user.name = name;
+            if (email && email !== user.email) user.email = email;
+            if (parsedAge !== undefined && parsedAge !== user.age) user.age = parsedAge;
+            if (cleanAadhaar && cleanAadhaar !== user.aadhaarNumber) user.aadhaarNumber = cleanAadhaar;
+
+            const hospitalId = req.user.hospitalId || req.body.hospitalId || user.hospitalId;
+            const Hospital = require('../models/hospital.model');
+            const hospital = hospitalId ? await Hospital.findById(hospitalId) : null;
+
+            let needsMrnUpgrade = !user.patientId || !user.mrn;
+            if (hospital && hospital.clinicType !== 'clinic') {
+                const hospitalCode = await Hospital.ensureHospitalCode(hospital);
+                const escapedCode = hospitalCode.replace(/[-/\\^$*+?.()|[\]{}]/g, '\\$&');
+                const validRegex = new RegExp(`^${escapedCode}-M365-\\d+$`, 'i');
+                if (!user.mrn || !validRegex.test(user.mrn)) {
+                    needsMrnUpgrade = true;
+                }
+            }
+
+            if (needsMrnUpgrade) {
+                const patientId = await generateSmartMRN(hospitalId, hospital, User);
+                user.patientId = patientId;
+                user.mrn = patientId;
+            }
+
+            await user.save();
+
+            if (req.user.role === 'patient') {
+                const PatientAuth = require('../models/patientAuth.model');
+                const authRecord = await PatientAuth.findById(req.user.patientId || req.user._id);
+                if (authRecord && !authRecord.linkedPatientProfileId) {
+                    authRecord.linkedPatientProfileId = user._id;
+                    await authRecord.save();
+                }
+            }
+
+            return res.status(200).json({ success: true, message: 'Patient record updated!', user });
+        }
+
+        // Create New Walk-in Patient — use smart hospital/clinic MRN sequence
+        const hospitalId = req.user.hospitalId || req.body.hospitalId;
+        const Hospital = require('../models/hospital.model');
+        const hospital = hospitalId ? await Hospital.findById(hospitalId) : null;
+        const patientId = await generateSmartMRN(hospitalId, hospital, User);
+
+        const userData = {
+            name,
+            phone,
+            role: 'patient',
+            patientId,
+            mrn: patientId,
+            fertilityProfile: {},
+            hospitalId: hospitalId || undefined
+        };
+
+        if (parsedAge !== undefined) userData.age = parsedAge;
+        if (cleanAadhaar) userData.aadhaarNumber = cleanAadhaar;
+        if (email) userData.email = email;
+
+        const newUser = new User(userData);
+
+        await newUser.save();
+
+        if (req.user.role === 'patient') {
+            const PatientAuth = require('../models/patientAuth.model');
+            const authRecord = await PatientAuth.findById(req.user.patientId || req.user._id);
+            if (authRecord && !authRecord.linkedPatientProfileId) {
+                authRecord.linkedPatientProfileId = newUser._id;
+                await authRecord.save();
+            }
+        }
+
+        res.status(201).json({ success: true, message: 'Patient registered successfully!', user: newUser });
+    } catch (error) {
+        console.error("Register Error:", error);
+        if (error.code === 11000) {
+            // Tell the user exactly which field is duplicated
+            const field = Object.keys(error.keyPattern || {})[0] || 'field';
+            const friendlyField = field === 'phone' ? 'Phone number'
+                : field === 'email' ? 'Email'
+                    : field === 'patientId' ? 'Patient ID'
+                        : field;
+            return res.status(400).json({
+                success: false,
+                message: `A patient with this ${friendlyField} already exists. Please search for the existing patient instead.`
+            });
+        }
+        if (error.name === 'ValidationError') {
+            const firstErr = Object.values(error.errors || {})[0]?.message || 'Validation error';
+            return res.status(400).json({ success: false, message: firstErr });
+        }
+        res.status(500).json({ success: false, message: error.message || 'An internal error occurred' });
+    }
+});
+
+router.post('/send-aadhaar-otp', verifyToken, verifyReception, async (req, res) => {
+    try {
+        const { aadhaarNumber } = req.body;
+        if (!/^\d{12}$/.test(aadhaarNumber)) return res.status(400).json({ success: false, message: 'Invalid Aadhaar Format (12 digits required)' });
+
+        if (aadhaarNumber.startsWith('9999')) return res.status(400).json({ success: false, message: 'Verification Failed: Invalid Aadhaar Number.' });
+
+        // TODO: Integrate real UIDAI/NSDL OTP API here
+        // For now return a pending message — DO NOT expose any OTP in the response
+        res.json({ success: true, message: 'Aadhaar OTP sent to the registered mobile number.' });
+    } catch (e) {
+        console.error('[send-aadhaar-otp]', e.message);
+        res.status(500).json({ success: false, message: 'Failed to send OTP. Please try again.' });
+    }
+});
+
+router.post('/verify-aadhaar-otp', verifyToken, verifyReception, async (req, res) => {
+    const { otp } = req.body;
+    if (!otp || !/^\d{6}$/.test(otp)) return res.status(400).json({ success: false, message: 'Invalid OTP format (6 digits required)' });
+    // TODO: Verify OTP with real UIDAI/NSDL API
+    return res.status(503).json({ success: false, message: 'Aadhaar verification is not available in this environment. Contact admin.' });
+});
+
+// 2. SEARCH & LIST
+router.get('/search-patients', verifyToken, verifyReception, async (req, res) => {
+    try {
+        const { query } = req.query;
+        if (!query || typeof query !== 'string' || query.trim().length === 0) return res.json({ success: true, patients: [] });
+
+        const safeQuery = query.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        const queryFilter = {
+            $or: [
+                { name: { $regex: safeQuery, $options: 'i' } },
+                { firstName: { $regex: safeQuery, $options: 'i' } },
+                { lastName: { $regex: safeQuery, $options: 'i' } },
+                { mrn: { $regex: safeQuery, $options: 'i' } },
+                { mrnNo: { $regex: safeQuery, $options: 'i' } },
+                { patientId: { $regex: safeQuery, $options: 'i' } },
+                { phone: { $regex: safeQuery, $options: 'i' } },
+                { mobile: { $regex: safeQuery, $options: 'i' } },
+                { 'fertilityProfile.partnerFirstName': { $regex: safeQuery, $options: 'i' } }
+            ]
+        };
+
+        if (req.user.hospitalId) {
+            queryFilter.hospitalId = req.user.hospitalId;
+        }
+
+        const patients = await User.find(queryFilter).select('name phone email patientId mrn mrnNo fertilityProfile createdAt').lean();
+
+        // Resolve doctor names and appointment status
+        const patientIds = patients.map(p => p._id);
+        const appointments = await Appointment.find({
+            userId: { $in: patientIds }
+        })
+        .populate('doctorId', 'name')
+        .sort({ createdAt: -1 })
+        .lean();
+
+        const apptMap = {};
+        appointments.forEach(appt => {
+            if (appt.userId && !apptMap[appt.userId.toString()]) {
+                apptMap[appt.userId.toString()] = appt;
+            }
+        });
+
+        const resolvedPatients = patients.map(p => {
+            const latestAppt = apptMap[p._id.toString()];
+            return {
+                ...p,
+                assignedDoctor: latestAppt?.doctorId?.name || 'Not Assigned',
+                appointmentStatus: latestAppt?.status || 'No Appointment'
+            };
+        });
+
+        res.json({ success: true, patients: resolvedPatients });
+    } catch (error) {
+        console.error("Search error:", error);
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+router.get('/patients', verifyToken, verifyReception, async (req, res) => {
+    try {
+        const queryFilter = {
+            role: { $in: ['user', 'patient'] }
+        };
+        if (req.user.hospitalId) {
+            queryFilter.hospitalId = req.user.hospitalId;
+        }
+
+        const patients = await User.find(queryFilter)
+            .select('name phone email patientId fertilityProfile createdAt')
+            .sort({ createdAt: -1 })
+            .limit(100)
+            .lean();
+
+        // Resolve doctor names and appointment status
+        const patientIds = patients.map(p => p._id);
+        const appointments = await Appointment.find({
+            userId: { $in: patientIds }
+        })
+        .populate('doctorId', 'name')
+        .sort({ createdAt: -1 })
+        .lean();
+
+        const apptMap = {};
+        appointments.forEach(appt => {
+            if (appt.userId && !apptMap[appt.userId.toString()]) {
+                apptMap[appt.userId.toString()] = appt;
+            }
+        });
+
+        const resolvedPatients = patients.map(p => {
+            const latestAppt = apptMap[p._id.toString()];
+            return {
+                ...p,
+                assignedDoctor: latestAppt?.doctorId?.name || 'Not Assigned',
+                appointmentStatus: latestAppt?.status || 'No Appointment'
+            };
+        });
+
+        res.json({ success: true, patients: resolvedPatients });
+    } catch (error) {
+        console.error("Error fetching patients list:", error);
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// 3. UPDATE INTAKE
+router.put('/intake/:userId', verifyToken, verifyReception, async (req, res) => {
+    try {
+        const { userId } = req.params;
+        const updates = req.body;
+        const updateQuery = {};
+
+        // Map Root fields
+        if (updates.firstName || updates.lastName) updateQuery.name = `${String(updates.firstName || '')} ${String(updates.lastName || '')}`.trim();
+        if (updates.email && String(updates.email).trim()) updateQuery.email = String(updates.email).trim().toLowerCase();
+        if (updates.phone || updates.mobile) {
+            let ph = String(updates.phone || updates.mobile).replace(/\D/g, '');
+            if (ph.startsWith('91') && ph.length === 12) ph = ph.substring(2);
+            if (ph.startsWith('0') && ph.length === 11) ph = ph.substring(1);
+            ph = ph.slice(-10);
+            if (!/^\d{10}$/.test(ph)) {
+                return res.status(400).json({ success: false, message: 'Mobile number must be exactly 10 digits.' });
+            }
+            updateQuery.phone = ph;
+        }
+        if (updates.age !== undefined && updates.age !== null && String(updates.age).trim() !== '') {
+            const parsedAge = parseInt(String(updates.age).trim(), 10);
+            if (!isNaN(parsedAge) && parsedAge > 0 && parsedAge <= 150) updateQuery.age = parsedAge;
+        }
+        if (updates.address) updateQuery.address = String(updates.address);
+        if (updates.houseNo) updateQuery.houseNo = String(updates.houseNo);
+        if (updates.street) updateQuery.street = String(updates.street);
+        if (updates.city) updateQuery.city = String(updates.city);
+        if (updates.state) updateQuery.state = String(updates.state);
+        if (updates.zipCode) updateQuery.zipCode = String(updates.zipCode);
+        if (updates.avatar) updateQuery.avatar = String(updates.avatar);
+        if (updates.relationToPatient) updateQuery.relationToPatient = String(updates.relationToPatient);
+        if (updates.gender !== undefined) updateQuery.gender = String(updates.gender);
+        if (updates.dob !== undefined) updateQuery.dob = String(updates.dob);
+        if (updates.bloodGroup !== undefined) updateQuery.bloodGroup = String(updates.bloodGroup);
+
+        // Update Root Aadhaar Fields
+        if (updates.aadhaar && String(updates.aadhaar).trim() !== '') {
+            const rawAadhaar = String(updates.aadhaar).trim().replace(/\D/g, '');
+            if (rawAadhaar.length === 12) {
+                updateQuery.aadhaarNumber = rawAadhaar;
+            }
+        }
+        if (updates.isAadhaarVerified !== undefined) updateQuery.isAadhaarVerified = Boolean(updates.isAadhaarVerified);
+
+        // Map Fertility Profile fields
+        const profileFields = [
+            'title', 'firstName', 'middleName', 'lastName', 'dob', 'age', 'gender', 'maritalStatus', 'occupation',
+            'aadhaar', 'altPhone', 'patientCategory', 'nationality', 'isInternational', 'language', 'languagesKnown',
+            'height', 'weight', 'bmi', 'bloodGroup',
+            'partnerTitle', 'partnerFirstName', 'partnerLastName', 'partnerDob', 'partnerAge', 'partnerAadhaar',
+            'partnerMobile', 'partnerAltPhone', 'partnerEmail', 'partnerAddressSame', 'partnerAddress',
+            'partnerArea', 'partnerCity', 'partnerState', 'partnerCountry', 'partnerPinCode', 'partnerNationality',
+            'partnerHeight', 'partnerWeight', 'partnerBmi', 'partnerBloodGroup',
+            'reasonForVisit', 'speciality', 'doctor', 'referralType', 'visitDate', 'visitTime',
+            'infertilityType', 'chiefComplaint', 'historyPulse', 'historyBp', 'infertilityDuration', 'marriageDuration', 'generalComments',
+            'lmpDate', 'menstrualRegularity', 'menstrualFlow', 'menstrualPain', 'cycleDetails',
+            'familyHistory', 'medicalHistoryDiabetes', 'medicalHistoryHypertension', 'medicalHistoryThyroid',
+            'medicalHistoryHeart', 'medicalHistoryAsthma', 'medicalHistoryTb', 'medicalHistoryOther', 'medicalHistoryPcos',
+            'para', 'abortion', 'ectopic', 'liveBirth', 'recurrentLoss', 'obstetricComments',
+            'pastInvestigations', 'partnerBp', 'partnerMedicalComments',
+            'labResults', 'hormonalValues', 'usgRemarks', 'psychiatricHistory', 'sexualHistory', 'identificationMarks', 'addictionHistory',
+            'treatmentHistory',
+            'examGeneral', 'examSystemic', 'examBreast', 'examAbdomen', 'examSpeculum', 'examVaginal',
+            'hirsutism', 'galactorrhoea', 'papSmear',
+            'usgType', 'afcRight', 'afcLeft', 'amh', 'uterusSize', 'uterusPosition',
+            'ovaryRightSize', 'ovaryLeftSize', 'endometriumThickness',
+            'diagnosisInfertilityType', 'maleFactor', 'femaleFactor', 'diagnosisYears', 'diagnosisOthers',
+            'doctorNotes', 'prescriptionComments', 'procedureAdvice', 'followUpDate',
+            'relationToPatient'
+        ];
+
+        profileFields.forEach(field => {
+            if (updates[field] !== undefined) {
+                // Cast to String to prevent object-based NoSQL injections. Boolean/Numbers convert cleanly to String, which Mongoose casts back.
+                updateQuery[`fertilityProfile.${field}`] = typeof updates[field] === 'object' && updates[field] !== null 
+                    ? String(updates[field]) 
+                    : updates[field];
+            }
+        });
+
+        const updatedUser = await User.findByIdAndUpdate(userId, { $set: updateQuery }, { new: true, runValidators: false });
+        if (!updatedUser) return res.status(404).json({ success: false, message: 'Patient not found' });
+        res.json({ success: true, message: 'Updated', user: updatedUser });
+    } catch (error) { res.status(500).json({ success: false, message: 'An internal error occurred' }); }
+});
+
+// 4. APPOINTMENTS
+router.get('/appointments', verifyToken, verifyReception, resolveTenant, async (req, res) => {
+    try {
+        let queryFilter = {};
+        if (req.user.hospitalId) queryFilter.hospitalId = req.user.hospitalId;
+
+        // Default: today's active appointments only (reception queue view)
+        // Pass ?all=true to get full history
+        if (req.query.all !== 'true' && req.user.role !== 'patient') {
+            const todayStart = new Date(); todayStart.setHours(0, 0, 0, 0);
+            const todayEnd   = new Date(); todayEnd.setHours(23, 59, 59, 999);
+            queryFilter.appointmentDate = { $gte: todayStart, $lte: todayEnd };
+            queryFilter.status = { $ne: 'cancelled' };
+        }
+
+        // SECURITY: If patient, ONLY return their own appointments
+        if (req.user.role === 'patient') {
+            queryFilter.userId = req.user._id;
+        }
+
+        // Department filtering
+        if (req.query.department) {
+            const deptRegex = new RegExp(`^${req.query.department}$`, 'i');
+            const deptCondition = {
+                $or: [
+                    { department: { $regex: deptRegex } },
+                    { serviceName: { $regex: deptRegex } }
+                ]
+            };
+            if (!queryFilter.$and) queryFilter.$and = [];
+            queryFilter.$and.push(deptCondition);
+        }
+
+        // Search filtering (Server-side)
+        if (req.query.search) {
+            const searchRegex = new RegExp(req.query.search, 'i');
+            const MasterUser = require('../models/user.model');
+            
+            const matchingUsers = await MasterUser.find({
+                $or: [
+                    { name: searchRegex },
+                    { phone: searchRegex },
+                    { patientId: searchRegex },
+                    { patientUid: searchRegex }
+                ]
+            }).select('_id').lean();
+            const userIds = matchingUsers.map(u => u._id);
+            
+            const matchingDoctors = await MasterUser.find({
+                name: searchRegex, role: 'doctor'
+            }).select('_id').lean();
+            const doctorIds = matchingDoctors.map(u => u._id);
+            
+            const searchConditions = [];
+            if (userIds.length > 0) searchConditions.push({ userId: { $in: userIds } });
+            if (doctorIds.length > 0) searchConditions.push({ doctorId: { $in: doctorIds } });
+            
+            // Allow matching direct string fields on the Appointment model
+            searchConditions.push({ doctorName: searchRegex });
+            searchConditions.push({ patientId: searchRegex });
+            
+            // Match numeric token if search string is a number
+            if (!isNaN(req.query.search.trim()) && req.query.search.trim() !== '') {
+                searchConditions.push({ tokenNumber: Number(req.query.search.trim()) });
+            }
+            
+            if (!queryFilter.$and) queryFilter.$and = [];
+            queryFilter.$and.push({ $or: searchConditions });
+        }
+
+        const appointments = await Appointment.find(queryFilter)
+            .populate('userId', 'name email phone patientId')
+            .populate('doctorId', 'name')
+            .sort({ tokenNumber: 1, appointmentTime: 1 })
+            .lean();
+
+        // Check active admissions for these patients to set isHospitalized
+        const patientIds = appointments.map(apt => apt.userId?._id).filter(Boolean);
+        const Admission = req.tenantDb ? getTenantModels(req.tenantDb).Admission : MasterAdmission;
+        const activeAdmissions = await Admission.find({
+            hospitalId: req.user.hospitalId,
+            patientId: { $in: patientIds },
+            status: 'Admitted'
+        }).select('patientId').lean();
+
+        const activeAdmittedPatientIds = new Set(activeAdmissions.filter(adm => adm.patientId).map(adm => adm.patientId.toString()));
+
+        const appointmentsWithHospitalized = appointments.map(apt => ({
+            ...apt,
+            isHospitalized: apt.userId?._id ? activeAdmittedPatientIds.has(apt.userId._id.toString()) : false
+        }));
+
+        res.json({ success: true, appointments: appointmentsWithHospitalized });
+    } catch (e) {
+        console.error('[GET /appointments Error]:', e);
+        res.status(500).json({ success: false, message: 'An internal error occurred' }); 
+    }
+});
+
+// 5. RESCHEDULE & CANCEL
+router.patch('/appointments/:id/reschedule', verifyToken, verifyReception, async (req, res) => {
+    const { id } = req.params; const { date, time } = req.body;
+    const reschQuery = { _id: id };
+    if (req.user.hospitalId) reschQuery.hospitalId = req.user.hospitalId;
+    const appt = await Appointment.findOne(reschQuery);
+    if (!appt) return res.status(404).json({ success: false, message: 'Appointment not found or unauthorized' });
+
+    const patientConflict = await checkPatientDoubleBooking({
+        userId: appt.userId,
+        patientId: appt.patientId,
+        date,
+        time,
+        excludeAppointmentId: appt._id
+    });
+    if (patientConflict && patientConflict.conflict) {
+        return res.status(400).json({ success: false, message: patientConflict.message });
+    }
+
+    appt.appointmentDate = date;
+    appt.appointmentTime = time;
+    appt.status = 'confirmed';
+    await appt.save();
+    res.json({ success: true });
+});
+router.patch('/appointments/:id/cancel', verifyToken, verifyReception, async (req, res) => {
+    const cancelQuery = { _id: req.params.id };
+    if (req.user.hospitalId) cancelQuery.hospitalId = req.user.hospitalId;
+    const appt = await Appointment.findOneAndUpdate(cancelQuery, { status: 'cancelled' });
+    if (!appt) return res.status(404).json({ success: false, message: 'Appointment not found or unauthorized' });
+    res.json({ success: true });
+});
+// 6. FOLLOW-UP VALIDITY
+router.get('/patients/:patientId/followup-status', verifyToken, async (req, res) => {
+    try {
+        const { patientId } = req.params;
+        const { department, auto, date } = req.query;
+        const mongoose = require('mongoose');
+        let patientQuery = {};
+        if (mongoose.Types.ObjectId.isValid(patientId) && String(patientId).length === 24) {
+            patientQuery = { _id: patientId };
+        } else {
+            patientQuery = { $or: [{ patientId: patientId }, { mrn: patientId }] };
+        }
+        const patient = await User.findOne(patientQuery);
+        if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+        const hospitalId = req.user.hospitalId || patient.hospitalId;
+        if (!hospitalId) return res.status(400).json({ success: false, message: 'No hospital linked' });
+
+        const Hospital = require('../models/hospital.model');
+        const hospital = await Hospital.findById(hospitalId).select('departmentFees departmentValidity appointmentFee');
+        if (!hospital) return res.status(404).json({ success: false, message: 'Hospital not found' });
+
+        let selectedDept = department;
+
+        if (auto === 'true') {
+            const lastAppt = await Appointment.findOne({
+                userId: patient._id,
+                status: { $ne: 'cancelled' },
+                $or: [{ amount: { $gt: 0 } }, { visitType: 'New Consultation' }]
+            }).sort({ appointmentDate: -1 });
+
+            if (lastAppt) {
+                selectedDept = lastAppt.department || '';
+            }
+        }
+
+        if (selectedDept) {
+            const validityDays = hospital.departmentValidity?.get(selectedDept) || 0;
+            const deptFee = hospital.departmentFees?.get(selectedDept) ?? hospital.appointmentFee ?? 500;
+
+            const lastApptForDept = await Appointment.findOne({
+                userId: patient._id,
+                department: selectedDept,
+                status: { $ne: 'cancelled' },
+                $or: [{ amount: { $gt: 0 } }, { visitType: 'New Consultation' }]
+            }).sort({ appointmentDate: -1 });
+
+            if (!lastApptForDept || !lastApptForDept.appointmentDate) {
+                return res.json({
+                    success: true,
+                    active: false,
+                    lastConsultation: null,
+                    fee: deptFee,
+                    message: 'First Consultation',
+                    department: selectedDept,
+                    doctorId: lastApptForDept?.doctorId || null,
+                    doctorName: lastApptForDept?.doctorName || null
+                });
+            }
+
+            const lastDate = new Date(lastApptForDept.appointmentDate);
+            lastDate.setUTCHours(0, 0, 0, 0);
+            const validUntil = new Date(lastDate);
+            validUntil.setDate(validUntil.getDate() + validityDays);
+
+            const currentDate = date ? new Date(date) : new Date();
+            currentDate.setUTCHours(0, 0, 0, 0);
+
+            if (currentDate <= validUntil && validityDays > 0) {
+                return res.json({
+                    success: true,
+                    active: true,
+                    validUntil: validUntil.toISOString().split('T')[0],
+                    lastConsultation: lastDate.toISOString().split('T')[0],
+                    fee: 0,
+                    message: 'Follow-up Active',
+                    department: selectedDept,
+                    doctorId: lastApptForDept.doctorId,
+                    doctorName: lastApptForDept.doctorName
+                });
+            } else {
+                return res.json({
+                    success: true,
+                    active: false,
+                    validUntil: validUntil.toISOString().split('T')[0],
+                    lastConsultation: lastDate.toISOString().split('T')[0],
+                    fee: deptFee,
+                    message: 'Follow-up Expired',
+                    department: selectedDept,
+                    doctorId: lastApptForDept.doctorId,
+                    doctorName: lastApptForDept.doctorName
+                });
+            }
+        } else {
+            // Return ALL active followups
+            const activeFollowups = [];
+            if (hospital.departmentValidity) {
+                const departments = Array.from(hospital.departmentValidity.keys());
+                for (const dept of departments) {
+                    const validityDays = hospital.departmentValidity.get(dept);
+                    if (validityDays > 0) {
+                        const lastAppt = await Appointment.findOne({
+                            userId: patient._id,
+                            department: dept,
+                            status: { $ne: 'cancelled' },
+                            $or: [{ amount: { $gt: 0 } }, { visitType: 'New Consultation' }]
+                        }).sort({ appointmentDate: -1 });
+
+                        if (lastAppt && lastAppt.appointmentDate) {
+                            const lastDate = new Date(lastAppt.appointmentDate);
+                            lastDate.setUTCHours(0, 0, 0, 0);
+                            const validUntil = new Date(lastDate);
+                            validUntil.setDate(validUntil.getDate() + validityDays);
+        
+                            const currentDate = new Date();
+                            currentDate.setUTCHours(0, 0, 0, 0);
+        
+                            if (currentDate <= validUntil) {
+                                activeFollowups.push({
+                                    department: dept,
+                                    validUntil: validUntil.toISOString().split('T')[0],
+                                    lastConsultation: lastDate.toISOString().split('T')[0],
+                                });
+                            }
+                        }
+                    }
+                }
+            }
+            return res.json({ success: true, activeFollowups });
+        }
+    } catch (e) {
+        console.error(e);
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// 7. BOOK APPOINTMENT (NEW: Assign Doctor)
+router.post('/book-appointment', verifyToken, verifyReception, async (req, res) => {
+    try {
+        const { 
+            patientId, 
+            doctorId, 
+            date, 
+            time, 
+            notes, 
+            paymentMethod, 
+            paymentStatus, 
+            amount, 
+            department, 
+            splitPayments = [],
+            proofUrl,
+            upiScreenshotUrl,
+            transactionId,
+            upiId,
+            cardDetails,
+            bankReference
+        } = req.body;
+
+        if (!patientId || !doctorId || !date) {
+            return res.status(400).json({ success: false, message: 'Missing booking details' });
+        }
+
+        const bookingAmount = Number(amount || 0);
+        if (bookingAmount > 0) {
+            const totalSplit = splitPayments.reduce((acc, p) => acc + (Number(p.amount) || 0), 0);
+            if (totalSplit !== bookingAmount) {
+                return res.status(400).json({ success: false, message: `Payment is incomplete. Total paid (₹${totalSplit}) must match the full Consultation Fee (₹${bookingAmount}) before booking.` });
+            }
+        }
+
+        const reqDateMatch = String(date).split('T')[0];
+        const todayMatch = new Date().toISOString().split('T')[0];
+        if (reqDateMatch < todayMatch) {
+            return res.status(400).json({ success: false, message: 'Cannot book appointments in the past' });
+        }
+
+        const mongoose = require('mongoose');
+        const isObjectId = mongoose.Types.ObjectId.isValid(patientId) && patientId.length === 24;
+        const patient = await User.findOne(isObjectId ? { _id: patientId } : { patientId: patientId });
+        if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+
+        const doctor = await Doctor.findById(doctorId);
+        if (!doctor) return res.status(404).json({ success: false, message: 'Doctor not found' });
+
+        // Validate doctor's day availability
+        const [year, month, day] = String(date).split('T')[0].split('-');
+        const bookingDateObj = new Date(Number(year), Number(month) - 1, Number(day));
+        const daysOfWeek = ['sunday', 'monday', 'tuesday', 'wednesday', 'thursday', 'friday', 'saturday'];
+        const dayName = daysOfWeek[bookingDateObj.getDay()];
+        
+        const isAvailable = doctor.availability && doctor.availability[dayName] && doctor.availability[dayName].available === true;
+        if (!isAvailable) {
+            const capitalizedDay = dayName.charAt(0).toUpperCase() + dayName.slice(1);
+            return res.status(400).json({ success: false, message: `Doctor ${doctor.name} is not available on ${capitalizedDay}s` });
+        }
+
+        const hospitalId = req.user.hospitalId || patient.hospitalId;
+
+        // Determine appointment mode
+        const Hospital = require('../models/hospital.model');
+        const hospital = hospitalId ? await Hospital.findById(hospitalId).select('appointmentMode name address city state phone') : null;
+        const isTokenMode = hospital?.appointmentMode === 'token';
+
+        let finalTime = time;
+        let tokenNumber = null;
+
+        const startOfDay = new Date(date);
+        startOfDay.setUTCHours(0, 0, 0, 0);
+        const endOfDay = new Date(date);
+        endOfDay.setUTCHours(23, 59, 59, 999);
+
+        if (isTokenMode) {
+            // Token mode: assign next sequential token for this doctor on this date
+            const count = await Appointment.countDocuments({
+                doctorId: doctor._id,
+                appointmentDate: { $gte: startOfDay, $lte: endOfDay },
+                status: { $ne: 'cancelled' }
+            });
+            tokenNumber = count + 1;
+            finalTime = `token-${tokenNumber}`;
+        } else {
+            // Slot mode: time required, check double-booking
+            if (!time) {
+                return res.status(400).json({ success: false, message: 'Appointment time is required for slot-based booking' });
+            }
+            const existing = await Appointment.findOne({
+                doctorId: doctor._id,
+                appointmentDate: { $gte: startOfDay, $lte: endOfDay },
+                appointmentTime: time,
+                status: { $ne: 'cancelled' }
+            });
+            if (existing) {
+                return res.status(400).json({ success: false, message: 'Slot already booked for this doctor at this time!' });
+            }
+        }
+
+        const patientConflict = await checkPatientDoubleBooking({
+            userId: patient._id,
+            patientId: patient.patientId,
+            date,
+            time: finalTime || time
+        });
+        if (patientConflict && patientConflict.conflict) {
+            return res.status(400).json({ success: false, message: patientConflict.message });
+        }
+
+        // --- ENFORCE FOLLOW-UP VALIDITY FEE ---
+        let finalAmount = Number(amount) || doctor.consultationFee || 0;
+        if (department && hospital) {
+            const validityDays = hospital.departmentValidity?.get(department) || 0;
+            if (validityDays > 0) {
+                const lastAppt = await Appointment.findOne({
+                    userId: patient._id,
+                    department,
+                    status: { $ne: 'cancelled' },
+                    $or: [{ amount: { $gt: 0 } }, { visitType: 'New Consultation' }]
+                }).sort({ appointmentDate: -1 });
+
+                if (lastAppt && lastAppt.appointmentDate) {
+                    const lastDate = new Date(lastAppt.appointmentDate);
+                    lastDate.setUTCHours(0, 0, 0, 0);
+                    const validUntil = new Date(lastDate);
+                    validUntil.setDate(validUntil.getDate() + validityDays);
+
+                    const currentDate = new Date(date);
+                    currentDate.setUTCHours(0, 0, 0, 0);
+
+                    if (currentDate <= validUntil) {
+                        finalAmount = 0; // Waive fee
+                    } else if (finalAmount === 0) {
+                        // If frontend sent 0 but expired, enforce department fee
+                        finalAmount = hospital.departmentFees?.get(department) ?? hospital.appointmentFee ?? 500;
+                    }
+                }
+            }
+        }
+        // --------------------------------------
+
+        const resolvedMethod = splitPayments.length > 0 ? [...new Set(splitPayments.map(p => p.method))].join(' / ') : (paymentMethod || 'Cash');
+        const isUpiInvolved = resolvedMethod.toUpperCase().includes('UPI') || resolvedMethod.toUpperCase().includes('ONLINE') ||
+            (splitPayments && splitPayments.some(p => {
+                const m = (p.method || '').toUpperCase();
+                return m.includes('UPI') || m.includes('ONLINE');
+            }));
+        const isCardInvolved = resolvedMethod.toUpperCase().includes('CARD') ||
+            (splitPayments && splitPayments.some(p => (p.method || '').toUpperCase().includes('CARD')));
+
+        const finalProofUrl = isUpiInvolved ? (upiScreenshotUrl || proofUrl || '') : '';
+        const finalCardRef = (isUpiInvolved || isCardInvolved) ? (transactionId || bankReference || cardDetails || '') : '';
+        const finalUpiId = isUpiInvolved ? (upiId || '') : '';
+
+        const newAppointment = new Appointment({
+            userId: patient._id,
+            hospitalId,
+            patientId: patient.patientId || 'WALK-IN',
+            doctorId: doctor._id,
+            doctorUserId: doctor.userId,
+            doctorName: doctor.name,
+            serviceId: doctor.services?.[0] || 'general',
+            serviceName: 'Walk-in Visit',
+            department: department || doctor.departments?.[0] || 'General',
+            visitType: finalAmount === 0 ? 'Follow-up' : 'New Consultation',
+            appointmentDate: new Date(date),
+            appointmentTime: finalTime || '',
+            tokenNumber,
+            amount: finalAmount,
+            status: 'confirmed',
+            paymentStatus: finalAmount === 0 ? 'Paid' : (paymentStatus || 'Paid'),
+            paymentMethod: resolvedMethod,
+            splitPayments,
+            upiScreenshotUrl: finalProofUrl,
+            cardRef: finalCardRef,
+            notes: (notes && String(notes).trim() !== 'Walk-in created by reception') ? String(notes).trim() : '',
+            bookedBy: req.user._id
+        });
+
+        await newAppointment.save();
+
+        // Create PaymentTransaction for audit and billing history when appointment is paid
+        if (finalAmount > 0 && (newAppointment.paymentStatus === 'Paid' || paymentStatus === 'Paid')) {
+            try {
+                const PaymentTransaction = require('../models/paymentTransaction.model');
+                const pt = new PaymentTransaction({
+                    hospitalId: newAppointment.hospitalId,
+                    patientId: newAppointment.userId,
+                    paymentMode: newAppointment.paymentMethod,
+                    paymentStatus: 'Paid',
+                    amount: newAppointment.amount,
+                    splitPayments: newAppointment.splitPayments,
+                    transactionId: finalCardRef,
+                    upiId: finalUpiId,
+                    cardDetails: isCardInvolved ? (cardDetails || '') : '',
+                    bankReference: (isUpiInvolved || isCardInvolved) ? (bankReference || '') : '',
+                    proofUrl: finalProofUrl,
+                    description: `OPD Consultation Fee - Dr. ${doctor.name}`,
+                    billedItems: { appointments: [newAppointment._id] },
+                    addedBy: req.user._id
+                });
+                await pt.save();
+            } catch (ptErr) {
+                console.error('[book-appointment] PaymentTransaction creation error:', ptErr.message);
+            }
+        }
+
+        // [MODULE 5] Automatically complete Hospital Registration by linking PatientAuth to User Profile
+        if (req.user.role === 'patient') {
+            const PatientAuth = require('../models/patientAuth.model');
+            const authRecord = await PatientAuth.findById(req.user.patientId || req.user._id);
+            if (authRecord && !authRecord.linkedPatientProfileId) {
+                authRecord.linkedPatientProfileId = patient._id;
+                await authRecord.save();
+            }
+        }
+
+        // Fire-and-forget: send appointment confirmation email (never blocks response)
+        const hospitalAddress = [hospital?.address, hospital?.city, hospital?.state].filter(Boolean).join(', ');
+        sendAppointmentConfirmationEmail({
+            patientName: patient.name,
+            patientEmail: patient.email,
+            mrn: patient.patientId || patient.mrn || 'N/A',
+            appointmentId: newAppointment._id.toString(),
+            doctorName: doctor.name,
+            department: doctor.departments?.[0] || 'General',
+            appointmentDate: date,
+            appointmentTime: isTokenMode ? `Token #${tokenNumber}` : (finalTime || ''),
+            consultationFee: newAppointment.amount,
+            paymentStatus: newAppointment.paymentStatus,
+            paymentMode: newAppointment.paymentMethod || paymentMethod || 'Not Available',
+            hospitalName: hospital?.name || 'Hospital',
+            hospitalAddress: hospitalAddress,
+            hospitalPhone: hospital?.phone || ''
+        }).catch(err => console.error('[book-appointment] Email send background error:', err.message));
+
+        res.json({ success: true, message: 'Appointment booked successfully!', appointment: newAppointment, tokenNumber });
+
+    } catch (error) {
+        console.error("Reception Booking Error:", error);
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// 7b. CONFIRM PAYMENT for an existing appointment
+router.patch('/appointments/:id/confirm-payment', verifyToken, verifyReception, async (req, res) => {
+    try {
+        const { paymentMethod, amount, transactionId, upiId, cardDetails, bankReference, proofUrl, splitPayments = [] } = req.body;
+        const findQuery = { _id: req.params.id };
+        if (req.user.hospitalId) findQuery.hospitalId = req.user.hospitalId;
+        const appt = await Appointment.findOne(findQuery).populate('doctorId', 'name');
+        if (!appt) return res.status(404).json({ success: false, message: 'Appointment not found or unauthorized' });
+        
+        appt.paymentStatus = 'Paid';
+        appt.paymentMethod = splitPayments.length > 0 ? [...new Set(splitPayments.map(p => p.method))].join(' / ') : (paymentMethod || appt.paymentMethod || 'Cash');
+        appt.splitPayments = splitPayments;
+        if (amount !== undefined) appt.amount = amount;
+        await appt.save();
+
+        const PaymentTransaction = require('../models/paymentTransaction.model');
+        const pt = new PaymentTransaction({
+            hospitalId: req.user.hospitalId || appt.hospitalId,
+            patientId: appt.userId,
+            paymentMode: appt.paymentMethod,
+            splitPayments,
+            paymentStatus: 'Paid',
+            amount: Number(appt.amount) || 0,
+            transactionId,
+            upiId,
+            cardDetails,
+            bankReference,
+            proofUrl,
+            description: `OPD Consultation Payment - Dr. ${appt.doctorId?.name || 'Doctor'}`,
+            billedItems: {
+                appointments: [appt._id]
+            },
+            addedBy: req.user._id || req.user.userId
+        });
+        await pt.save();
+
+        res.json({ success: true, appointment: appt });
+    } catch (error) {
+        console.error('[confirm-payment-error]', error);
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// 7. PATIENT CHECK-IN (Reception to Doctor/Clinic Workflow)
+router.post('/check-in', verifyToken, verifyReception, async (req, res) => {
+    try {
+        const { patientId, appointmentId } = req.body;
+
+        if (!patientId) {
+            return res.status(400).json({ success: false, message: 'Patient ID is required' });
+        }
+
+        const ClinicalVisit = require('../models/clinicalVisit.model');
+        const Notification = require('../models/notification.model');
+        const io = req.app.get('io');
+
+        // Create clinical visit for today
+        const visit = new ClinicalVisit({
+            patientId,
+            appointmentId: appointmentId || null,
+            status: 'check_in'
+        });
+        await visit.save();
+
+        if (appointmentId) {
+            // Update appointment status
+            await Appointment.findByIdAndUpdate(appointmentId, { status: 'completed' }); // Or maybe a new status like 'in_progress'
+        }
+
+        // Emit socket event to update Reception/Doctor grids
+        if (io) {
+            io.emit('patient_status_changed', { visitId: visit._id, patientId, status: 'check_in', appointmentId });
+        }
+
+        res.json({ success: true, message: 'Patient checked in successfully', visit });
+    } catch (error) {
+        console.error("Check-in Error:", error);
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// 8. TRANSACTIONS
+router.get('/transactions', verifyToken, verifyReception, async (req, res) => {
+    try {
+        let queryFilter = { amount: { $gt: 0 } };
+        if (req.user.hospitalId) {
+            queryFilter.hospitalId = req.user.hospitalId;
+        }
+        const transactions = await Appointment.find(queryFilter)
+            .populate('userId', 'name phone patientId email')
+            .populate('doctorId', 'name')
+            .sort({ createdAt: -1 })
+            .limit(100)
+            .lean();
+        res.json({ success: true, transactions });
+    } catch (e) { res.status(500).json({ success: false, message: 'An internal error occurred' }); }
+});
+
+// 9. RECEPTION DASHBOARD STATS (REAL TIME)
+router.get('/stats', verifyToken, verifyReception, resolveTenant, async (req, res) => {
+    try {
+        const hospitalId = req.user.hospitalId;
+        const now = new Date();
+        const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 0, 0, 0);
+        const endOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate(), 23, 59, 59, 999);
+
+        const startOfYesterday = new Date(startOfToday);
+        startOfYesterday.setDate(startOfYesterday.getDate() - 1);
+        const endOfYesterday = new Date(endOfToday);
+        endOfYesterday.setDate(endOfYesterday.getDate() - 1);
+
+        const patientBaseQuery = { role: { $in: ['user', 'patient'] } };
+        if (hospitalId) patientBaseQuery.hospitalId = hospitalId;
+
+        // 1. Registrations
+        const todayRegistrations = await User.countDocuments({
+            ...patientBaseQuery,
+            createdAt: { $gte: startOfToday, $lte: endOfToday }
+        });
+        const yesterdayRegistrations = await User.countDocuments({
+            ...patientBaseQuery,
+            createdAt: { $gte: startOfYesterday, $lte: endOfYesterday }
+        });
+        const totalPatients = await User.countDocuments(patientBaseQuery);
+
+        // 2. Appointments
+        const apptBaseQuery = { status: { $ne: 'cancelled' } };
+        if (hospitalId) apptBaseQuery.hospitalId = hospitalId;
+
+        const todayAppointments = await Appointment.countDocuments({
+            ...apptBaseQuery,
+            appointmentDate: { $gte: startOfToday, $lte: endOfToday }
+        });
+        const yesterdayAppointments = await Appointment.countDocuments({
+            ...apptBaseQuery,
+            appointmentDate: { $gte: startOfYesterday, $lte: endOfYesterday }
+        });
+
+        // 3. Collections (Consultation Fees & Paid Appointments)
+        const paidApptsToday = await Appointment.find({
+            ...apptBaseQuery,
+            paymentStatus: 'Paid',
+            $or: [
+                { updatedAt: { $gte: startOfToday, $lte: endOfToday } },
+                { createdAt: { $gte: startOfToday, $lte: endOfToday } },
+                { appointmentDate: { $gte: startOfToday, $lte: endOfToday } }
+            ]
+        }).select('amount');
+
+        const todayCollections = paidApptsToday.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+
+        const paidApptsYesterday = await Appointment.find({
+            ...apptBaseQuery,
+            paymentStatus: 'Paid',
+            $or: [
+                { updatedAt: { $gte: startOfYesterday, $lte: endOfYesterday } },
+                { createdAt: { $gte: startOfYesterday, $lte: endOfYesterday } },
+                { appointmentDate: { $gte: startOfYesterday, $lte: endOfYesterday } }
+            ]
+        }).select('amount');
+
+        const yesterdayCollections = paidApptsYesterday.reduce((sum, a) => sum + (Number(a.amount) || 0), 0);
+
+        // 4. Hospitalization & Inpatient Bed Stats
+        const Bed = require('../models/bed.model');
+        const hospBaseQuery = {};
+        if (hospitalId) hospBaseQuery.hospitalId = hospitalId;
+
+        const currentlyHospitalized = await MasterAdmission.countDocuments({
+            ...hospBaseQuery,
+            status: 'Admitted'
+        });
+
+        const todayAdmissions = await MasterAdmission.countDocuments({
+            ...hospBaseQuery,
+            admissionDate: { $gte: startOfToday, $lte: endOfToday }
+        });
+
+        const yesterdayAdmissions = await MasterAdmission.countDocuments({
+            ...hospBaseQuery,
+            admissionDate: { $gte: startOfYesterday, $lte: endOfYesterday }
+        });
+
+        const availableBeds = await Bed.countDocuments({
+            ...hospBaseQuery,
+            status: 'AVAILABLE'
+        });
+
+        const totalBeds = await Bed.countDocuments(hospBaseQuery);
+
+        // Calculate trends
+        const calcTrend = (today, yesterday) => {
+            if (yesterday === 0) {
+                return today > 0 ? `+${today} today` : 'Live';
+            }
+            const diff = Math.round(((today - yesterday) / yesterday) * 100);
+            return diff >= 0 ? `+${diff}% from yesterday` : `${diff}% from yesterday`;
+        };
+
+        res.json({
+            success: true,
+            stats: {
+                todayRegistrations,
+                totalPatients,
+                todayAppointments,
+                currentlyHospitalized,
+                todayAdmissions,
+                availableBeds,
+                totalBeds,
+                todayCollections,
+                pendingBills: 0,
+                regTrend: calcTrend(todayRegistrations, yesterdayRegistrations),
+                apptTrend: calcTrend(todayAppointments, yesterdayAppointments),
+                admTrend: calcTrend(todayAdmissions, yesterdayAdmissions),
+                collTrend: calcTrend(todayCollections, yesterdayCollections)
+            }
+        });
+    } catch (e) {
+        console.error('[GET /stats Error]:', e);
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+module.exports = router;

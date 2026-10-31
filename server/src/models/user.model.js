@@ -1,0 +1,156 @@
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+
+const userSchema = new mongoose.Schema({
+    name: { type: String, required: true, minlength: 2 },
+    email: { type: String, required: false, lowercase: true, trim: true, match: /^\S+@\S+\.\S+$/ },
+    password: { type: String, required: false },
+    phone: { type: String, required: true, match: /^\d{10}$/ },
+
+    // Dynamic role reference — points to a Role document in the DB
+    // Special string roles: 'centraladmin' (top-level), 'hospitaladmin' (hospital-level), 'superadmin' (legacy)
+    role: {
+        type: mongoose.Schema.Types.Mixed, // ObjectId (normal) or String ('centraladmin'/'hospitaladmin'/'superadmin')
+        default: 'patient'
+    },
+
+    // Hospital reference for multi-tenant support
+    // centraladmin: null (manages all hospitals)
+    // hospitaladmin: points to their hospital
+    // staff: points to the hospital they belong to
+    hospitalId: { type: mongoose.Schema.Types.ObjectId, ref: 'Hospital', default: null },
+
+    // Patient ID for clinical tracking
+    patientId: { type: String, sparse: true },
+    uhid: { type: String, sparse: true },
+    patientStatus: { type: String, default: 'Active' },
+    branch: { type: String },
+
+    // Static Demographics
+    dob: String,
+    gender: String,
+    bloodGroup: String,
+    maritalStatus: String,
+    nationality: String,
+    occupation: String,
+    
+    // Address
+    address: String,
+    houseNo: String,
+    buildingName: String,
+    street: String,
+    area: String,
+    landmark: String,
+    city: String,
+    state: String,
+    country: { type: String, default: 'India' },
+    zipCode: String,
+
+    // Contact
+    alternateMobile: String,
+    whatsappNumber: String,
+
+    // Emergency Contact
+    emergencyContact: {
+        name: String,
+        relation: String,
+        mobile: String
+    },
+
+    // Identity Verification (KYC)
+    aadhaarNumber: { 
+        type: String, 
+        match: /^\d{12}$/, 
+        sparse: true, 
+        trim: true 
+    },
+    panNumber: String,
+    isAadhaarVerified: { type: Boolean, default: false },
+
+    // ABDM / ABHA Integration (Separate from MRN, non-mandatory)
+    abdm: {
+        abhaNumber:      { type: String, sparse: true, trim: true, default: null },
+        abhaAddress:     { type: String, sparse: true, trim: true, lowercase: true, default: null },
+        abhaName:        { type: String, default: null },   // exactly as ABDM returns it (needed for link tokens)
+        abhaGender:      { type: String, default: null },   // 'M' | 'F' | 'O'
+        abhaYearOfBirth: { type: Number, default: null },
+        kycVerified:     { type: Boolean, default: false },
+        isVerified:      { type: Boolean, default: false },
+        verifiedAt:      { type: Date, default: null },
+        linkedAt:        { type: Date, default: null },
+        status:          { type: String, enum: ['Not Linked', 'Verified', 'Pending', 'Failed'], default: 'Not Linked' },
+    },
+
+    age: { 
+        type: Number, 
+        min: 1,
+        max: 999,
+        validate: {
+            validator: Number.isInteger,
+            message: '{VALUE} is not an integer value'
+        }
+    },
+
+    // Clinical Profile
+    patientType: { type: String, enum: ['Primary', 'Partner'], default: 'Primary' },
+    partner: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
+    ivfDetails: {
+        coupleId: String,
+        partnerName: String,
+        partnerMrn: String
+    },
+    fertilityProfile: { type: mongoose.Schema.Types.Mixed, default: {} },
+
+    // Hospital Details
+    department: { type: String },
+    primaryDoctor: { type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' },
+    sourceType: { type: String },
+    sourceDetails: { type: String },
+    registrationType: { type: String, default: 'Self' },
+
+    services: [String],
+    departments: [{ type: String }],
+    assignedDoctors: [{ type: mongoose.Schema.Types.ObjectId, ref: 'Doctor' }],
+
+    // Profile Image
+    avatar: { type: String, default: null },
+
+    // MFA (TOTP-based, optional per staff account)
+    mfaEnabled: { type: Boolean, default: false },
+    mfaSecret:  { type: String, default: null, select: false },
+
+    // Increment to invalidate all outstanding tokens for this user (revoke-all-sessions)
+    tokenVersion: { type: Number, default: 0 },
+
+    // Last login timestamp
+    lastLogin: { type: Date, default: null },
+
+    // Predefined Demo Account flag for strict role-based OTP bypass (only true for allowlisted demo users)
+    isPredefinedDemo: { type: Boolean, default: false },
+}, { timestamps: true });
+
+// Scoped compound indexes for multi-tenant isolation per hospital
+userSchema.index({ hospitalId: 1, phone: 1 }, { unique: true, partialFilterExpression: { phone: { $type: "string" } } });
+userSchema.index({ hospitalId: 1, email: 1 }, { unique: true, partialFilterExpression: { email: { $type: "string" } } });
+userSchema.index({ hospitalId: 1, aadhaarNumber: 1 }, { unique: true, partialFilterExpression: { aadhaarNumber: { $type: "string" } } });
+userSchema.index({ hospitalId: 1, patientId: 1 }, { unique: true, partialFilterExpression: { patientId: { $type: "string" } } });
+userSchema.index({ hospitalId: 1, 'abdm.abhaNumber': 1 }, { sparse: true });
+userSchema.index({ hospitalId: 1, 'abdm.abhaAddress': 1 }, { sparse: true });
+
+userSchema.pre('save', async function (next) {
+    if (!this.isModified('password')) return next();
+    const salt = await bcrypt.genSalt(10);
+    this.password = await bcrypt.hash(this.password, salt);
+    next();
+});
+
+userSchema.methods.comparePassword = async function (entered) {
+    if (!this.password) return false;
+    return await bcrypt.compare(entered, this.password);
+};
+
+// Cloud -> Local Sync Plugin
+const syncModelPlugin = require('../services/localAgent/syncModelPlugin');
+userSchema.plugin(syncModelPlugin, { entityType: 'Patient' });
+
+module.exports = mongoose.model('User', userSchema);

@@ -1,0 +1,1523 @@
+/**
+ * /api/clinic — Dedicated routes for simple clinics (clinicType = 'clinic')
+ * Uses ClinicPatient model (separate from User/staff).
+ * All data is scoped to req.user.hospitalId.
+ */
+
+const express = require('express');
+const router = express.Router();
+const mongoose = require('mongoose');
+const path = require('path');
+const fs = require('fs');
+const multer = require('multer');
+const { verifyToken } = require('../middleware/auth.middleware');
+const validateFileType = require('../utils/validateFileType');
+const Hospital = require('../models/hospital.model');
+const Appointment = require('../models/appointment.model');
+const Inventory = require('../models/inventory.model');
+const PharmacyOrder = require('../models/pharmacyOrder.model');
+const ClinicPatient = require('../models/clinicPatient.model');
+const ClinicSubscription = require('../models/clinicSubscription.model');
+const TreatmentPlan = require('../models/treatmentPlan.model');
+const Notification = require('../models/notification.model');
+const User = require('../models/user.model');
+
+// ─── Report upload configuration ─────────────────────────────────────────────
+const reportsDir = path.join(__dirname, '../../uploads/patient-reports');
+if (!fs.existsSync(reportsDir)) fs.mkdirSync(reportsDir, { recursive: true });
+
+const reportStorage = multer.diskStorage({
+    destination: (_req, _file, cb) => cb(null, reportsDir),
+    filename:    (_req, file, cb) => {
+        const safe = Date.now() + '-' + Math.round(Math.random() * 1e9);
+        cb(null, 'report-' + safe + path.extname(file.originalname));
+    },
+});
+const uploadReport = multer({
+    storage: reportStorage,
+    limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+    fileFilter: (_req, file, cb) => {
+        const ok = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'].includes(file.mimetype);
+        cb(ok ? null : new Error('Only PDF and images are allowed'), ok);
+    },
+});
+
+// ─────────────────────────────────────────────
+// Middleware: must be hospitaladmin of a clinic
+// ─────────────────────────────────────────────
+const verifyClinicAdmin = async (req, res, next) => {
+    try {
+        await verifyToken(req, res, async () => {
+            const roleName = (req.user._roleData?.name || '').toLowerCase();
+            if (roleName !== 'hospitaladmin') {
+                return res.status(403).json({ success: false, message: 'Clinic admin access required' });
+            }
+            if (!req.user.hospitalId) {
+                return res.status(403).json({ success: false, message: 'No clinic assigned to your account' });
+            }
+            next();
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+};
+
+const verifyClinicStaff = async (req, res, next) => {
+    try {
+        await verifyToken(req, res, async () => {
+            const roleName = (req.user._roleData?.name || '').toLowerCase();
+            const allowed = ['hospitaladmin', 'doctor', 'clinic doctor', 'reception', 'receptionist'];
+            if (!allowed.includes(roleName)) {
+                return res.status(403).json({ success: false, message: 'Clinic staff access required' });
+            }
+            if (!req.user.hospitalId) {
+                return res.status(403).json({ success: false, message: 'No clinic assigned to your account' });
+            }
+            next();
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+};
+
+const hid = (req) => {
+    if (!req.user || !req.user.hospitalId) {
+        throw new Error("No clinic assigned to your account or invalid hospital ID.");
+    }
+    try {
+        return new mongoose.Types.ObjectId(req.user.hospitalId.toString());
+    } catch (err) {
+        throw new Error("Invalid clinic ID format.");
+    }
+};
+
+// ─────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────
+const todayRange = () => {
+    const start = new Date(); start.setHours(0, 0, 0, 0);
+    const end   = new Date(); end.setHours(23, 59, 59, 999);
+    return { start, end };
+};
+
+// Get or ensure clinic code (fallback if not set)
+const getClinicCode = async (hospitalId) => {
+    const clinic = await Hospital.findById(hospitalId).select('clinicCode name');
+    if (clinic.clinicCode) return clinic.clinicCode;
+    // Auto-generate from name
+    const code = clinic.name.toUpperCase().replace(/[^A-Z]/g, '').slice(0, 4) || 'CLN';
+    await Hospital.findByIdAndUpdate(hospitalId, { clinicCode: code });
+    return code;
+};
+
+// Upsert subscription record and increment new patient count
+const trackNewPatient = async (clinicId) => {
+    try {
+        const now = new Date();
+        const month = now.getMonth() + 1;
+        const year  = now.getFullYear();
+        const clinic = await Hospital.findById(clinicId).select('subscription');
+        const rate   = clinic?.subscription?.ratePerPatient || 0;
+        const total  = await ClinicPatient.countDocuments({ clinicId });
+
+        await ClinicSubscription.findOneAndUpdate(
+            { clinicId, month, year },
+            {
+                $inc: { newPatientCount: 1 },
+                $set: { totalPatientCount: total, ratePerPatient: rate },
+            },
+            { upsert: true, new: true }
+        ).then(sub => {
+            sub.totalAmount = sub.newPatientCount * sub.ratePerPatient;
+            return sub.save();
+        }).then(saved => {
+            const io = require('express')().get('io');
+            if (io) {
+                io.to(clinicId.toString()).emit('clinic_metrics_updated', {
+                    newPatients: saved.newPatientCount,
+                    totalPatients: saved.totalPatientCount,
+                    month: saved.month,
+                    year: saved.year
+                });
+            }
+        });
+    } catch (err) {
+        console.error('trackNewPatient Background Error:', err);
+    }
+};
+
+// ─────────────────────────────────────────────
+// STATS — GET /api/clinic/stats
+// ─────────────────────────────────────────────
+router.get('/stats', verifyClinicStaff, async (req, res) => {
+    try {
+        const hospitalId = hid(req);
+        const { start: today, end: todayEnd } = todayRange();
+        const firstOfMonth = new Date(today.getFullYear(), today.getMonth(), 1);
+
+        const [
+            totalPatients,
+            todayPatients,
+            totalAppointments,
+            todayAppointments,
+            completedAppointments,
+            pendingAppointments,
+            revenueAgg,
+            todayRevenueAgg,
+            monthRevenueAgg,
+            recentAppointments,
+            lowStockItems,
+            planRevenueAgg,
+            planTodayRevenueAgg,
+            planMonthRevenueAgg,
+        ] = await Promise.all([
+            ClinicPatient.countDocuments({ clinicId: hospitalId }),
+            ClinicPatient.countDocuments({ clinicId: hospitalId, createdAt: { $gte: today } }),
+            Appointment.countDocuments({ hospitalId }),
+            Appointment.countDocuments({ hospitalId, appointmentDate: { $gte: today, $lte: todayEnd } }),
+            Appointment.countDocuments({ hospitalId, status: 'completed' }),
+            Appointment.countDocuments({ hospitalId, status: { $in: ['pending', 'confirmed'] } }),
+            Appointment.aggregate([
+                { $match: { hospitalId, paymentStatus: 'paid' } },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ]),
+            Appointment.aggregate([
+                { $match: { hospitalId, paymentStatus: 'paid', appointmentDate: { $gte: today, $lte: todayEnd } } },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ]),
+            Appointment.aggregate([
+                { $match: { hospitalId, paymentStatus: 'paid', createdAt: { $gte: firstOfMonth } } },
+                { $group: { _id: null, total: { $sum: '$amount' } } }
+            ]),
+            Appointment.find({ hospitalId })
+                .populate('clinicPatientId', 'name phone patientUid')
+                .sort({ createdAt: -1 })
+                .limit(10)
+                .lean(),
+            Promise.resolve([]), // no low stock alert for clinics
+            // Treatment plan revenue — sum of all amountPaid across visits
+            TreatmentPlan.aggregate([
+                { $match: { hospitalId } },
+                { $unwind: '$visits' },
+                { $group: { _id: null, total: { $sum: '$visits.amountPaid' } } }
+            ]),
+            TreatmentPlan.aggregate([
+                { $match: { hospitalId } },
+                { $unwind: '$visits' },
+                { $match: { 'visits.completedAt': { $gte: today, $lte: todayEnd } } },
+                { $group: { _id: null, total: { $sum: '$visits.amountPaid' } } }
+            ]),
+            TreatmentPlan.aggregate([
+                { $match: { hospitalId, createdAt: { $gte: firstOfMonth } } },
+                { $unwind: '$visits' },
+                { $group: { _id: null, total: { $sum: '$visits.amountPaid' } } }
+            ]),
+        ]);
+
+        // Monthly revenue trend (last 6 months) — appointments + treatment plans combined
+        const sixMonthsAgo = new Date();
+        sixMonthsAgo.setMonth(sixMonthsAgo.getMonth() - 6);
+        const [apptTrend, planTrend] = await Promise.all([
+            Appointment.aggregate([
+                { $match: { hospitalId, paymentStatus: 'paid', createdAt: { $gte: sixMonthsAgo } } },
+                { $group: { _id: { month: { $month: '$createdAt' }, year: { $year: '$createdAt' } }, revenue: { $sum: '$amount' }, count: { $sum: 1 } } },
+                { $sort: { '_id.year': 1, '_id.month': 1 } }
+            ]),
+            TreatmentPlan.aggregate([
+                { $match: { hospitalId, createdAt: { $gte: sixMonthsAgo } } },
+                { $unwind: '$visits' },
+                { $match: { 'visits.amountPaid': { $gt: 0 } } },
+                { $group: { _id: { month: { $month: '$visits.completedAt' }, year: { $year: '$visits.completedAt' } }, revenue: { $sum: '$visits.amountPaid' } } },
+                { $sort: { '_id.year': 1, '_id.month': 1 } }
+            ]),
+        ]);
+        // Merge the two trend arrays by month/year key
+        const trendMap = {};
+        for (const t of apptTrend) {
+            const key = `${t._id.year}-${t._id.month}`;
+            trendMap[key] = { ...t, revenue: t.revenue };
+        }
+        for (const t of planTrend) {
+            if (!t._id.month) continue; // skip if completedAt was null
+            const key = `${t._id.year}-${t._id.month}`;
+            if (trendMap[key]) trendMap[key].revenue += t.revenue;
+            else trendMap[key] = { _id: t._id, revenue: t.revenue, count: 0 };
+        }
+        const monthlyTrend = Object.values(trendMap).sort((a, b) =>
+            a._id.year !== b._id.year ? a._id.year - b._id.year : a._id.month - b._id.month
+        );
+
+        const apptRevenue      = revenueAgg[0]?.total || 0;
+        const apptTodayRevenue = todayRevenueAgg[0]?.total || 0;
+        const apptMonthRevenue = monthRevenueAgg[0]?.total || 0;
+        const planRevenue      = planRevenueAgg[0]?.total || 0;
+        const planTodayRevenue = planTodayRevenueAgg[0]?.total || 0;
+        const planMonthRevenue = planMonthRevenueAgg[0]?.total || 0;
+
+        // Total pending balance across all active plans
+        const pendingPlansAgg = await TreatmentPlan.aggregate([
+            { $match: { hospitalId, status: 'active' } },
+            { $group: { _id: null, total: { $sum: '$pendingBalance' } } }
+        ]);
+        const treatmentPlanPending = pendingPlansAgg[0]?.total || 0;
+
+        res.json({
+            success: true,
+            stats: {
+                totalPatients,
+                todayPatients,
+                totalAppointments,
+                todayAppointments,
+                completedAppointments,
+                pendingAppointments,
+                totalRevenue:          apptRevenue + planRevenue,
+                todayRevenue:          apptTodayRevenue + planTodayRevenue,
+                monthRevenue:          apptMonthRevenue + planMonthRevenue,
+                treatmentPlanRevenue:  planRevenue,
+                treatmentPlanPending,
+                recentAppointments,
+                lowStockItems,
+                monthlyTrend,
+            }
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// LIST PATIENTS — GET /api/clinic/patients
+// ─────────────────────────────────────────────
+router.get('/patients', verifyClinicStaff, async (req, res) => {
+    try {
+        const search = req.query.search || req.query.s || req.query.term || '';
+        const query = { clinicId: hid(req), isActive: true };
+
+        if (search && search.trim().length >= 1) {
+            const s = search.trim();
+            // Escape special regex characters
+            const escapedS = s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            query.$or = [
+                { name:          { $regex: escapedS, $options: 'i' } },
+                { phone:         { $regex: escapedS, $options: 'i' } },
+                { patientUid:    { $regex: escapedS, $options: 'i' } },
+                { aadhaarNumber: { $regex: escapedS, $options: 'i' } },
+            ];
+        }
+
+        const patients = await ClinicPatient.find(query)
+            .sort({ createdAt: -1 })
+            .limit(200)
+            .lean();
+
+        res.json({ success: true, patients });
+    } catch (err) {
+        console.error('CLINIC PATIENTS GET ERROR:', err);
+        res.status(500).json({ success: false, message: 'An internal error occurred: ' + err.message });
+    }
+});
+
+// ─────────────────────────────────────────────
+// REGISTER PATIENT — POST /api/clinic/patients
+// ─────────────────────────────────────────────
+router.post('/patients', verifyClinicStaff, async (req, res) => {
+    try {
+        const { name, phone, email, age, dob, gender, address, bloodGroup, allergies, chronicConditions, relatives, aadhaarNumber } = req.body;
+        const clinicId = hid(req);
+
+        // Fetch hospital to check plan
+        const Hospital = require('../models/hospital.model');
+        const clinicData = await Hospital.findById(clinicId).select('subscriptionPlan');
+        const isStarterPlan = clinicData?.subscriptionPlan === 'starter';
+
+        if (!name || !phone) return res.status(400).json({ success: false, message: 'Name and phone are required' });
+
+        if (isStarterPlan) {
+            if (!email || !age) {
+                return res.status(400).json({ success: false, message: 'Name, phone, email, and age are required' });
+            }
+        }
+
+        const cleanPhone = phone.replace(/\D/g, '');
+        if (cleanPhone.length !== 10) return res.status(400).json({ success: false, message: 'Phone must be exactly 10 digits' });
+
+        let cleanAge = null;
+        if (age) {
+            cleanAge = String(age).replace(/\D/g, '');
+            if (isStarterPlan) {
+                if (!cleanAge || cleanAge !== String(age) || cleanAge.length > 3 || Number(cleanAge) <= 0) {
+                    return res.status(400).json({ success: false, message: 'Age must be a valid positive number up to 3 digits' });
+                }
+            }
+        }
+
+        let cleanAadhaar = null;
+        if (aadhaarNumber) {
+            if (isStarterPlan) {
+                cleanAadhaar = String(aadhaarNumber).replace(/\D/g, '');
+                if (cleanAadhaar !== String(aadhaarNumber).trim() || cleanAadhaar.length !== 12) {
+                    return res.status(400).json({ success: false, message: 'Aadhaar number must be exactly 12 digits' });
+                }
+            } else {
+                cleanAadhaar = String(aadhaarNumber).trim();
+            }
+        }
+
+        // Duplicate check within this clinic by phone
+        const existing = await ClinicPatient.findOne({ clinicId, phone: cleanPhone });
+        if (existing) {
+            return res.status(200).json({ success: true, patient: existing, existing: true, message: `Patient already registered — ${existing.patientUid}` });
+        }
+
+        // Duplicate check within this clinic by Aadhaar if provided
+        if (cleanAadhaar) {
+            const existingAadhaar = await ClinicPatient.findOne({ clinicId, aadhaarNumber: cleanAadhaar });
+            if (existingAadhaar) {
+                return res.status(200).json({ success: true, patient: existingAadhaar, existing: true, message: `Patient with this Aadhaar already registered — ${existingAadhaar.patientUid}` });
+            }
+        }
+
+        // Clinic-scoped patient UID: e.g. "RAM-001"
+        const code  = await getClinicCode(clinicId);
+        const count = await ClinicPatient.countDocuments({ clinicId });
+        const patientUid = `${code}-${String(count + 1).padStart(3, '0')}`;
+
+        const cleanRelatives = Array.isArray(relatives)
+            ? relatives.filter(r => r.name?.trim() || r.phone?.trim()).map(r => ({
+                name: (r.name || '').trim(),
+                relation: (r.relation || '').trim(),
+                phone: (r.phone || '').trim(),
+            }))
+            : [];
+
+        const patient = await ClinicPatient.create({
+            clinicId,
+            patientUid,
+            name: name.trim(),
+            phone: cleanPhone,
+            email: email ? email.trim() : '',
+            age: cleanAge ? Number(cleanAge) : 1,
+            aadhaarNumber: cleanAadhaar || undefined,
+            dob: dob ? new Date(dob) : null,
+            gender: gender || 'Male',
+            bloodGroup: bloodGroup || '',
+            address: address || '',
+            allergies: allergies || '',
+            chronicConditions: chronicConditions || '',
+            relatives: cleanRelatives,
+        });
+
+        // Track in subscription (non-blocking)
+        trackNewPatient(clinicId);
+
+        res.status(201).json({ success: true, patient, message: `Patient registered — ${patientUid}` });
+    } catch (err) {
+        if (err.code === 11000) {
+            const field = Object.keys(err.keyPattern || {})[0] || 'field';
+            const friendlyField = field === 'phone' ? 'phone'
+                : field === 'aadhaarNumber' ? 'Aadhaar'
+                : field === 'patientUid' ? 'Patient UID'
+                : field;
+            return res.status(400).json({ success: false, message: `A patient with this ${friendlyField} already exists in this clinic` });
+        }
+        console.error('CLINIC PATIENTS POST ERROR:', err);
+        res.status(500).json({ success: false, message: 'An internal error occurred: ' + err.message });
+    }
+});
+
+// ─────────────────────────────────────────────
+// PATIENT HISTORY — GET /api/clinic/patients/:id/history
+// ─────────────────────────────────────────────
+router.get('/patients/:id/history', verifyClinicStaff, async (req, res) => {
+    try {
+        const patient = await ClinicPatient.findOne({ _id: req.params.id, clinicId: hid(req) }).lean();
+        if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+
+        const appointments = await Appointment.find({ clinicPatientId: patient._id, hospitalId: hid(req) })
+            .sort({ appointmentDate: -1 })
+            .lean();
+
+        res.json({ success: true, patient, appointments });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// UPDATE PATIENT — PUT /api/clinic/patients/:id
+// ─────────────────────────────────────────────
+router.put('/patients/:id', verifyClinicStaff, async (req, res) => {
+    try {
+        const { name, email, dob, gender, address, bloodGroup, allergies, chronicConditions, medicalNotes, relatives } = req.body;
+        const updateData = { name, email, dob, gender, address, bloodGroup, allergies, chronicConditions, medicalNotes };
+        if (Array.isArray(relatives)) {
+            updateData.relatives = relatives.filter(r => r.name?.trim() || r.phone?.trim()).map(r => ({
+                name: (r.name || '').trim(),
+                relation: (r.relation || '').trim(),
+                phone: (r.phone || '').trim(),
+            }));
+        }
+        const patient = await ClinicPatient.findOneAndUpdate(
+            { _id: req.params.id, clinicId: hid(req) },
+            updateData,
+            { new: true, runValidators: true }
+        );
+        if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+        res.json({ success: true, patient });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// CHECK FEE WAIVER — GET /api/clinic/patients/:id/check-fee-waiver
+// ─────────────────────────────────────────────
+router.get('/patients/:id/check-fee-waiver', verifyClinicStaff, async (req, res) => {
+    try {
+        const clinicId = hid(req);
+        const [patient, clinic] = await Promise.all([
+            ClinicPatient.findOne({ _id: req.params.id, clinicId }),
+            Hospital.findById(clinicId).select('followUpDays').lean(),
+        ]);
+        if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+
+        console.log("Backend Received Date for Waiver Check:", req.query.date);
+        const parseDateSafe = (d) => {
+            if (!d) return new Date();
+            if (d instanceof Date) return d;
+            const str = String(d);
+            if (str.includes('/')) {
+                const parts = str.split('/');
+                if (parts.length === 3 && parts[2].length === 4) {
+                    return new Date(parts[2], parts[1] - 1, parts[0]);
+                }
+            } else if (str.includes('-')) {
+                const parts = str.split('-');
+                if (parts.length === 3) {
+                    if (parts[0].length === 4) {
+                        return new Date(parts[0], parts[1] - 1, parts[2]); // YYYY-MM-DD
+                    } else if (parts[2].length === 4) {
+                        return new Date(parts[2], parts[1] - 1, parts[0]); // DD-MM-YYYY
+                    }
+                }
+            }
+            return new Date(str);
+        };
+
+        const targetDate = req.query.date ? parseDateSafe(req.query.date) : new Date();
+        targetDate.setHours(0, 0, 0, 0);
+
+        // 1. Check if registered yesterday
+        const createdAt = new Date(patient.createdAt);
+        const d1 = new Date(createdAt.getFullYear(), createdAt.getMonth(), createdAt.getDate());
+        const diffRegTime = targetDate - d1;
+        const diffRegDays = Math.round(diffRegTime / (1000 * 60 * 60 * 24));
+
+        if (diffRegDays === 1) {
+            return res.json({
+                success: true,
+                waived: true,
+                message: 'Registration fee waived (Registered yesterday)'
+            });
+        }
+
+        // 2. Check Free Follow-up Window
+        if (clinic.followUpDays > 0) {
+            const lastAppt = await Appointment.findOne({
+                hospitalId: clinicId,
+                clinicPatientId: patient._id,
+                status: 'completed',
+                amount: { $gt: 0 } // Anchor strictly to the last PAID consultation
+            }).sort({ appointmentDate: -1 }).lean();
+
+            if (lastAppt && lastAppt.appointmentDate) {
+                const lastDate = parseDateSafe(lastAppt.appointmentDate);
+                lastDate.setHours(0, 0, 0, 0);
+                
+                const diffTime = Math.abs(targetDate - lastDate);
+                const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+
+                if (diffDays <= clinic.followUpDays) {
+                    return res.json({
+                        success: true,
+                        waived: true,
+                        message: 'Free Follow-up'
+                    });
+                }
+            }
+        }
+
+        res.json({ success: true, waived: false });
+    } catch (err) {
+        console.error('[check-fee-waiver]', err.message);
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// UPLOAD REPORT — POST /api/clinic/patients/:id/reports
+// ─────────────────────────────────────────────
+router.post('/patients/:id/reports', verifyClinicStaff, uploadReport.single('report'), async (req, res) => {
+    try {
+        if (!req.file) return res.status(400).json({ success: false, message: 'No file uploaded' });
+
+        const typeErr = await validateFileType(req.file, ['image/jpeg', 'image/png', 'image/webp', 'application/pdf']);
+        if (typeErr) {
+            try { fs.unlinkSync(req.file.path); } catch (_) {}
+            return res.status(400).json({ success: false, message: typeErr });
+        }
+
+        const isObjectId = mongoose.Types.ObjectId.isValid(req.params.id) && req.params.id.length === 24;
+        const patientQuery = isObjectId ? { _id: req.params.id } : { patientUid: req.params.id };
+        patientQuery.clinicId = hid(req);
+
+        const patient = await ClinicPatient.findOne(patientQuery);
+        if (!patient) {
+            try { fs.unlinkSync(req.file.path); } catch (_) {}
+            return res.status(404).json({ success: false, message: 'Patient not found' });
+        }
+        const reportName = req.body.name?.trim() || req.file.originalname;
+        const entry = { name: reportName, filename: req.file.filename, mimetype: req.file.mimetype };
+        patient.reports.push(entry);
+        await patient.save();
+        res.json({ success: true, report: patient.reports[patient.reports.length - 1], message: 'Report uploaded' });
+    } catch (err) {
+        if (req.file) { try { fs.unlinkSync(req.file.path); } catch (_) {} }
+        console.error('[upload-report]', err.message);
+        res.status(500).json({ success: false, message: 'Failed to upload report. Please try again.' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// DELETE REPORT — DELETE /api/clinic/patients/:id/reports/:reportId
+// ─────────────────────────────────────────────
+router.delete('/patients/:id/reports/:reportId', verifyClinicStaff, async (req, res) => {
+    try {
+        const isObjectId = mongoose.Types.ObjectId.isValid(req.params.id) && req.params.id.length === 24;
+        const patientQuery = isObjectId ? { _id: req.params.id } : { patientUid: req.params.id };
+        patientQuery.clinicId = hid(req);
+
+        const patient = await ClinicPatient.findOne(patientQuery);
+        if (!patient) return res.status(404).json({ success: false, message: 'Patient not found' });
+        const report = patient.reports.id(req.params.reportId);
+        if (!report) return res.status(404).json({ success: false, message: 'Report not found' });
+        const filePath = path.join(reportsDir, report.filename);
+        patient.reports.pull(req.params.reportId);
+        await patient.save();
+        if (fs.existsSync(filePath)) fs.unlinkSync(filePath);
+        res.json({ success: true, message: 'Report deleted' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// LIST APPOINTMENTS — GET /api/clinic/appointments
+// ─────────────────────────────────────────────
+router.get('/appointments', verifyClinicStaff, async (req, res) => {
+    try {
+        const { date, status } = req.query;
+        const query = { hospitalId: hid(req) };
+
+        if (date) {
+            const d = new Date(date); d.setHours(0, 0, 0, 0);
+            const e = new Date(date); e.setHours(23, 59, 59, 999);
+            query.appointmentDate = { $gte: d, $lte: e };
+        }
+        if (status) query.status = status;
+
+        // Determine sort order based on clinic's appointment mode
+        const clinicForSort = await Hospital.findById(hid(req)).select('appointmentMode').lean();
+        const sortOrder = (clinicForSort?.appointmentMode || 'token') === 'slot'
+            ? { appointmentTime: 1, createdAt: -1 }
+            : { tokenNumber: 1, createdAt: -1 };
+
+        const appointments = await Appointment.find(query)
+            .populate('clinicPatientId', 'name phone patientUid gender bloodGroup')
+            .sort(sortOrder)
+            .lean();
+
+        res.json({ success: true, appointments });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// CLINIC CONFIG — GET /api/clinic/config
+// Returns appointmentMode and basic clinic info
+// ─────────────────────────────────────────────
+router.get('/config', verifyClinicStaff, async (req, res) => {
+    try {
+        const clinic = await Hospital.findById(hid(req)).select('appointmentMode name clinicCode defaultFee followUpDays defaultServiceName').lean();
+        if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
+        res.json({
+            success: true,
+            appointmentMode: clinic.appointmentMode || 'token',
+            name: clinic.name,
+            clinicCode: clinic.clinicCode,
+            defaultFee: clinic.defaultFee ?? 0,
+            followUpDays: clinic.followUpDays ?? 0,
+            defaultServiceName: clinic.defaultServiceName || 'General Consultation',
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// CLINIC CONFIG — PUT /api/clinic/config
+// Hospital admin sets default fee / service name
+// ─────────────────────────────────────────────
+router.put('/config', verifyClinicAdmin, async (req, res) => {
+    try {
+        const { defaultFee, followUpDays, defaultServiceName, appointmentMode } = req.body;
+        const update = {};
+
+        if (defaultFee !== undefined) {
+            const fee = Number(defaultFee);
+            if (isNaN(fee) || fee < 0) return res.status(400).json({ success: false, message: 'defaultFee must be a non-negative number' });
+            update.defaultFee = fee;
+        }
+        if (followUpDays !== undefined) {
+            const days = Number(followUpDays);
+            if (isNaN(days) || days < 0) return res.status(400).json({ success: false, message: 'followUpDays must be a non-negative number' });
+            update.followUpDays = days;
+        }
+        if (defaultServiceName !== undefined) {
+            const svc = String(defaultServiceName).trim().slice(0, 100);
+            if (!svc) return res.status(400).json({ success: false, message: 'defaultServiceName cannot be empty' });
+            update.defaultServiceName = svc;
+        }
+        if (appointmentMode !== undefined) {
+            if (!['slot', 'token'].includes(appointmentMode)) return res.status(400).json({ success: false, message: 'appointmentMode must be slot or token' });
+            update.appointmentMode = appointmentMode;
+        }
+
+        if (Object.keys(update).length === 0) return res.status(400).json({ success: false, message: 'No valid fields to update' });
+
+        const clinic = await Hospital.findByIdAndUpdate(hid(req), { $set: update }, { new: true })
+            .select('appointmentMode name clinicCode defaultFee followUpDays defaultServiceName').lean();
+        if (!clinic) return res.status(404).json({ success: false, message: 'Clinic not found' });
+
+        res.json({
+            success: true,
+            message: 'Clinic config updated',
+            appointmentMode: clinic.appointmentMode || 'token',
+            name: clinic.name,
+            clinicCode: clinic.clinicCode,
+            defaultFee: clinic.defaultFee ?? 0,
+            followUpDays: clinic.followUpDays ?? 0,
+            defaultServiceName: clinic.defaultServiceName || 'General Consultation',
+        });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// BOOK APPOINTMENT — POST /api/clinic/appointments
+// Supports both token mode and time-slot mode
+// ─────────────────────────────────────────────
+router.post('/appointments', verifyClinicStaff, async (req, res) => {
+    try {
+        const { patientId, amount, notes, serviceName, appointmentTime, paymentMethod, cardRef, upiScreenshotUrl, appointmentDate } = req.body;
+        // patientId here is ClinicPatient._id
+        if (!patientId) return res.status(400).json({ success: false, message: 'patientId is required' });
+
+        const clinicId = hid(req);
+        const [patient, clinic] = await Promise.all([
+            ClinicPatient.findOne({ _id: patientId, clinicId }),
+            Hospital.findById(clinicId).select('appointmentMode followUpDays defaultFee').lean(),
+        ]);
+        if (!patient) return res.status(404).json({ success: false, message: 'Patient not found in this clinic' });
+
+        const parseDateSafe = (d) => {
+            if (!d) return new Date();
+            if (d instanceof Date) return d;
+            const str = String(d);
+            if (str.includes('/')) {
+                const parts = str.split('/');
+                if (parts.length === 3 && parts[2].length === 4) {
+                    return new Date(parts[2], parts[1] - 1, parts[0]);
+                }
+            } else if (str.includes('-')) {
+                const parts = str.split('-');
+                if (parts.length === 3) {
+                    if (parts[0].length === 4) {
+                        return new Date(parts[0], parts[1] - 1, parts[2]); // YYYY-MM-DD
+                    } else if (parts[2].length === 4) {
+                        return new Date(parts[2], parts[1] - 1, parts[0]); // DD-MM-YYYY
+                    }
+                }
+            }
+            return new Date(str);
+        };
+
+        // Dynamic Fee Logic: Free Follow-up Window
+        let fee = clinic.defaultFee || 0;
+        if (clinic.followUpDays > 0) {
+            const lastAppt = await Appointment.findOne({
+                hospitalId: clinicId,
+                clinicPatientId: patient._id,
+                status: 'completed',
+                amount: { $gt: 0 } // Anchor strictly to the last PAID consultation
+            }).sort({ appointmentDate: -1 }).lean();
+
+            if (lastAppt && lastAppt.appointmentDate) {
+                const newDate = parseDateSafe(appointmentDate);
+                newDate.setHours(0, 0, 0, 0);
+                
+                const lastDate = parseDateSafe(lastAppt.appointmentDate);
+                lastDate.setHours(0, 0, 0, 0);
+                
+                const diffTime = Math.abs(newDate - lastDate);
+                const diffDays = Math.round(diffTime / (1000 * 60 * 60 * 24));
+                
+                console.log("Clinic Follow Up Days Limit:", clinic.followUpDays);
+                console.log("Calculated Difference in Days:", diffDays);
+
+                if (diffDays <= clinic.followUpDays) {
+                    fee = 0; // Free Follow-up
+                }
+            }
+        }
+        
+        console.log("Final Fee being saved to DB:", fee);
+
+        // Payment must be confirmed upfront — no pending payments in clinic module
+        if (fee > 0 && !paymentMethod) {
+            return res.status(400).json({ success: false, message: 'Payment method is required to collect the fee and assign a token' });
+        }
+
+        const isTokenMode = (clinic?.appointmentMode || 'token') === 'token';
+        
+        // Parse selected date or fallback to today
+        const dateObj = parseDateSafe(appointmentDate);
+        const startOfSelectedDay = new Date(dateObj);
+        startOfSelectedDay.setHours(0, 0, 0, 0);
+        const endOfSelectedDay = new Date(dateObj);
+        endOfSelectedDay.setHours(23, 59, 59, 999);
+
+        // Date past validation
+        const todayLocal = new Date();
+        todayLocal.setHours(0, 0, 0, 0);
+        if (startOfSelectedDay < todayLocal) {
+            return res.status(400).json({ success: false, message: 'Cannot book appointments in the past' });
+        }
+
+        // Time past validation
+        if (startOfSelectedDay.getTime() === todayLocal.getTime() && appointmentTime) {
+            const nowTime = new Date().toTimeString().slice(0, 5); // "HH:MM"
+            if (appointmentTime < nowTime) {
+                return res.status(400).json({ success: false, message: 'Cannot book a past time slot for today' });
+            }
+        }
+
+        let tokenNumber = null;
+        let finalTime = appointmentTime || new Date().toTimeString().slice(0, 5);
+
+        if (isTokenMode) {
+            // Token mode: assign next sequential token for the selected date
+            const count = await Appointment.countDocuments({
+                hospitalId: clinicId,
+                appointmentDate: { $gte: startOfSelectedDay, $lte: endOfSelectedDay },
+                status: { $ne: 'cancelled' }
+            });
+            tokenNumber = count + 1;
+        } else {
+            // Slot mode: appointmentTime is required, check for double-booking
+            if (!appointmentTime) {
+                return res.status(400).json({ success: false, message: 'Appointment time is required for time-slot booking' });
+            }
+            const conflict = await Appointment.findOne({
+                hospitalId: clinicId,
+                appointmentTime,
+                appointmentDate: { $gte: startOfSelectedDay, $lte: endOfSelectedDay },
+                status: { $ne: 'cancelled' },
+            });
+            if (conflict) {
+                return res.status(409).json({ success: false, message: `Time slot ${appointmentTime} is already booked for this date` });
+            }
+            finalTime = appointmentTime;
+        }
+
+        // Also check if time slot is already booked if passed for token mode
+        if (appointmentTime) {
+            const conflict = await Appointment.findOne({
+                hospitalId: clinicId,
+                appointmentTime,
+                appointmentDate: { $gte: startOfSelectedDay, $lte: endOfSelectedDay },
+                status: { $ne: 'cancelled' },
+            });
+            if (conflict) {
+                return res.status(409).json({ success: false, message: `Time slot ${appointmentTime} is already booked for this date` });
+            }
+        }
+
+        // --- AUTOMATED SINGLE-DOCTOR LOOKUP ---
+        let finalDoctor = await User.findOne({
+            hospitalId: clinicId,
+            role: { $in: ['doctor', 'clinic doctor'] }
+        });
+
+        if (!finalDoctor) {
+            const Role = require('../models/role.model');
+            const roleDoc = await Role.findOne({ name: /clinic doctor/i });
+            if (roleDoc) {
+                finalDoctor = await User.findOne({ hospitalId: clinicId, role: roleDoc._id });
+            }
+        }
+
+        if (!finalDoctor) {
+            return res.status(400).json({ success: false, message: 'Clinic configuration error: No doctor account setup found.' });
+        }
+        // ---------------------------------------
+
+        const appointment = new Appointment({
+            clinicPatientId: patient._id,
+            patientId:       patient.patientUid, // display ID
+            hospitalId:      clinicId,
+            doctorUserId:    finalDoctor._id,
+            doctorName:      finalDoctor.name,
+            serviceName:     serviceName || 'General Consultation',
+            appointmentDate: startOfSelectedDay,
+            appointmentTime: finalTime,
+            tokenNumber,
+            status:         'confirmed',
+            visitType:      fee === 0 ? 'Follow-up' : 'New Consultation',
+            paymentStatus:  'paid',   // payment is always collected upfront in clinic module
+            paymentMethod:  paymentMethod || (fee === 0 ? 'Free' : 'Cash'),
+            amount:         fee,
+            notes:          notes || '',
+            bookedBy:       req.user._id,
+            cardRef:        cardRef ? String(cardRef).slice(0, 50) : '',
+            upiScreenshotUrl: upiScreenshotUrl ? String(upiScreenshotUrl).slice(0, 500) : '',
+        });
+
+        await appointment.save();
+
+        const message = isTokenMode
+            ? `Token #${tokenNumber} assigned to ${patient.name}`
+            : `Appointment at ${finalTime} booked for ${patient.name}`;
+
+        res.status(201).json({ success: true, appointment, message, isTokenMode });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// COMPLETE APPOINTMENT — PUT /api/clinic/appointments/:id/complete
+// ─────────────────────────────────────────────
+router.put('/appointments/:id/complete', verifyClinicStaff, async (req, res) => {
+    try {
+        const { diagnosis, notes, medicines, labTests, paymentStatus, amount, vitals } = req.body;
+
+        const appt = await Appointment.findOne({ _id: req.params.id, hospitalId: hid(req) });
+        if (!appt) return res.status(404).json({ success: false, message: 'Appointment not found' });
+
+        appt.status        = 'completed';
+        appt.diagnosis     = diagnosis     || appt.diagnosis;
+        appt.doctorNotes   = notes         || appt.doctorNotes;
+        if (vitals && typeof vitals === 'object') appt.vitals = vitals;
+        if (medicines && Array.isArray(medicines)) appt.pharmacy = medicines.map(m => ({
+            medicineName: m.medicineName || m.name || '',
+            saltName:     m.saltName || '',
+            frequency:    m.frequency || m.dose || m.dosage || '',
+            duration:     m.duration || m.days || '',
+        }));
+        if (labTests   && Array.isArray(labTests))   appt.labTests  = labTests;
+        if (paymentStatus) appt.paymentStatus = paymentStatus;
+        if (amount !== undefined) appt.amount = amount;
+
+        await appt.save();
+
+        // Sync vitals to ClinicPatient document if clinicPatientId is set
+        if (vitals && typeof vitals === 'object' && appt.clinicPatientId) {
+            await ClinicPatient.updateOne(
+                { _id: appt.clinicPatientId },
+                {
+                    $set: {
+                        vitals: {
+                            weight:          vitals.weight || '',
+                            height:          vitals.height || '',
+                            bmi:             vitals.bmi || '',
+                            bloodPressure:   vitals.bp || vitals.bloodPressure || '',
+                            pulse:           vitals.pulse || '',
+                            temperature:     vitals.temperature || '',
+                            spo2:            vitals.spo2 || '',
+                            respiratoryRate: vitals.rr || vitals.respiratoryRate || '',
+                            lastRecorded:    new Date()
+                        }
+                    }
+                }
+            );
+        }
+
+        // Note: clinic module does not manage pharmacy orders or billing.
+        // Prescribed medicines are stored on the appointment for prescription records only.
+
+        res.json({ success: true, appointment: appt, message: 'Appointment completed' });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// UPDATE CONSULTATION — PUT /api/clinic/appointments/:id/update-consultation
+// ─────────────────────────────────────────────
+router.put('/appointments/:id/update-consultation', verifyClinicStaff, async (req, res) => {
+    try {
+        const { diagnosis, notes, medicines, labTests, paymentStatus, amount, vitals } = req.body;
+
+        const appt = await Appointment.findOne({ _id: req.params.id, hospitalId: hid(req) });
+        if (!appt) return res.status(404).json({ success: false, message: 'Appointment not found' });
+
+        appt.diagnosis     = diagnosis !== undefined ? diagnosis : appt.diagnosis;
+        appt.doctorNotes   = notes !== undefined ? notes : appt.doctorNotes;
+        if (vitals && typeof vitals === 'object') appt.vitals = vitals;
+        if (medicines && Array.isArray(medicines)) {
+            appt.pharmacy = medicines.map(m => ({
+                medicineName: m.medicineName || m.name || '',
+                saltName:     m.saltName || '',
+                frequency:    m.frequency || m.dose || m.dosage || '',
+                duration:     m.duration || m.days || '',
+            }));
+        }
+        if (labTests && Array.isArray(labTests)) appt.labTests = labTests;
+        if (paymentStatus) appt.paymentStatus = paymentStatus;
+        if (amount !== undefined) appt.amount = amount;
+
+        await appt.save();
+
+        // Sync vitals to ClinicPatient document if clinicPatientId is set
+        if (vitals && typeof vitals === 'object' && appt.clinicPatientId) {
+            await ClinicPatient.updateOne(
+                { _id: appt.clinicPatientId },
+                {
+                    $set: {
+                        vitals: {
+                            weight:          vitals.weight || '',
+                            height:          vitals.height || '',
+                            bmi:             vitals.bmi || '',
+                            bloodPressure:   vitals.bp || vitals.bloodPressure || '',
+                            pulse:           vitals.pulse || '',
+                            temperature:     vitals.temperature || '',
+                            spo2:            vitals.spo2 || '',
+                            respiratoryRate: vitals.rr || vitals.respiratoryRate || '',
+                            lastRecorded:    new Date()
+                        }
+                    }
+                }
+            );
+        }
+
+        res.json({ success: true, appointment: appt, message: 'Consultation updated' });
+    } catch (err) {
+        console.error('[update-consultation]', err.message);
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// PAY APPOINTMENT — PUT /api/clinic/appointments/:id/pay
+// ─────────────────────────────────────────────
+router.put('/appointments/:id/pay', verifyClinicStaff, async (req, res) => {
+    try {
+        const { paymentMethod } = req.body;
+        const appt = await Appointment.findOneAndUpdate(
+            { _id: req.params.id, hospitalId: hid(req) },
+            { paymentStatus: 'paid', paymentMethod: paymentMethod || 'Cash' },
+            { new: true }
+        );
+        if (!appt) return res.status(404).json({ success: false, message: 'Appointment not found' });
+        res.json({ success: true, appointment: appt });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// CANCEL APPOINTMENT — PUT /api/clinic/appointments/:id/cancel
+// ─────────────────────────────────────────────
+router.put('/appointments/:id/cancel', verifyClinicStaff, async (req, res) => {
+    try {
+        const appt = await Appointment.findOneAndUpdate(
+            { _id: req.params.id, hospitalId: hid(req) },
+            { status: 'cancelled' },
+            { new: true }
+        );
+        if (!appt) return res.status(404).json({ success: false, message: 'Appointment not found' });
+        res.json({ success: true, appointment: appt });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// INVENTORY — GET /api/clinic/inventory
+// ─────────────────────────────────────────────
+router.get('/inventory', verifyClinicStaff, async (req, res) => {
+    try {
+        const inventory = await Inventory.find({ hospitalId: hid(req) }).sort({ name: 1 }).lean();
+        res.json({ success: true, inventory });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// ADD INVENTORY — POST /api/clinic/inventory
+// ─────────────────────────────────────────────
+router.post('/inventory', verifyClinicAdmin, async (req, res) => {
+    try {
+        const { name, category, unit } = req.body;
+        if (!name) return res.status(400).json({ success: false, message: 'Medicine name required' });
+
+        // Check for duplicate name in this clinic
+        const existing = await Inventory.findOne({ hospitalId: hid(req), name: { $regex: `^${name.trim()}$`, $options: 'i' } });
+        if (existing) return res.status(409).json({ success: false, message: `"${name}" already exists in medicine list` });
+
+        const item = new Inventory({
+            hospitalId:   hid(req),
+            name:         name.trim(),
+            category:     category || 'General',
+            stock:        0,
+            unit:         unit     || 'Tablets',
+            buyingPrice:  0,
+            sellingPrice: 0,
+        });
+        await item.save();
+        res.status(201).json({ success: true, item });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// PHARMACY ORDERS — GET /api/clinic/pharmacy-orders
+// ─────────────────────────────────────────────
+router.get('/pharmacy-orders', verifyClinicStaff, async (req, res) => {
+    try {
+        const orders = await PharmacyOrder.find({ hospitalId: hid(req) })
+            .sort({ createdAt: -1 })
+            .lean();
+        res.json({ success: true, orders });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// DISPENSE PHARMACY ORDER — PUT /api/clinic/pharmacy-orders/:id/dispense
+// ─────────────────────────────────────────────
+router.put('/pharmacy-orders/:id/dispense', verifyClinicStaff, async (req, res) => {
+    try {
+        const order = await PharmacyOrder.findOneAndUpdate(
+            { _id: req.params.id, hospitalId: hid(req) },
+            { orderStatus: 'Completed' },
+            { new: true }
+        );
+        if (!order) return res.status(404).json({ success: false, message: 'Order not found' });
+        res.json({ success: true, order });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ══════════════════════════════════════════════════════════
+// TREATMENT PLANS
+// ══════════════════════════════════════════════════════════
+
+// CREATE treatment plan
+router.post('/treatment-plans', verifyClinicStaff, async (req, res) => {
+    try {
+        const { clinicPatientId, title, description, totalDurationDays, totalAmount, visits } = req.body;
+        if (!clinicPatientId || !title || !visits || !visits.length) {
+            return res.status(400).json({ success: false, message: 'Patient, title and at least one visit are required.' });
+        }
+        if (!totalAmount || Number(totalAmount) <= 0) {
+            return res.status(400).json({ success: false, message: 'Total treatment amount is required.' });
+        }
+
+        const processedVisits = visits.map((v, i) => ({
+            visitNumber: i + 1,
+            scheduledDate: new Date(v.scheduledDate),
+            scheduledTime: v.scheduledTime || '',
+            procedure: v.procedure || '',
+            amountPaid: 0,
+            status: 'scheduled',
+            alertSent: false,
+        }));
+
+        const amount = Number(totalAmount);
+        const plan = await TreatmentPlan.create({
+            hospitalId: hid(req),
+            clinicPatientId,
+            createdBy: req.user.id,
+            title,
+            description: description || '',
+            totalDurationDays: Number(totalDurationDays) || 0,
+            visits: processedVisits,
+            totalAmount: amount,
+            pendingBalance: amount,
+            totalPaid: 0,
+            status: 'active',
+        });
+
+        await plan.populate('clinicPatientId', 'name patientUid phone');
+        res.json({ success: true, plan });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// LIST all treatment plans for hospital
+router.get('/treatment-plans', verifyClinicStaff, async (req, res) => {
+    try {
+        const plans = await TreatmentPlan.find({ hospitalId: hid(req) })
+            .populate('clinicPatientId', 'name patientUid phone gender')
+            .sort({ createdAt: -1 });
+        res.json({ success: true, plans });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// TODAY'S DUE VISITS — also fires notifications (call this on dashboard load)
+router.get('/treatment-plans/today-due', verifyClinicStaff, async (req, res) => {
+    try {
+        const { start, end } = todayRange();
+        const plans = await TreatmentPlan.find({
+            hospitalId: hid(req),
+            status: 'active',
+            'visits.scheduledDate': { $gte: start, $lte: end },
+            'visits.status': { $in: ['scheduled', 'rescheduled'] },
+        }).populate('clinicPatientId', 'name patientUid phone');
+
+        // Fire notifications for un-alerted visits
+        const io = req.app.get('io');
+        for (const plan of plans) {
+            for (const visit of plan.visits) {
+                const vDate = new Date(visit.scheduledDate);
+                const isToday = vDate >= start && vDate <= end;
+                if (isToday && ['scheduled', 'rescheduled'].includes(visit.status) && !visit.alertSent) {
+                    const patName = plan.clinicPatientId?.name || 'Patient';
+                    const notif = await Notification.create({
+                        senderId: req.user.id,
+                        hospitalId: hid(req),
+                        recipientRole: 'hospitaladmin',
+                        message: `📅 ${patName} — Visit ${visit.visitNumber} of "${plan.title}" is due today${visit.scheduledTime ? ' at ' + visit.scheduledTime : ''}.`,
+                        status: 'Unread',
+                        referenceType: 'TreatmentPlan',
+                        referenceId: plan._id,
+                        patientId: (plan.clinicPatientId?.patientUid || plan.clinicPatientId?._id || 'N/A').toString(),
+                    });
+                    if (io) io.to('hospitaladmin').emit('new_notification', notif);
+                    visit.alertSent = true;
+                }
+            }
+            await plan.save();
+        }
+
+        res.json({ success: true, plans });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// GET single plan
+router.get('/treatment-plans/:id', verifyClinicStaff, async (req, res) => {
+    try {
+        const plan = await TreatmentPlan.findOne({ _id: req.params.id, hospitalId: hid(req) })
+            .populate('clinicPatientId', 'name patientUid phone gender age');
+        if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+        res.json({ success: true, plan });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// RECORD PAYMENT for a visit (with full validation)
+router.put('/treatment-plans/:id/visits/:visitId/pay', verifyClinicStaff, async (req, res) => {
+    try {
+        const { amountPaid, paymentMethod, notes, upiId, upiRef, paymentDate } = req.body;
+        const plan = await TreatmentPlan.findOne({ _id: req.params.id, hospitalId: hid(req) });
+        if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+
+        const visit = plan.visits.id(req.params.visitId);
+        if (!visit) return res.status(404).json({ success: false, message: 'Visit not found' });
+
+        const paid = Number(amountPaid) || 0;
+
+        // Validate amount
+        if (paid <= 0) return res.status(400).json({ success: false, message: 'Payment amount must be greater than zero.' });
+        if (paid > plan.pendingBalance) return res.status(400).json({ success: false, message: `Payment amount cannot exceed outstanding balance of ₹${plan.pendingBalance.toLocaleString('en-IN')}.` });
+
+        // Validate Payment Date
+        if (!paymentDate) return res.status(400).json({ success: false, message: 'Payment date is required.' });
+        const pDate = new Date(paymentDate);
+        pDate.setHours(0, 0, 0, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const vDate = new Date(visit.scheduledDate);
+        vDate.setHours(0, 0, 0, 0);
+
+        if (pDate > today) return res.status(400).json({ success: false, message: 'Future payments are not allowed.' });
+        if (pDate < vDate) return res.status(400).json({ success: false, message: 'Payment date cannot be earlier than the visit date.' });
+
+        // Validate UPI-specific fields
+        const method = paymentMethod || 'Cash';
+        let cleanUpiRef = '';
+        if (method === 'UPI') {
+            if (!(upiId || '').trim()) return res.status(400).json({ success: false, message: 'UPI ID is required for UPI payments.' });
+            if (!(upiRef || '').trim()) return res.status(400).json({ success: false, message: 'Transaction reference is required for UPI payments.' });
+            cleanUpiRef = (upiRef || '').replace(/\D/g, '');
+            if (cleanUpiRef.length !== 12) return res.status(400).json({ success: false, message: 'Transaction reference must be exactly 12 digits.' });
+            
+            // Check duplicate upiRef within this plan's payment histories
+            const isDuplicate = plan.visits.some(v => 
+                v.paymentHistory && v.paymentHistory.some(ph => ph.method === 'UPI' && ph.upiRef === cleanUpiRef)
+            );
+            if (isDuplicate) return res.status(400).json({ success: false, message: 'Duplicate transaction reference. This reference is already used.' });
+        }
+
+        // Add payment to history
+        visit.paymentHistory.push({
+            amount: paid,
+            date: pDate,
+            method: method,
+            upiId: method === 'UPI' ? (upiId || '').trim() : '',
+            upiRef: method === 'UPI' ? cleanUpiRef : '',
+            notes: notes || ''
+        });
+
+        // Update cumulative amounts on visit
+        visit.amountPaid = (visit.amountPaid || 0) + paid;
+        visit.paymentMethod = method;
+        visit.paidAt = new Date();
+        if (method === 'UPI') {
+            visit.upiId = (upiId || '').trim();
+            visit.upiRef = cleanUpiRef;
+        }
+        if (notes) visit.notes = notes;
+
+        // Recalculate plan totals — pendingBalance = totalAmount - sum of all payments
+        plan.totalPaid = plan.visits.reduce((s, v) => s + (v.amountPaid || 0), 0);
+        plan.pendingBalance = Math.max(0, plan.totalAmount - plan.totalPaid);
+
+        await plan.save();
+        await plan.populate('clinicPatientId', 'name patientUid phone gender');
+        res.json({ success: true, plan });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// COMPLETE a visit
+router.put('/treatment-plans/:id/visits/:visitId/complete', verifyClinicStaff, async (req, res) => {
+    try {
+        const { notes } = req.body;
+        const plan = await TreatmentPlan.findOne({ _id: req.params.id, hospitalId: hid(req) });
+        if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+
+        const visit = plan.visits.id(req.params.visitId);
+        if (!visit) return res.status(404).json({ success: false, message: 'Visit not found' });
+
+        // Check if this is the last remaining scheduled visit
+        const remainingScheduled = plan.visits.filter(v => ['scheduled', 'rescheduled', 'due'].includes(v.status) && v._id.toString() !== visit._id.toString());
+        const isLastVisit = remainingScheduled.length === 0;
+
+        // Block closing if last visit and balance still pending
+        if (isLastVisit && plan.pendingBalance > 0) {
+            return res.status(400).json({
+                success: false,
+                message: `Cannot close treatment — ₹${plan.pendingBalance.toLocaleString('en-IN')} is still pending. Collect full payment before closing the last visit.`
+            });
+        }
+
+        visit.status = 'completed';
+        visit.completedAt = new Date();
+        if (notes) visit.notes = notes;
+
+        // If all visits done, complete the plan
+        const allDone = plan.visits.every(v => v.status === 'completed' || v.status === 'missed');
+        if (allDone) plan.status = 'completed';
+
+        await plan.save();
+        await plan.populate('clinicPatientId', 'name patientUid phone gender');
+        res.json({ success: true, plan });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// MARK visit as missed
+router.put('/treatment-plans/:id/visits/:visitId/miss', verifyClinicStaff, async (req, res) => {
+    try {
+        const plan = await TreatmentPlan.findOne({ _id: req.params.id, hospitalId: hid(req) });
+        if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+
+        const visit = plan.visits.id(req.params.visitId);
+        if (!visit) return res.status(404).json({ success: false, message: 'Visit not found' });
+
+        visit.status = 'missed';
+        // pendingBalance unchanged — it reflects totalAmount - totalPaid regardless of which visits were missed
+        await plan.save();
+        await plan.populate('clinicPatientId', 'name patientUid phone gender');
+        res.json({ success: true, plan });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// RESCHEDULE a missed visit
+router.put('/treatment-plans/:id/visits/:visitId/reschedule', verifyClinicStaff, async (req, res) => {
+    try {
+        const { newDate, newTime, remarks } = req.body;
+        if (!newDate) {
+            return res.status(400).json({ success: false, message: 'New visit date is required' });
+        }
+        
+        const nDate = new Date(newDate);
+        nDate.setHours(0, 0, 0, 0);
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        if (nDate < today) {
+            return res.status(400).json({ success: false, message: 'Cannot reschedule to a past date. Please select today or a future date.' });
+        }
+        const plan = await TreatmentPlan.findOne({ _id: req.params.id, hospitalId: hid(req) });
+        if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+
+        const originalMissedVisit = plan.visits.id(req.params.visitId);
+        if (!originalMissedVisit) return res.status(404).json({ success: false, message: 'Visit not found' });
+        if (originalMissedVisit.status !== 'missed') {
+            return res.status(400).json({ success: false, message: 'Only missed visits can be rescheduled' });
+        }
+
+        // Store reschedule information on the original missed visit
+        originalMissedVisit.rescheduledToDate = new Date(newDate);
+        originalMissedVisit.rescheduledToTime = newTime || '';
+
+        // Determine where to insert the new rescheduled visit
+        const originalIndex = plan.visits.findIndex(v => v._id.toString() === originalMissedVisit._id.toString());
+
+        // Create the new rescheduled visit object
+        const newVisit = {
+            visitNumber: originalMissedVisit.visitNumber,
+            scheduledDate: new Date(newDate),
+            scheduledTime: newTime || '',
+            procedure: originalMissedVisit.procedure || '',
+            amountPaid: 0,
+            paymentMethod: 'Cash',
+            status: 'rescheduled',
+            notes: remarks || 'Rescheduled after missing visit on ' + new Date(originalMissedVisit.scheduledDate).toLocaleDateString('en-IN'),
+            originalScheduledDate: originalMissedVisit.scheduledDate
+        };
+
+        // Insert the new rescheduled visit right after the missed visit in the array
+        plan.visits.splice(originalIndex + 1, 0, newVisit);
+
+        // Now, shift all remaining pending visits
+        const originalDates = plan.visits.map(v => new Date(v.originalScheduledDate || v.scheduledDate));
+
+        // Start shifting from the newly inserted visit (at index originalIndex + 1)
+        let lastDate = new Date(newDate);
+
+        for (let i = originalIndex + 2; i < plan.visits.length; i++) {
+            const currentVisit = plan.visits[i];
+            
+            // Only shift future pending visits
+            if (['scheduled', 'rescheduled', 'due'].includes(currentVisit.status)) {
+                const prevOriginalDate = originalDates[i - 1];
+                const currOriginalDate = originalDates[i];
+                
+                const gapMs = currOriginalDate.getTime() - prevOriginalDate.getTime();
+                const gapDays = Math.round(gapMs / (1000 * 60 * 60 * 24));
+                
+                const nextDate = new Date(lastDate);
+                nextDate.setDate(nextDate.getDate() + gapDays);
+                
+                currentVisit.scheduledDate = nextDate;
+                lastDate = nextDate;
+            } else {
+                lastDate = new Date(currentVisit.scheduledDate);
+            }
+        }
+
+        const allDone = plan.visits.every(v => v.status === 'completed' || v.status === 'missed');
+        if (allDone) {
+            plan.status = 'completed';
+        } else {
+            plan.status = 'active';
+        }
+
+        await plan.save();
+        await plan.populate('clinicPatientId', 'name patientUid phone gender');
+        res.json({ success: true, plan });
+    } catch (err) {
+        console.error('Reschedule Error:', err);
+        res.status(500).json({ success: false, message: 'An internal error occurred: ' + err.message });
+    }
+});
+
+// CANCEL plan
+router.put('/treatment-plans/:id/cancel', verifyClinicStaff, async (req, res) => {
+    try {
+        const plan = await TreatmentPlan.findOneAndUpdate(
+            { _id: req.params.id, hospitalId: hid(req) },
+            { status: 'cancelled' },
+            { new: true }
+        ).populate('clinicPatientId', 'name patientUid phone');
+        if (!plan) return res.status(404).json({ success: false, message: 'Plan not found' });
+        res.json({ success: true, plan });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+// ─────────────────────────────────────────────
+// CLINIC STAFF — GET /api/clinic/staff
+// Returns doctor and receptionist staff for this clinic
+// ─────────────────────────────────────────────
+router.get('/staff', verifyClinicStaff, async (req, res) => {
+    try {
+        const STAFF_ROLES_LEGACY = ['doctor', 'receptionist', 'clinic doctor', 'hospitaladmin'];
+        const Role = require('../models/role.model');
+        const roleIds = await Role.find({
+            $or: [
+                { hospitalId: hid(req) },
+                { hospitalId: null }
+            ],
+            name: { $in: ['Doctor', 'Clinic Doctor', 'Receptionist'].map(r => new RegExp(`^${r}$`, 'i')) }
+        }).select('_id name').lean();
+        const roleIdSet = roleIds.map(r => r._id);
+
+        const staff = await User.find({
+            hospitalId: hid(req),
+            $or: [
+                { role: { $in: STAFF_ROLES_LEGACY } },
+                { role: { $in: roleIdSet } },
+            ],
+        }).select('name email phone role createdAt').lean();
+
+        const roleMap = Object.fromEntries(roleIds.map(r => [String(r._id), r.name]));
+        const enriched = staff.map(s => {
+            let roleName = roleMap[String(s.role)] || String(s.role);
+            if (roleName === 'hospitaladmin') roleName = 'Clinic Admin';
+            else if (roleName === 'doctor') roleName = 'Clinic Doctor'; // Legacy fallback
+            else if (roleName === 'clinic doctor') roleName = 'Clinic Doctor';
+            return {
+                ...s,
+                roleName
+            };
+        });
+
+        res.json({ success: true, staff: enriched });
+    } catch (err) {
+        res.status(500).json({ success: false, message: 'An internal error occurred' });
+    }
+});
+
+module.exports = router;

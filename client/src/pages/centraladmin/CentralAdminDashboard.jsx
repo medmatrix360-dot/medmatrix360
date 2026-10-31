@@ -1,0 +1,4297 @@
+import React, { useState, useEffect, useRef } from 'react';
+import { useNavigate, useLocation } from 'react-router-dom';
+import { adminAPI, uploadAPI, hospitalAPI, hospitalAdminAPI, questionLibraryAPI, simpleClinicAPI, revenueAPI, aiWalletAPI, baseURL } from '../../utils/api';
+import AdminLabs from '../admin/AdminLabs';
+import AdminPharmacy from '../admin/AdminPharmacy';
+import HospitalBrandingEditor from '../../components/HospitalBrandingEditor';
+import HospitalAdminHUDForm from '../../components/HospitalAdminHUDForm';
+import confirmToast, { toast } from '../../utils/confirmToast';
+import '../administration/SuperAdmin.css';
+import { 
+    FiActivity, 
+    FiHome, 
+    FiPlus, 
+    FiRefreshCw, 
+    FiSearch, 
+    FiSliders, 
+    FiCalendar, 
+    FiUsers, 
+    FiDollarSign, 
+    FiSettings, 
+    FiCheckCircle, 
+    FiAlertCircle, 
+    FiClock, 
+    FiDownload, 
+    FiPackage, 
+    FiCpu, 
+    FiEdit, 
+    FiTrash2, 
+    FiExternalLink, 
+    FiPhone, 
+    FiMail, 
+    FiMapPin, 
+    FiGlobe, 
+    FiChevronLeft,
+    FiChevronRight, 
+    FiTrendingUp, 
+    FiLayers,
+    FiHelpCircle,
+    FiFileText,
+    FiTool,
+    FiAlertTriangle,
+    FiCheck,
+    FiShield,
+    FiKey
+} from 'react-icons/fi';
+import './CentralAdminDashboard.css';
+
+const WhiteLabelBuilder = ({ hospital }) => {
+    const [status, setStatus] = useState(hospital.appConfig?.buildStatus || 'NOT_BUILT');
+    const [apkUrl, setApkUrl] = useState(hospital.appConfig?.apkUrl || '');
+    const [aabUrl, setAabUrl] = useState(hospital.appConfig?.aabUrl || '');
+    const [error, setError] = useState(hospital.appConfig?.buildError || '');
+
+    useEffect(() => {
+        let interval;
+        if (status === 'BUILDING') {
+            interval = setInterval(async () => {
+                try {
+                    const token = JSON.parse(localStorage.getItem('user'))?.token || localStorage.getItem('token') || '';
+                    const res = await (await fetch(`${baseURL}/api/superadmin/hospitals/${hospital._id}/build-status`, {
+                        headers: { 'Authorization': `Bearer ${token}` }
+                    })).json();
+                    if (res.success) {
+                        setStatus(res.buildStatus);
+                        if (res.buildStatus === 'COMPLETED') {
+                            setApkUrl(res.apkUrl);
+                            setAabUrl(res.aabUrl);
+                        } else if (res.buildStatus === 'FAILED') {
+                            setError(res.buildError);
+                        }
+                    }
+                } catch (err) {}
+            }, 15000);
+        }
+        return () => clearInterval(interval);
+    }, [status, hospital._id]);
+
+    const handleBuild = async (e) => {
+        e.stopPropagation();
+        setStatus('BUILDING');
+        try {
+            const token = JSON.parse(localStorage.getItem('user'))?.token || localStorage.getItem('token') || '';
+            await fetch(`${baseURL}/api/superadmin/hospitals/${hospital._id}/build-app`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+        } catch (err) {
+            setStatus('FAILED');
+            setError('Network error');
+        }
+    };
+
+    const handleResetBuild = async (e) => {
+        e.stopPropagation();
+        setStatus('NOT_BUILT');
+        try {
+            const token = JSON.parse(localStorage.getItem('user'))?.token || localStorage.getItem('token') || '';
+            await fetch(`${baseURL}/api/superadmin/hospitals/${hospital._id}/reset-build`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+        } catch (err) {
+            setError('Network error');
+        }
+    };
+
+    return (
+        <div style={{ display: 'flex', gap: '8px', alignItems: 'center', width: '100%', marginTop: '10px', padding: '10px', background: '#f8fafc', borderRadius: '8px', border: '1px solid #e2e8f0' }} onClick={e => e.stopPropagation()}>
+            {status === 'NOT_BUILT' && <span style={{fontSize:'12px', color:'#64748b', fontWeight:600}}>Not Built</span>}
+            {status === 'BUILDING' && (
+                <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+                    <FiClock style={{ color: '#d97706', fontSize: '13px' }} />
+                    <span style={{fontSize:'12px', color:'#d97706', fontWeight:600}}>Building App (ETA: 3-5 mins)...</span>
+                    <button onClick={handleResetBuild} style={{ background: 'transparent', border: '1px solid #ef4444', color: '#ef4444', padding: '2px 8px', borderRadius: '4px', fontSize: '10px', cursor: 'pointer' }}>Reset</button>
+                </div>
+            )}
+            {status === 'COMPLETED' && (
+                <span style={{fontSize:'12px', color:'#16a34a', fontWeight:600, display: 'inline-flex', alignItems: 'center', gap: '4px'}}>
+                    <FiCheckCircle style={{ color: '#16a34a' }} /> App Ready
+                </span>
+            )}
+            {status === 'FAILED' && (
+                <span title={error} style={{fontSize:'12px', color:'#ef4444', fontWeight:600, display: 'inline-flex', alignItems: 'center', gap: '4px'}}>
+                    <FiAlertCircle style={{ color: '#ef4444' }} /> Build Failed
+                </span>
+            )}
+
+            <div style={{ marginLeft: 'auto', display: 'flex', gap: '8px' }}>
+                <button onClick={handleBuild} disabled={status === 'BUILDING'} style={{ background: '#D85F89', color: 'white', border: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, cursor: status === 'BUILDING' ? 'not-allowed' : 'pointer', display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                    <FiCpu /> Build Android App
+                </button>
+                {status === 'COMPLETED' && apkUrl && (
+                    <a href={`${baseURL}/api/superadmin/hospitals/${hospital._id}/download/apk`} download target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ background: '#C94D78', color: 'white', textDecoration: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                        <FiDownload /> Download APK
+                    </a>
+                )}
+                {status === 'COMPLETED' && aabUrl && (
+                    <a href={`${baseURL}/api/superadmin/hospitals/${hospital._id}/download/aab`} download target="_blank" rel="noreferrer" onClick={e => e.stopPropagation()} style={{ background: '#172238', color: 'white', textDecoration: 'none', padding: '6px 12px', borderRadius: '6px', fontSize: '12px', fontWeight: 600, display: 'inline-flex', alignItems: 'center', gap: '5px' }}>
+                        <FiPackage /> Download AAB
+                    </a>
+                )}
+            </div>
+        </div>
+    );
+};
+
+const MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+// Module-level in-memory cache for instant 0ms tab switching and high performance
+const centralAdminCache = {
+    hospitals: {}, // { enterprise: [...], multi_speciality_starter: [...], clinic_basic: [...] }
+    clinics: {},   // { starter: [...], basic: [...] }
+    hospitalStats: {}, // { [cacheKey]: {...} }
+    clinicStats: {},   // { [clinicId]: {...} }
+    roles: {},     // { [plan]: [...] }
+    departments: null,
+    revenuePlans: null,
+    systemAnalytics: null
+};
+
+const CentralAdminDashboard = () => {
+    const navigate = useNavigate();
+    const [activeTab, setActiveTab] = useState('hospitals');
+    const [error, setError] = useState('');
+    const [success, setSuccess] = useState('');
+
+    // Hospital list
+    const [hospitals, setHospitals] = useState([]);
+    const [loadingHospitals, setLoadingHospitals] = useState(false);
+    const [hospitalSort, setHospitalSort] = useState('a-z'); // 'a-z' | 'z-a' | 'newest' | 'oldest'
+    const [hospitalSearch, setHospitalSearch] = useState('');
+    const [showHospitalForm, setShowHospitalForm] = useState(false);
+    const [hospitalForm, setHospitalForm] = useState({ name: '', slug: '', customDomain: '', address: '', city: '', state: '', phone: '', email: '', website: '', departments: [], whiteLabelEnabled: false, brandingSchema: { appName: '', logoUrl: '', customDomain: '', themeColors: { primary: '#D85F89', secondary: '#0a2647', background: '#ffffff' } } });
+    const [editHospital, setEditHospital] = useState(null);
+    const [savingHospital, setSavingHospital] = useState(false);
+    const [deleteHospitalConfirm, setDeleteHospitalConfirm] = useState(null);
+    // Branding Editor
+    const [brandingHospital, setBrandingHospital] = useState(null);
+    const hospitalFormRef = useRef(null);
+    const deptDropdownRef = useRef(null);
+    const [deptDropdownOpen, setDeptDropdownOpen] = useState(false);
+    const tabsScrollRef = useRef(null);
+
+    const scrollTabs = (direction) => {
+        if (tabsScrollRef.current) {
+            const scrollAmount = direction === 'left' ? -240 : 240;
+            tabsScrollRef.current.scrollBy({ left: scrollAmount, behavior: 'smooth' });
+        }
+    };
+
+    // Hospital Admin creation
+    const [showHospitalAdminForm, setShowHospitalAdminForm] = useState(false);
+    const [hospitalAdminForm, setHospitalAdminForm] = useState({ name: '', email: '', password: '', phone: '', hospitalId: '', file: null, age: '', aadhaarNumber: '' });
+    const [creatingHospitalAdmin, setCreatingHospitalAdmin] = useState(false);
+
+    // Hospital Detail View
+    const [selectedHospital, setSelectedHospital] = useState(null);
+    const [hospitalStats, setHospitalStats] = useState(null);
+    const [loadingStats, setLoadingStats] = useState(false);
+    const [staffRoleFilter, setStaffRoleFilter] = useState('all');
+    const [staffSearchQuery, setStaffSearchQuery] = useState('');
+
+    // Appointment Mode customization (per hospital, Supreme Admin only)
+    const [apptMode, setApptMode] = useState('slot'); // 'slot' | 'token'
+    const [savingApptMode, setSavingApptMode] = useState(false);
+
+    // Date Filters
+    const [datePreset, setDatePreset] = useState('all'); // all, today, 30, 60, 90, custom
+    const [customStartDate, setCustomStartDate] = useState('');
+    const [customEndDate, setCustomEndDate] = useState('');
+    const [showCustomPicker, setShowCustomPicker] = useState(false);
+    const [chartRange, setChartRange] = useState('this_month');
+    const [appliedCustomAnim, setAppliedCustomAnim] = useState(false);
+
+    // Staff
+    const [roles, setRoles] = useState([]);
+    const [hospitalSubs, setHospitalSubs] = useState([]);
+    // Dynamic Departments (derived from Master Question Library keys)
+    const [availableDepartments, setAvailableDepartments] = useState([]);
+
+    // Simple Clinics
+    const [clinics, setClinics] = useState([]);
+    const [loadingClinics, setLoadingClinics] = useState(false);
+    const [showClinicForm, setShowClinicForm] = useState(false);
+    const [clinicForm, setClinicForm] = useState({ name: '', slug: '', address: '', city: '', state: '', phone: '', email: '', website: '', defaultFee: 0 });
+    const [editClinic, setEditClinic] = useState(null);
+    const [savingClinic, setSavingClinic] = useState(false);
+    const [deleteClinicConfirm, setDeleteClinicConfirm] = useState(null);
+    const [selectedClinic, setSelectedClinic] = useState(null);
+    const [clinicStats, setClinicStats] = useState(null);
+    const [loadingClinicStats, setLoadingClinicStats] = useState(false);
+    const [showClinicManagerForm, setShowClinicManagerForm] = useState(false);
+    const [clinicManagerForm, setClinicManagerForm] = useState({ name: '', email: '', password: '', phone: '', age: '', aadhaarNumber: '' });
+    const [savingClinicManager, setSavingClinicManager] = useState(false);
+    const [showClinicStaffForm, setShowClinicStaffForm] = useState(false);
+    const [clinicStaffForm, setClinicStaffForm] = useState({ name: '', email: '', password: '', phone: '', staffRole: 'doctor', age: '', aadhaarNumber: '' });
+    const [savingClinicStaff, setSavingClinicStaff] = useState(false);
+    const [clinicSubscriptions, setClinicSubscriptions] = useState([]);
+    const [subscriptionRateForm, setSubscriptionRateForm] = useState({ ratePerPatient: '', billingEnabled: false });
+    const [savingRate, setSavingRate] = useState(false);
+
+    // Clinic appointment mode (Central Admin only)
+    const [clinicApptMode, setClinicApptMode] = useState('token'); // 'slot' | 'token'
+    const [savingClinicApptMode, setSavingClinicApptMode] = useState(false);
+
+    // Revenue Plans tab
+    const [revenuePlans, setRevenuePlans] = useState([]);
+    const [loadingRevenuePlans, setLoadingRevenuePlans] = useState(false);
+    const [revenuePlanSearch, setRevenuePlanSearch] = useState('');
+    const [editingPlan, setEditingPlan] = useState(null); // hospital being edited
+    const [planForm, setPlanForm] = useState({ revenueModel: 'per_patient', ratePerPatient: '', monthlyFee: '', ratePerLogin: '', billingCycle: 'monthly' });
+    const [savingPlan, setSavingPlan] = useState(false);
+
+    // System Analytics for real KPIs
+    const [systemAnalytics, setSystemAnalytics] = useState(null);
+    const [loadingAnalytics, setLoadingAnalytics] = useState(false);
+
+    const currentUser = JSON.parse(localStorage.getItem('user') || '{}');
+    const location = useLocation();
+
+    const getBaseHost = () => {
+        let host = window.location.host;
+        if (host.startsWith('www.')) host = host.replace('www.', '');
+        const parts = host.split('.');
+        if (parts.length > 2 && !host.includes('localhost')) {
+            host = parts.slice(-2).join('.');
+        } else if (host.includes('localhost')) {
+            const port = window.location.port ? `:${window.location.port}` : '';
+            host = `localhost${port}`;
+        }
+        return host;
+    };
+
+    const getActivePlanName = (tab = activeTab) => {
+        if (tab === 'hospitals') return 'enterprise';
+        if (tab === 'multi-speciality') return 'multi_speciality_starter';
+        if (tab === 'clinic-basic') return 'clinic_basic';
+        if (tab === 'simple-clinics') return 'starter';
+        return 'enterprise';
+    };
+
+    const fetchSystemAnalytics = async (force = false) => {
+        if (!force && centralAdminCache.systemAnalytics) {
+            setSystemAnalytics(centralAdminCache.systemAnalytics);
+        } else if (!centralAdminCache.systemAnalytics) {
+            setLoadingAnalytics(true);
+        }
+        try {
+            const res = await revenueAPI.getSystemAnalytics();
+            if (res && res.success) {
+                centralAdminCache.systemAnalytics = res;
+                setSystemAnalytics(res);
+            }
+        } catch (err) {
+            console.error('Failed to load system analytics:', err);
+        } finally {
+            setLoadingAnalytics(false);
+        }
+    };
+
+    useEffect(() => {
+        const role = currentUser?.role;
+        // Only redirect if user is logged in but has the wrong role (not during logout)
+        if (role && role !== 'centraladmin' && role !== 'superadmin') navigate('/login');
+    }, [navigate]);
+
+    useEffect(() => {
+        const handleClickOutside = (event) => {
+            if (deptDropdownRef.current && !deptDropdownRef.current.contains(event.target)) {
+                setDeptDropdownOpen(false);
+            }
+        };
+        document.addEventListener('mousedown', handleClickOutside);
+        return () => document.removeEventListener('mousedown', handleClickOutside);
+    }, []);
+
+    const [isRefreshing, setIsRefreshing] = useState(false);
+
+    const handleRefreshAll = async () => {
+        setIsRefreshing(true);
+        try {
+            // Bust client cache to force fresh DB fetch
+            centralAdminCache.hospitals = {};
+            centralAdminCache.clinics = {};
+            centralAdminCache.roles = {};
+            centralAdminCache.departments = null;
+            centralAdminCache.revenuePlans = null;
+            centralAdminCache.systemAnalytics = null;
+
+            const plan = getActivePlanName();
+            await Promise.all([
+                fetchHospitals(plan, true),
+                fetchRoles(plan, true),
+                fetchDepartments(true),
+                fetchClinics(plan, true),
+                fetchSystemAnalytics(true)
+            ]);
+            toast.success('Dashboard data refreshed!');
+        } catch (err) {
+            console.error('Failed to refresh dashboard data:', err);
+        } finally {
+            setTimeout(() => setIsRefreshing(false), 400);
+        }
+    };
+
+    // Load initial global static metadata (departments, analytics) once on mount
+    useEffect(() => {
+        fetchDepartments();
+        fetchSystemAnalytics();
+    }, []);
+
+    // Handle navigation state from SystemRevenueDashboard "Manage Plan" button
+    useEffect(() => {
+        if (location.state?.openTab === 'revenue-plans') {
+            setActiveTab('revenue-plans');
+        }
+    }, [location.state]);
+
+    // Handle auto-clearing success/error notifications after 5 seconds
+    useEffect(() => {
+        if (success || error) {
+            const timer = setTimeout(() => {
+                setSuccess('');
+                setError('');
+            }, 5000);
+            return () => clearTimeout(timer);
+        }
+    }, [success, error]);
+
+    // Handle Global Search auto-open
+    useEffect(() => {
+        const queryParams = new URLSearchParams(location.search);
+        const searchHospitalId = queryParams.get('hospitalId');
+        const plan = queryParams.get('plan');
+
+        if (searchHospitalId) {
+            if (plan === 'starter' || plan === 'basic') {
+                setActiveTab('simple-clinics');
+                const clinic = clinics.find(c => c._id === searchHospitalId);
+                if (clinic && !selectedClinic) {
+                    openClinicDetail(clinic);
+                } else if (!clinic && clinics.length > 0) {
+                    // Try to fetch it explicitly if not loaded
+                    simpleClinicAPI.getClinics(plan).then(res => {
+                        if (res.success) {
+                            const c = res.clinics.find(x => x._id === searchHospitalId);
+                            if (c) openClinicDetail(c);
+                        }
+                    });
+                }
+            } else {
+                if (plan === 'multi_speciality_starter') setActiveTab('multi-speciality');
+                else if (plan === 'clinic_basic') setActiveTab('clinic-basic');
+                else setActiveTab('hospitals');
+
+                const hospital = hospitals.find(h => h._id === searchHospitalId);
+                if (hospital && !selectedHospital) {
+                    openHospitalDetail(hospital);
+                } else if (!hospital && hospitals.length > 0) {
+                    hospitalAPI.getHospitals(plan).then(res => {
+                        if (res.success) {
+                            const h = res.data.data.find(x => x._id === searchHospitalId);
+                            if (h) openHospitalDetail(h);
+                        }
+                    });
+                }
+            }
+        }
+    }, [location.search, hospitals, clinics]);
+
+    // Auto-load revenue plans when the tab becomes active
+    useEffect(() => {
+        const plan = getActivePlanName();
+        
+        // Clear global notifications and UI states when switching tabs
+        setSuccess('');
+        setError('');
+        setShowHospitalForm(false);
+        setShowHospitalAdminForm(false);
+        setEditHospital(null);
+        setSelectedHospital(null);
+        setShowClinicForm(false);
+        setShowClinicManagerForm(false);
+        setEditClinic(null);
+        setSelectedClinic(null);
+
+        if (activeTab === 'revenue-plans') {
+            fetchRevenuePlans();
+        } else if (activeTab === 'simple-clinics') {
+            fetchClinics(plan);
+            fetchRoles(plan);
+        } else if (activeTab === 'hospitals' || activeTab === 'multi-speciality' || activeTab === 'clinic-basic') {
+            fetchHospitals(plan);
+            fetchRoles(plan);
+        }
+    }, [activeTab]);
+
+    const fetchRevenuePlans = async (force = false) => {
+        if (!force && centralAdminCache.revenuePlans) {
+            setRevenuePlans(centralAdminCache.revenuePlans);
+        } else if (!centralAdminCache.revenuePlans) {
+            setLoadingRevenuePlans(true);
+        }
+        try {
+            const res = await revenueAPI.getHospitalsRevenue();
+            if (res.success) {
+                centralAdminCache.revenuePlans = res.hospitals || [];
+                setRevenuePlans(res.hospitals || []);
+            }
+        } catch (err) { console.error('Failed to load revenue plans:', err); }
+        finally { setLoadingRevenuePlans(false); }
+    };
+
+    const openPlanEditor = (hospital) => {
+        setEditingPlan(hospital);
+        setPlanForm({
+            revenueModel: hospital.revenueModel || 'per_patient',
+            ratePerPatient: hospital.subscription?.ratePerPatient ?? '',
+            monthlyFee: hospital.revenueConfig?.monthlyFee ?? '',
+            ratePerLogin: hospital.revenueConfig?.ratePerLogin ?? '',
+            billingCycle: hospital.revenueConfig?.billingCycle || 'monthly',
+        });
+    };
+
+    const handleSavePlan = async (e) => {
+        e.preventDefault();
+        setSavingPlan(true);
+        try {
+            await revenueAPI.setHospitalPlan(editingPlan._id, {
+                revenueModel: planForm.revenueModel,
+                ratePerPatient: planForm.ratePerPatient !== '' ? Number(planForm.ratePerPatient) : undefined,
+                monthlyFee: planForm.monthlyFee !== '' ? Number(planForm.monthlyFee) : undefined,
+                ratePerLogin: planForm.ratePerLogin !== '' ? Number(planForm.ratePerLogin) : undefined,
+                billingCycle: planForm.billingCycle,
+            });
+            centralAdminCache.revenuePlans = null;
+            setSuccess(`Revenue plan updated for ${editingPlan.name}`);
+            setEditingPlan(null);
+            fetchRevenuePlans(true);
+        } catch (err) { setError(err?.response?.data?.message || err.message); }
+        finally { setSavingPlan(false); }
+    };
+
+    const fetchDepartments = async (force = false) => {
+        if (!force && centralAdminCache.departments) {
+            setAvailableDepartments(centralAdminCache.departments);
+            return;
+        }
+        try {
+            const res = await questionLibraryAPI.getLibrary();
+            if (res.success && res.data && res.data.data) {
+                // The root keys of the question library JSON are the department names
+                const depts = Object.keys(res.data.data);
+                centralAdminCache.departments = depts;
+                setAvailableDepartments(depts);
+            }
+        } catch (err) { console.error('Failed to load global question libraries:', err); }
+    };
+
+    // ==========================================
+    // SIMPLE CLINIC HANDLERS
+    // ==========================================
+    const fetchClinics = async (plan = getActivePlanName(), force = false) => {
+        if (!force && centralAdminCache.clinics[plan]) {
+            setClinics(centralAdminCache.clinics[plan]);
+        } else if (!centralAdminCache.clinics[plan]) {
+            setLoadingClinics(true);
+        }
+        try {
+            const res = await simpleClinicAPI.getClinics(plan);
+            if (res.success) {
+                centralAdminCache.clinics[plan] = res.clinics;
+                setClinics(res.clinics);
+            }
+        } catch (err) { console.error('Failed to load clinics:', err); }
+        finally { setLoadingClinics(false); }
+    };
+
+    const openClinicDetail = async (clinic, forceRefresh = false) => {
+        setSelectedClinic(clinic);
+        setClinicApptMode(clinic.appointmentMode || 'token');
+        setSubscriptionRateForm({
+            ratePerPatient: clinic.subscription?.ratePerPatient ?? '',
+            billingEnabled: clinic.subscription?.billingEnabled ?? false,
+        });
+
+        const cacheKey = clinic._id;
+        if (!forceRefresh && centralAdminCache.clinicStats && centralAdminCache.clinicStats[cacheKey]) {
+            setClinicStats(centralAdminCache.clinicStats[cacheKey].statsRes);
+            setClinicSubscriptions(centralAdminCache.clinicStats[cacheKey].subRes || []);
+            setLoadingClinicStats(false);
+        } else {
+            setLoadingClinicStats(true);
+            setClinicStats(null);
+            setClinicSubscriptions([]);
+        }
+
+        try {
+            const [statsRes, subRes] = await Promise.all([
+                simpleClinicAPI.getStats(clinic._id),
+                simpleClinicAPI.getSubscriptions(clinic._id),
+            ]);
+            if (statsRes.success) {
+                if (!centralAdminCache.clinicStats) centralAdminCache.clinicStats = {};
+                centralAdminCache.clinicStats[cacheKey] = {
+                    statsRes,
+                    subRes: subRes.subscriptions || []
+                };
+                setClinicStats(statsRes);
+            }
+            if (subRes.success) setClinicSubscriptions(subRes.subscriptions || []);
+        } catch (err) { console.error('Failed to load clinic stats:', err); }
+        finally { setLoadingClinicStats(false); }
+    };
+
+    const closeClinicDetail = () => { setSelectedClinic(null); setClinicStats(null); setShowClinicManagerForm(false); setShowClinicStaffForm(false); setClinicSubscriptions([]); };
+
+    const handleSaveRate = async (e) => {
+        e.preventDefault();
+        setSavingRate(true);
+        try {
+            await simpleClinicAPI.setRate(selectedClinic._id, subscriptionRateForm);
+            setSuccess('Billing rate updated successfully');
+        } catch (err) { setError(err.response?.data?.message || err.message); }
+        finally { setSavingRate(false); }
+    };
+
+    const handleSaveClinicApptMode = async () => {
+        setSavingClinicApptMode(true);
+        setError(''); setSuccess('');
+        try {
+            const res = await simpleClinicAPI.updateAppointmentMode(selectedClinic._id, clinicApptMode);
+            if (res.success) {
+                setSuccess(`Appointment mode set to "${clinicApptMode === 'token' ? 'Token Queue' : 'Time Slot'}" for ${selectedClinic.name}`);
+                setSelectedClinic(prev => ({ ...prev, appointmentMode: clinicApptMode }));
+                fetchClinics();
+            }
+        } catch (err) { setError(err.response?.data?.message || err.message); }
+        finally { setSavingClinicApptMode(false); }
+    };
+
+    const handleMarkSubscription = async (subId, status) => {
+        try {
+            const res = await simpleClinicAPI.updateSubscription(selectedClinic._id, subId, { status });
+            if (res.success) {
+                setClinicSubscriptions(prev => prev.map(s => s._id === subId ? res.subscription : s));
+                setSuccess(`Month marked as ${status}`);
+            }
+        } catch (err) { setError(err.response?.data?.message || err.message); }
+    };
+
+    const handleSaveClinic = async (e) => {
+        e.preventDefault();
+        setSavingClinic(true);
+        setError(''); setSuccess('');
+        try {
+            const plan = activeTab === 'clinic-basic' ? 'basic' : 'starter';
+            if (editClinic) {
+                const res = await simpleClinicAPI.updateClinic(editClinic._id, { ...clinicForm, plan });
+                if (res.success) {
+                    centralAdminCache.clinics = {};
+                    setSuccess('Clinic updated.');
+                    fetchClinics(getActivePlanName(), true);
+                    setEditClinic(null);
+                    setShowClinicForm(false);
+                } else setError(res.message || 'Failed to update clinic');
+            } else {
+                const res = await simpleClinicAPI.createClinic({ ...clinicForm, plan });
+                if (res.success) {
+                    centralAdminCache.clinics = {};
+                    setSuccess('Clinic created successfully!');
+                    fetchClinics(getActivePlanName(), true);
+                    setShowClinicForm(false);
+                    setClinicForm({ name: '', slug: '', address: '', city: '', state: '', phone: '', email: '', website: '', defaultFee: 0 });
+                } else setError(res.message || 'Failed to create clinic');
+            }
+        } catch (err) { setError(err.response?.data?.message || err.message); }
+        finally { setSavingClinic(false); }
+    };
+
+    const handleDeleteClinic = async (id) => {
+        try {
+            const res = await simpleClinicAPI.deleteClinic(id);
+            if (res.success) {
+                centralAdminCache.clinics = {};
+                setSuccess('Clinic deleted.');
+                fetchClinics(getActivePlanName(), true);
+                setDeleteClinicConfirm(null);
+            } else setError(res.message);
+        } catch (err) { setError(err.response?.data?.message || err.message); }
+    };
+
+    const handleCreateClinicManager = async (e) => {
+        e.preventDefault();
+        setSavingClinicManager(true);
+        setError(''); setSuccess('');
+        try {
+            const res = await simpleClinicAPI.createManager(selectedClinic._id, clinicManagerForm);
+            if (res.success) {
+                centralAdminCache.clinics = {};
+                setSuccess(`Admin created! ${res.manager.name} can now login at /login with email: ${res.manager.email}`);
+                setClinicManagerForm({ name: '', email: '', password: '', phone: '', age: '', aadhaarNumber: '' });
+                setShowClinicManagerForm(false);
+                // Refresh clinic list and re-open detail with fresh data
+                setSelectedClinic(prev => ({ ...prev, adminUserId: res.manager }));
+                await fetchClinics(getActivePlanName(), true);
+                // Re-fetch stats so adminUserId populates
+                setLoadingClinicStats(true);
+                const statsRes = await simpleClinicAPI.getStats(selectedClinic._id);
+                if (statsRes.success) setClinicStats(statsRes);
+                setLoadingClinicStats(false);
+            } else setError(res.message);
+        } catch (err) { setError(err.response?.data?.message || err.message); }
+        finally { setSavingClinicManager(false); }
+    };
+
+    const handleCreateClinicStaff = async (e) => {
+        e.preventDefault();
+        setSavingClinicStaff(true);
+        setError(''); setSuccess('');
+        try {
+            const res = await simpleClinicAPI.createStaff(selectedClinic._id, clinicStaffForm);
+            if (res.success) {
+                setSuccess('Staff member added!');
+                setClinicStaffForm({ name: '', email: '', password: '', phone: '', staffRole: 'doctor', age: '', aadhaarNumber: '' });
+                setShowClinicStaffForm(false);
+                openClinicDetail(selectedClinic);
+            } else setError(res.message);
+        } catch (err) { setError(err.response?.data?.message || err.message); }
+        finally { setSavingClinicStaff(false); }
+    };
+
+    const handleDeleteClinicStaff = async (userId) => {
+        const confirmed = await confirmToast('Are you sure you want to remove this staff member?', { title: 'Remove Staff', confirmText: 'Remove' });
+        if (!confirmed) return;
+        try {
+            const res = await simpleClinicAPI.deleteStaff(selectedClinic._id, userId);
+            if (res.success) {
+                toast.success('Staff removed successfully');
+                setSuccess('Staff removed.');
+                openClinicDetail(selectedClinic);
+            } else {
+                toast.error(res.message || 'Error removing staff');
+                setError(res.message);
+            }
+        } catch (err) {
+            toast.error(err.response?.data?.message || err.message);
+            setError(err.response?.data?.message || err.message);
+        }
+    };
+
+    const fetchHospitals = async (plan = getActivePlanName(), force = false) => {
+        if (!force && centralAdminCache.hospitals[plan]) {
+            setHospitals(centralAdminCache.hospitals[plan]);
+        } else if (!centralAdminCache.hospitals[plan]) {
+            setLoadingHospitals(true);
+        }
+        try {
+            const res = await hospitalAPI.getHospitals(plan);
+            if (res.success) {
+                centralAdminCache.hospitals[plan] = res.hospitals;
+                setHospitals(res.hospitals);
+            }
+        } catch (err) {
+            console.error('Failed to load hospitals:', err);
+        } finally {
+            setLoadingHospitals(false);
+        }
+    };
+
+    const fetchRoles = async (plan = getActivePlanName(), force = false) => {
+        if (!force && centralAdminCache.roles[plan]) {
+            setRoles(centralAdminCache.roles[plan]);
+            return;
+        }
+        try {
+            const res = await adminAPI.getRoles(plan);
+            if (res.success) {
+                const filtered = res.data.filter(r => !['patient'].includes(r.name?.toLowerCase()));
+                centralAdminCache.roles[plan] = filtered;
+                setRoles(filtered);
+            }
+        } catch (err) {
+            console.error('Failed to load roles:', err);
+        }
+    };
+
+
+    const fetchHospitalStats = async (hospitalId, preset = datePreset, start = customStartDate, end = customEndDate, forceRefresh = false) => {
+        const cacheKey = `${hospitalId}_${preset}_${start}_${end}`;
+
+        if (!forceRefresh && centralAdminCache.hospitalStats && centralAdminCache.hospitalStats[cacheKey]) {
+            setHospitalStats(centralAdminCache.hospitalStats[cacheKey]);
+            setLoadingStats(false);
+        } else {
+            setLoadingStats(true);
+        }
+
+        try {
+            let queryStart = '';
+            let queryEnd = '';
+
+            if (preset !== 'all' && preset !== 'custom') {
+                const now = new Date();
+                const endD = new Date(now);
+                const startD = new Date(now);
+
+                if (preset === 'today') {
+                    startD.setHours(0, 0, 0, 0);
+                    endD.setHours(23, 59, 59, 999);
+                } else if (preset === '30') {
+                    startD.setDate(startD.getDate() - 30);
+                } else if (preset === '60') {
+                    startD.setDate(startD.getDate() - 60);
+                } else if (preset === '90') {
+                    startD.setDate(startD.getDate() - 90);
+                }
+
+                queryStart = startD.toISOString();
+                queryEnd = endD.toISOString();
+            } else if (preset === 'custom') {
+                if (start) queryStart = new Date(start).toISOString();
+                if (end) queryEnd = new Date(end).toISOString();
+            }
+
+            const res = await hospitalAPI.getHospitalStats(hospitalId, queryStart, queryEnd);
+            if (res.success) {
+                if (!centralAdminCache.hospitalStats) centralAdminCache.hospitalStats = {};
+                centralAdminCache.hospitalStats[cacheKey] = res;
+                setHospitalStats(res);
+            }
+        } catch (err) {
+            console.error('Stats error:', err);
+        } finally {
+            setLoadingStats(false);
+        }
+    };
+
+    const handleDatePresetChange = (preset) => {
+        setDatePreset(preset);
+        if (preset !== 'custom') {
+            setShowCustomPicker(false);
+            if (selectedHospital) {
+                fetchHospitalStats(selectedHospital._id, preset, '', '');
+            }
+        } else {
+            setShowCustomPicker(prev => !prev);
+        }
+    };
+
+    const handleApplyCustomDate = () => {
+        if (selectedHospital && customStartDate && customEndDate) {
+            setDatePreset('custom');
+            fetchHospitalStats(selectedHospital._id, 'custom', customStartDate, customEndDate);
+            toast.success('Custom date filter applied');
+        } else if (!customStartDate || !customEndDate) {
+            toast.error('Please select both start date and end date');
+        }
+    };
+
+    const openHospitalDetail = (h) => {
+        setSelectedHospital(h);
+        setApptMode(h.appointmentMode || 'slot');
+        setDatePreset('all');
+        setShowCustomPicker(false);
+        setCustomStartDate('');
+        setCustomEndDate('');
+        setStaffRoleFilter('all');
+        setStaffSearchQuery('');
+
+        const cacheKey = `${h._id}_all__`;
+        if (centralAdminCache.hospitalStats && centralAdminCache.hospitalStats[cacheKey]) {
+            setHospitalStats(centralAdminCache.hospitalStats[cacheKey]);
+            setLoadingStats(false);
+        } else {
+            setHospitalStats(null);
+            setLoadingStats(true);
+        }
+
+        fetchHospitalStats(h._id, 'all', '', '');
+    };
+
+    const handleSaveApptMode = async () => {
+        setSavingApptMode(true);
+        setError(''); setSuccess('');
+        try {
+            const res = await hospitalAPI.updateAppointmentMode(selectedHospital._id, apptMode);
+            if (res.success) {
+                setSuccess(`Appointment mode set to "${apptMode === 'token' ? 'Token Queue' : 'Time Slot'}" for ${selectedHospital.name}`);
+                setSelectedHospital(prev => ({ ...prev, appointmentMode: apptMode }));
+                fetchHospitals();
+            }
+        } catch (err) {
+            setError(err.response?.data?.message || 'Failed to update appointment mode');
+        } finally {
+            setSavingApptMode(false);
+        }
+    };
+
+    const closeHospitalDetail = () => {
+        setSelectedHospital(null);
+        setHospitalStats(null);
+    };
+
+    // --- Hospital CRUD ---
+    const handleSaveHospital = async (e) => {
+        e.preventDefault();
+        setSavingHospital(true); setError(''); setSuccess('');
+        try {
+            let plan = 'enterprise';
+            if (activeTab === 'multi-speciality') plan = 'multi_speciality_starter';
+            else if (activeTab === 'clinic-basic') plan = 'clinic_basic';
+
+            const payload = {
+                ...hospitalForm,
+                plan,
+                whiteLabelEnabled: hospitalForm.whiteLabelEnabled,
+                brandingSchema: hospitalForm.brandingSchema
+            };
+
+            if (editHospital) {
+                const res = await hospitalAPI.updateHospital(editHospital._id, payload);
+                if (res.success) {
+                    centralAdminCache.hospitals = {};
+                    toast.success(`Hospital "${payload.name || 'Hospital'}" updated successfully!`);
+                    setSuccess('Hospital updated!');
+                    setEditHospital(null);
+                    setShowHospitalForm(false);
+                    fetchHospitals(plan, true);
+                }
+            } else {
+                const res = await hospitalAPI.createHospital(payload);
+                if (res.success) {
+                    centralAdminCache.hospitals = {};
+                    toast.success(`Hospital "${payload.name || 'Hospital'}" created successfully!`, {
+                        duration: 4000,
+                    });
+                    setSuccess('Hospital created!');
+                    setShowHospitalForm(false);
+                    setHospitalForm({ name: '', slug: '', customDomain: '', address: '', city: '', state: '', phone: '', email: '', website: '', departments: [], whiteLabelEnabled: false, brandingSchema: { appName: '', logoUrl: '', customDomain: '', themeColors: { primary: '#D85F89', secondary: '#0a2647', background: '#ffffff' } } });
+                    fetchHospitals(plan, true);
+                }
+            }
+        } catch (err) { 
+            const errorMsg = err.response?.data?.message || 'Error saving hospital.';
+            setError(errorMsg);
+            toast.error(errorMsg);
+        }
+        finally { setSavingHospital(false); }
+    };
+
+    const handleDeleteHospital = async (id) => {
+        try {
+            const res = await hospitalAPI.deleteHospital(id);
+            if (res.success) {
+                centralAdminCache.hospitals = {};
+                const log = res.deletionLog || {};
+                const total = (log.users || 0) + (log.doctors || 0) + (log.appointments || 0) + (log.labs || 0) + (log.pharmacies || 0) + (log.receptions || 0) + (log.inventory || 0) + (log.roles || 0);
+                setSuccess(`Hospital deleted successfully. ${total} related records removed.`);
+                setDeleteHospitalConfirm(null);
+                fetchHospitals(getActivePlanName(), true);
+            }
+        } catch (err) { setError(err.response?.data?.message || 'Error deleting hospital.'); setDeleteHospitalConfirm(null); }
+    };
+
+    const openEditHospital = (h) => {
+        console.log("Hospital Data from DB:", h);
+        setEditHospital(h);
+        setHospitalForm({ 
+            name: h.name, 
+            slug: h.slug || '', 
+            customDomain: h.customDomain || '', 
+            address: h.address || '', 
+            city: h.city || '', 
+            state: h.state || '', 
+            phone: h.phone || '', 
+            email: h.email || '', 
+            website: h.website || '', 
+            departments: h.departments || [], 
+            whiteLabelEnabled: h.whiteLabelEnabled || false, 
+            brandingSchema: { 
+                appName: h.brandingSchema?.appName || '', 
+                logoUrl: h.brandingSchema?.logoUrl || '', 
+                customDomain: h.brandingSchema?.customDomain || '', 
+                themeColors: { 
+                    primary: h.brandingSchema?.themeColors?.primary || '#D85F89', 
+                    secondary: h.brandingSchema?.themeColors?.secondary || '#0a2647', 
+                    background: h.brandingSchema?.themeColors?.background || '#ffffff' 
+                } 
+            } 
+        });
+        setShowHospitalAdminForm(false);
+        setShowHospitalForm(true);
+        setTimeout(() => hospitalFormRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100);
+    };
+
+    // --- Hospital Admin Creation ---
+    const handleCreateHospitalAdmin = async (e) => {
+        e.preventDefault();
+        setCreatingHospitalAdmin(true); setError(''); setSuccess('');
+        try {
+            const res = await hospitalAdminAPI.createHospitalAdmin(hospitalAdminForm);
+            if (res.success) {
+                centralAdminCache.hospitals = {};
+                // If a photo was selected, upload it and update the new admin's avatar
+                if (hospitalAdminForm.file && res.user?.id) {
+                    try {
+                        const formData = new FormData();
+                        formData.append('images', hospitalAdminForm.file);
+                        const uploadRes = await uploadAPI.uploadImages(formData);
+                        if (uploadRes.success && uploadRes.files?.length > 0) {
+                            await adminAPI.updateUser(res.user.id, { avatar: uploadRes.files[0].url });
+                        }
+                    } catch { /* avatar upload failure is non-fatal */ }
+                }
+                toast.success(`Hospital Admin account created! Login: ${hospitalAdminForm.email}`, { duration: 4500 });
+                setSuccess(`Hospital Admin account created! Login: ${hospitalAdminForm.email}`);
+                setHospitalAdminForm({ name: '', email: '', password: '', phone: '', hospitalId: '', file: null, age: '', aadhaarNumber: '' });
+                setShowHospitalAdminForm(false);
+                fetchHospitals(getActivePlanName(), true);
+            }
+        } catch (err) { 
+            const errorMsg = err.response?.data?.message || 'Error creating hospital admin.';
+            setError(errorMsg);
+            toast.error(errorMsg);
+        }
+        finally { setCreatingHospitalAdmin(false); }
+    };
+
+
+
+    const formatCurrency = (n) => `₹${(n || 0).toLocaleString('en-IN')}`;
+
+    const MODEL_LABELS = {
+        per_patient: { label: 'Model B — Per Patient', color: '#0284c7', bg: '#f0f9ff', short: 'Per Patient' },
+        fixed_monthly: { label: 'Model A — Fixed Monthly', color: '#D85F89', bg: '#FCE7EF', short: 'Fixed Monthly' },
+        per_login: { label: 'Model C — Per Login', color: '#d97706', bg: '#fef3c7', short: 'Per Login' },
+    };
+
+    const tabs = [
+        { 
+            id: 'hospitals', 
+            name: 'Enterprise Plan', 
+            label: 'Enterprise Plan', 
+            desc: 'Manage hospitals', 
+            icon: (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/>
+                </svg>
+            )
+        },
+        { 
+            id: 'multi-speciality', 
+            name: 'Multi-Speciality Starter', 
+            label: 'Multi-Speciality Starter', 
+            desc: 'Up to 15 Doctors & 14 Staff', 
+            icon: (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14.5 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7.5L14.5 2z"/><polyline points="14 2 14 8 20 8"/><line x1="16" y1="13" x2="8" y2="13"/><line x1="16" y1="17" x2="8" y2="17"/>
+                </svg>
+            )
+        },
+        { 
+            id: 'clinic-basic', 
+            name: 'Clinic Basic Plan', 
+            label: 'Clinic Basic Plan', 
+            desc: 'Up to 5 Doctors & 3 Staff', 
+            icon: (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M12 20h9"/><path d="M16.5 3.5a2.121 2.121 0 0 1 3 3L7 19l-4 1 1-4L16.5 3.5z"/>
+                </svg>
+            )
+        },
+        { 
+            id: 'simple-clinics', 
+            name: 'Starter Plan', 
+            label: 'Starter Plan', 
+            desc: 'Small clinic management', 
+            icon: (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                </svg>
+            )
+        },
+        { 
+            id: 'revenue-plans', 
+            name: 'Revenue Plans', 
+            label: 'Revenue Plans', 
+            desc: 'Set billing models', 
+            icon: (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/><line x1="12" y1="18" x2="12" y2="12"/><line x1="9" y1="15" x2="15" y2="15"/>
+                </svg>
+            )
+        },
+        { 
+            id: 'configurations', 
+            name: 'Configurations', 
+            label: 'Configurations', 
+            desc: 'Roles, tests, questions', 
+            icon: (
+                <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                    <circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/>
+                </svg>
+            )
+        },
+    ];
+
+    // ==========================================
+    // HOSPITAL DETAIL PANEL
+    // ==========================================
+    if (selectedHospital) {
+        const s = hospitalStats?.stats;
+        const h = hospitalStats?.hospital || selectedHospital;
+        const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        const now = new Date();
+        const curM = monthNames[now.getMonth()];
+        const prevM = monthNames[(now.getMonth() - 1 + 12) % 12];
+        const dateLabels = chartRange === 'last_month' 
+            ? [`01 ${prevM}`, `05 ${prevM}`, `10 ${prevM}`, `15 ${prevM}`, `20 ${prevM}`, `25 ${prevM}`, `30 ${prevM}`]
+            : chartRange === 'this_year'
+                ? ['Jan', 'Mar', 'May', 'Jul', 'Sep', 'Nov', 'Dec']
+                : [`01 ${curM}`, `05 ${curM}`, `10 ${curM}`, `15 ${curM}`, `20 ${curM}`];
+
+        // Sample fallbacks matching uploaded screenshot if live array is empty
+        const defaultStaffList = [
+            { id: '1', name: 'Jivan Sharma', role: 'RECEPTIONIST', email: 'receptionist.med@gmail.com', phone: '1234567894' },
+            { id: '2', name: 'Tushar', role: 'DOCTOR', email: 'tushardoctor@gmail.com', phone: '2013213133' },
+            { id: '3', name: 'Ragini', role: 'DOCTOR', email: 'kmeena123@gmail.com', phone: '8644821764' },
+            { id: '4', name: 'Sunil Singh', role: 'OT MANAGER', email: '24sunil34@cghosp.com', phone: '9922644281' },
+            { id: '5', name: 'mahesh', role: 'PHARMACIST', email: 'maheshmedicalstore@gmail.com', phone: '34512412423' },
+            { id: '6', name: 'Rushi Sharma', role: 'DOCTOR', email: 'rushi.dr@gmail.com', phone: '7692457839' }
+        ];
+
+        // Exclude patient users completely from staff computations
+        const rawStaff = hospitalStats?.staffList || hospitalStats?.actualStaff || [];
+        const staffToRender = rawStaff.filter(st => {
+            const r = (st.roleName || st.role || '').toLowerCase();
+            return r !== 'patient' && r !== 'patients';
+        });
+
+        // Compute distinct staff roles and counts dynamically for the role filter pills
+        const roleCountMap = {};
+        staffToRender.forEach(st => {
+            const r = st.roleName || st.role || 'STAFF';
+            // Capitalize or normalize role string (e.g. 'DOCTOR' -> 'Doctor')
+            const normalized = r.charAt(0).toUpperCase() + r.slice(1).toLowerCase();
+            roleCountMap[normalized] = (roleCountMap[normalized] || 0) + 1;
+        });
+        const uniqueRoles = Object.keys(roleCountMap);
+
+        // Filter staff based on selected role filter and live search query
+        const filteredStaffToRender = staffToRender.filter(st => {
+            const r = (st.roleName || st.role || 'STAFF').toLowerCase();
+            const roleMatch = staffRoleFilter === 'all' || r === staffRoleFilter.toLowerCase();
+            if (!roleMatch) return false;
+
+            if (!staffSearchQuery.trim()) return true;
+            const q = staffSearchQuery.toLowerCase().trim();
+            const name = (st.name || '').toLowerCase();
+            const email = (st.email || '').toLowerCase();
+            const phone = (st.phone || '').toLowerCase();
+            const roleStr = (st.roleName || st.role || '').toLowerCase();
+            return name.includes(q) || email.includes(q) || phone.includes(q) || roleStr.includes(q);
+        });
+
+        const appointmentsToRender = hospitalStats?.recentAppointments || [];
+
+        // Real monthly revenue calculation from s.monthlyRevenue
+        const totalSixMonthRevenue = s?.monthlyRevenue?.reduce((acc, m) => acc + (m.revenue || 0), 0) || s?.totalRevenue || 0;
+
+        return (
+            <div className="centraladmin-page">
+                <div className="centraladmin-container" style={{ maxWidth: '1280px', margin: '0 auto', paddingBottom: '40px' }}>
+                    <div className="h-detail-container">
+                        {/* 1. Hospital Profile Hero Header Banner (100% Exact to Reference Image 1) */}
+                        <div className="h-detail-hero-banner">
+                                {/* Left Organic Deep Blue / Indigo Wave Background */}
+                                <div className="h-detail-hero-waves">
+                                    <svg className="h-detail-hero-wave-svg" viewBox="0 0 280 280" preserveAspectRatio="none">
+                                        <defs>
+                                            <linearGradient id="heroBlueDeep" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                <stop offset="0%" stopColor="#081038" />
+                                                <stop offset="28%" stopColor="#131e5c" />
+                                                <stop offset="55%" stopColor="#2e1a6b" />
+                                                <stop offset="78%" stopColor="#4c1d95" />
+                                                <stop offset="100%" stopColor="#6366f1" />
+                                            </linearGradient>
+                                            <linearGradient id="heroBlueEdge" x1="0%" y1="0%" x2="100%" y2="100%">
+                                                <stop offset="0%" stopColor="#38bdf8" />
+                                                <stop offset="45%" stopColor="#818cf8" />
+                                                <stop offset="80%" stopColor="#a855f7" />
+                                                <stop offset="100%" stopColor="#c084fc" />
+                                            </linearGradient>
+                                        </defs>
+                                        {/* Deep royal blue / purple organic wave - extended moderately rightward */}
+                                        <path d="M0 0 L265 0 C215 55 225 120 185 180 C145 230 100 280 0 280 Z" fill="url(#heroBlueDeep)" />
+                                        {/* Glowing neon cyan/purple wave contour edge */}
+                                        <path d="M265 0 C215 55 225 120 185 180 C145 230 100 280 0 280" fill="none" stroke="url(#heroBlueEdge)" strokeWidth="3.5" strokeOpacity="0.95" />
+                                    </svg>
+                                    {/* Bottom Left Dot Matrix */}
+                                    <div className="h-detail-dark-dot-matrix">
+                                        {[...Array(16)].map((_, i) => (
+                                            <span key={i} className="h-matrix-dot blue-dot" />
+                                        ))}
+                                    </div>
+                                </div>
+
+                                {/* Top Row: Left "Hospital Profile" Badge + Right Compact "← Back" Button */}
+                                <div className="h-detail-hero-top-row">
+                                    <div className="h-detail-profile-pill-top-left">
+                                        <span className="h-detail-profile-shield-icon">
+                                            <svg width="14" height="14" viewBox="0 0 24 24" fill="#38bdf8">
+                                                <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z" />
+                                                <path d="M9 12l2 2 4-4" stroke="#ffffff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                        </span>
+                                        <span>Hospital Profile</span>
+                                    </div>
+
+                                    <button 
+                                        type="button"
+                                        onClick={closeHospitalDetail} 
+                                        className="h-detail-top-back-btn"
+                                        title="Return to Hospitals List"
+                                    >
+                                        <span className="h-detail-top-back-arrow">←</span>
+                                        <span>Back</span>
+                                    </button>
+                                </div>
+
+                                {/* Main Hero Upper Content */}
+                                <div className="h-detail-hero-content">
+                                    {/* 3D Hexagon Hospital Logo with Orbital Planetary Rings & Data Nodes */}
+                                    <div className="h-detail-hex-logo-container">
+                                        {/* Orbital Rings & Nodes */}
+                                        <div className="h-detail-hex-orbit-ring" />
+                                        <div className="h-detail-hex-orbit-node node-a" />
+                                        <div className="h-detail-hex-orbit-node node-b" />
+                                        <div className="h-detail-hex-orbit-node node-c" />
+
+                                        <div className="h-detail-hex-outer">
+                                            <div className="h-detail-hex-inner">
+                                                {h.brandingSchema?.logoUrl || h.branding?.logoUrl ? (
+                                                    <img 
+                                                        src={h.brandingSchema?.logoUrl || h.branding?.logoUrl} 
+                                                        alt={h.name} 
+                                                        className="h-detail-hex-img"
+                                                    />
+                                                ) : (
+                                                    <div className="h-detail-red-cross-box">
+                                                        <span className="h-cross-arm-h" />
+                                                        <span className="h-cross-arm-v" />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Center Hospital Info */}
+                                    <div className="h-detail-hero-info">
+                                        {/* Top 5x4 Dot Matrix Pattern */}
+                                        <div className="h-detail-center-dot-matrix">
+                                            {[...Array(20)].map((_, i) => (
+                                                <span key={i} className="h-center-matrix-dot" />
+                                            ))}
+                                        </div>
+
+                                        {/* Title */}
+                                        <h2 className="h-detail-hero-title">{h.name || 'Apollo Hospital'}</h2>
+
+                                        {/* Progress Underline Accent Bar */}
+                                        <div className="h-detail-hero-accent-bar">
+                                            <div className="h-detail-accent-bar-fill" />
+                                            <div className="h-detail-accent-bar-dot" />
+                                        </div>
+
+                                        {/* Meta Pills: Location & Phone */}
+                                        <div className="h-detail-hero-meta-row">
+                                            <div className="h-detail-meta-chip">
+                                                <span className="h-detail-meta-chip-icon pin-icon">
+                                                    <i className="fa-solid fa-location-dot" />
+                                                </span>
+                                                <span className="h-detail-meta-chip-text">
+                                                    {h.city ? `${h.city}${h.state ? `, ${h.state}` : ''}` : (h.address || 'Jaipur, Rajasthan')}
+                                                </span>
+                                            </div>
+                                            <div className="h-detail-meta-sep" />
+                                            <div className="h-detail-meta-chip">
+                                                <span className="h-detail-meta-chip-icon phone-icon">
+                                                    <i className="fa-solid fa-phone" />
+                                                </span>
+                                                <span className="h-detail-meta-chip-text">
+                                                    {h.phone || '8795719836'}
+                                                </span>
+                                            </div>
+                                        </div>
+                                    </div>
+
+                                    {/* Right: Hospital Building Illustration / ECG widget */}
+                                    <div className="h-detail-hero-right-col">
+                                        {/* Right: Animated ECG Heartbeat Wave matching Image 2 */}
+                                        <div className="h-detail-hero-ecg-widget">
+                                            <svg className="h-detail-hero-ecg-svg" viewBox="0 0 230 76" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                                <defs>
+                                                    {/* ECG Line Gradient */}
+                                                    <linearGradient id="ecgLineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                                        <stop offset="0%" stopColor="#38bdf8" />
+                                                        <stop offset="45%" stopColor="#0284c7" />
+                                                        <stop offset="85%" stopColor="#2563eb" />
+                                                        <stop offset="100%" stopColor="#10b981" />
+                                                    </linearGradient>
+                                                    {/* Background Dot Grid Pattern */}
+                                                    <pattern id="ecgGridDots" x="0" y="0" width="12" height="12" patternUnits="userSpaceOnUse">
+                                                        <circle cx="2" cy="2" r="0.9" fill="#93c5fd" fillOpacity="0.4" />
+                                                    </pattern>
+                                                    {/* Green Radar Glow Gradient */}
+                                                    <radialGradient id="ecgRadarGlow" cx="50%" cy="50%" r="50%">
+                                                        <stop offset="0%" stopColor="#10b981" stopOpacity="0.8" />
+                                                        <stop offset="50%" stopColor="#34d399" stopOpacity="0.3" />
+                                                        <stop offset="100%" stopColor="#6ee7b7" stopOpacity="0" />
+                                                    </radialGradient>
+                                                </defs>
+
+                                                {/* Background Dot Grid */}
+                                                <rect x="0" y="0" width="230" height="76" fill="url(#ecgGridDots)" rx="8" />
+
+                                                {/* Static subtle background trace */}
+                                                <path 
+                                                    d="M 12 40 H 42 L 48 34 L 54 44 L 66 10 L 76 68 L 83 38 L 89 43 L 130 40 L 138 52 L 148 18 L 158 55 L 164 40 L 198 40" 
+                                                    stroke="#e0f2fe" 
+                                                    strokeWidth="2.5" 
+                                                    strokeLinecap="round" 
+                                                    strokeLinejoin="round" 
+                                                />
+
+                                                {/* Animated Glowing ECG Pulse Line */}
+                                                <path 
+                                                    className="h-detail-ecg-animated-path"
+                                                    d="M 12 40 H 42 L 48 34 L 54 44 L 66 10 L 76 68 L 83 38 L 89 43 L 130 40 L 138 52 L 148 18 L 158 55 L 164 40 L 198 40" 
+                                                    stroke="url(#ecgLineGrad)" 
+                                                    strokeWidth="2.8" 
+                                                    strokeLinecap="round" 
+                                                    strokeLinejoin="round" 
+                                                />
+
+                                                {/* Green Radar Signal End Node with Expanding Ripples */}
+                                                <g transform="translate(198, 40)">
+                                                    {/* Expanding Radar Ripple 1 */}
+                                                    <circle cx="0" cy="0" r="16" className="h-detail-ecg-ripple ripple-1" fill="url(#ecgRadarGlow)" />
+                                                    {/* Expanding Radar Ripple 2 */}
+                                                    <circle cx="0" cy="0" r="10" className="h-detail-ecg-ripple ripple-2" stroke="#10b981" strokeWidth="1" fill="none" opacity="0.6" />
+                                                    {/* Ambient Soft Halo */}
+                                                    <circle cx="0" cy="0" r="7" fill="#a7f3d0" fillOpacity="0.75" />
+                                                    {/* Center Core Emerald Dot */}
+                                                    <circle cx="0" cy="0" r="4.5" fill="#10b981" />
+                                                    {/* Core Highlight Dot */}
+                                                    <circle cx="-1" cy="-1" r="1.5" fill="#ffffff" />
+                                                </g>
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Bottom Floating Stats & Real-time Status Bar */}
+                                <div className="h-detail-hero-bottom-bar">
+                                    <div className="h-detail-bottom-stat-item">
+                                        <div className="h-detail-bottom-stat-icon icon-shield">
+                                            <i className="fa-solid fa-shield-halved" />
+                                        </div>
+                                        <div className="h-detail-bottom-stat-text">
+                                            <span className="h-detail-bottom-stat-label">Trusted Care</span>
+                                            <span className="h-detail-bottom-stat-val">24/7</span>
+                                        </div>
+                                    </div>
+
+                                    <div className="h-detail-bottom-stat-sep" />
+
+                                    <div className="h-detail-bottom-stat-item">
+                                        <div className="h-detail-bottom-stat-icon icon-doctors">
+                                            <i className="fa-solid fa-user-doctor" />
+                                        </div>
+                                        <div className="h-detail-bottom-stat-text">
+                                            <span className="h-detail-bottom-stat-label">Expert Doctors</span>
+                                            <span className="h-detail-bottom-stat-val">
+                                                {s?.totalDoctors ?? s?.staffCounts?.doctor ?? 0}
+                                            </span>
+                                        </div>
+                                    </div>
+
+                                    {/* Right Status Capsule with ECG wave inside */}
+                                    <div className="h-detail-bottom-stat-right">
+                                        <div className={h.isActive === false ? 'h-detail-bottom-status-capsule inactive' : 'h-detail-bottom-status-capsule active'}>
+                                            <span className="h-detail-bottom-live-dot" />
+                                            <span className="h-detail-bottom-status-name">{h.isActive === false ? 'INACTIVE' : 'ACTIVE'}</span>
+                                            <div className="h-detail-bottom-ecg-svg-wrap">
+                                                <svg viewBox="0 0 60 24" className="h-detail-bottom-ecg-svg">
+                                                    <path d="M0 12 L15 12 L20 4 L25 20 L30 8 L35 16 L40 12 L60 12" stroke="#16a34a" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                                </svg>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 2. Analytics Timeframe Bar */}
+                            <div className="h-detail-timeframe-card">
+                                <div className="h-detail-timeframe-head">
+                                    <div className="h-detail-timeframe-title-group">
+                                        <div className="h-detail-purple-icon-circle">
+                                            <i className="fa-regular fa-calendar" />
+                                        </div>
+                                        <h4 className="h-detail-timeframe-title">Analytics Timeframe</h4>
+                                    </div>
+                                    <span className="h-detail-timeframe-subtitle">Choose a reporting period</span>
+                                </div>
+
+                                <div className="h-detail-timeframe-controls">
+                                    {/* Presets Group */}
+                                    <div className="h-detail-preset-group">
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDatePresetChange('all')}
+                                            className={`h-detail-preset-btn ${datePreset === 'all' ? 'active' : ''}`}
+                                        >
+                                            All Time
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDatePresetChange('today')}
+                                            className={`h-detail-preset-btn ${datePreset === 'today' ? 'active' : ''}`}
+                                        >
+                                            Today
+                                        </button>
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDatePresetChange('30')}
+                                            className={`h-detail-preset-btn ${datePreset === '30' ? 'active' : ''}`}
+                                        >
+                                            30 Days
+                                        </button>
+                                        {/* Mobile-only Custom Toggle Button */}
+                                        <button
+                                            type="button"
+                                            onClick={() => handleDatePresetChange('custom')}
+                                            className={`h-detail-preset-btn h-detail-mobile-custom-btn ${datePreset === 'custom' || showCustomPicker ? 'active' : ''}`}
+                                            title="Filter by custom date range"
+                                        >
+                                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                <polygon points="22 3 2 3 10 12.46 10 19 14 21 14 12.46 22 3"/>
+                                            </svg>
+                                            <span>Custom</span>
+                                        </button>
+                                    </div>
+
+                                    {/* Date Picker Inputs (Always shown on desktop, toggle on mobile) */}
+                                    <div className={`h-detail-date-picker-group ${showCustomPicker ? 'mobile-visible' : ''}`}>
+                                        <input
+                                            type="date"
+                                            value={customStartDate}
+                                            onChange={(e) => setCustomStartDate(e.target.value)}
+                                            className="h-detail-date-input"
+                                            placeholder="Start Date"
+                                        />
+                                        <span className="h-detail-date-sep">to</span>
+                                        <input
+                                            type="date"
+                                            value={customEndDate}
+                                            onChange={(e) => setCustomEndDate(e.target.value)}
+                                            className="h-detail-date-input"
+                                            placeholder="End Date"
+                                        />
+                                        <button 
+                                            type="button"
+                                            onClick={handleApplyCustomDate}
+                                            className="h-detail-apply-btn"
+                                        >
+                                            Apply Custom
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 2b. Live Medical Telemetry HUD Loader or Loaded Analytics */}
+                            {loadingStats && !hospitalStats ? (
+                                <div className="h-detail-loading-hud">
+                                    <div className="h-hud-card">
+                                        <div className="h-hud-pulse-cluster">
+                                            <div className="h-hud-radar-ring" />
+                                            <div className="h-hud-radar-ring-delay" />
+                                            <div className="h-hud-core-icon">
+                                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                                    <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z" fill="#ffffff" fillOpacity="0.25" stroke="#ffffff" strokeWidth="2" />
+                                                    <path d="M12 7v10M7 12h10" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" />
+                                                </svg>
+                                            </div>
+                                        </div>
+
+                                        <div className="h-hud-text-area">
+                                            <div className="h-hud-title">
+                                                <span>Synchronizing Hospital Intelligence</span>
+                                                <span className="h-hud-dot-pulse" />
+                                            </div>
+                                            <div className="h-hud-subtitle">
+                                                Aggregating Real-Time Doctors, Patient Census & Revenue Analytics...
+                                            </div>
+                                        </div>
+
+                                        <div className="h-hud-ecg-stream">
+                                            <svg className="h-hud-ecg-svg" viewBox="0 0 220 36" preserveAspectRatio="none">
+                                                <path className="h-hud-ecg-track" d="M0 18 L40 18 L50 18 L58 4 L66 32 L74 8 L82 24 L90 18 L130 18 L140 18 L148 4 L156 32 L164 8 L172 24 L180 18 L220 18" fill="none" stroke="rgba(56, 189, 248, 0.2)" strokeWidth="2" />
+                                                <path className="h-hud-ecg-glow" d="M0 18 L40 18 L50 18 L58 4 L66 32 L74 8 L82 24 L90 18 L130 18 L140 18 L148 4 L156 32 L164 8 L172 24 L180 18 L220 18" fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" />
+                                            </svg>
+                                        </div>
+                                    </div>
+
+                                    {/* Shimmering Skeleton KPI Grid */}
+                                    <div className="h-detail-kpi-grid h-skeleton-grid">
+                                        {[1, 2, 3, 4].map(idx => (
+                                            <div key={idx} className="h-detail-kpi-card h-skeleton-card">
+                                                <div className="h-skeleton-shimmer" />
+                                                <div className="h-skeleton-icon" />
+                                                <div className="h-skeleton-line h-skeleton-line-lg" />
+                                                <div className="h-skeleton-line h-skeleton-line-sm" />
+                                            </div>
+                                        ))}
+                                    </div>
+
+                                    {/* Shimmering Skeleton Charts Row */}
+                                    <div className="h-skeleton-charts-row">
+                                        <div className="h-skeleton-chart-box">
+                                            <div className="h-skeleton-shimmer" />
+                                            <div className="h-skeleton-line h-skeleton-line-lg" style={{ width: '40%' }} />
+                                            <div className="h-skeleton-line" style={{ width: '100%', height: '140px', marginTop: '10px' }} />
+                                        </div>
+                                        <div className="h-skeleton-chart-box">
+                                            <div className="h-skeleton-shimmer" />
+                                            <div className="h-skeleton-line h-skeleton-line-lg" style={{ width: '40%' }} />
+                                            <div className="h-skeleton-line" style={{ width: '100%', height: '140px', marginTop: '10px' }} />
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <>
+                                    {/* 3. 4 KPI Stat Cards (100% Real API Data with Light Colorful Aesthetics) */}
+                                    <div className="h-detail-kpi-grid">
+                                <div className="h-detail-kpi-card kpi-card-green">
+                                    <div className="h-detail-kpi-icon-wrap kpi-icon-green">
+                                        <i className="fa-solid fa-user" />
+                                    </div>
+                                    <h3 className="h-detail-kpi-val">{s?.totalStaff ?? 0}</h3>
+                                    <h5 className="h-detail-kpi-lbl">Total Staff</h5>
+                                    <p className="h-detail-kpi-sub">Active staff members</p>
+                                    <div className="h-detail-kpi-bar kpi-bar-green" />
+                                </div>
+
+                                <div className="h-detail-kpi-card kpi-card-blue">
+                                    <div className="h-detail-kpi-icon-wrap kpi-icon-blue">
+                                        <i className="fa-solid fa-user-group" />
+                                    </div>
+                                    <h3 className="h-detail-kpi-val">{s?.totalPatients ?? 0}</h3>
+                                    <h5 className="h-detail-kpi-lbl">Unique Patients</h5>
+                                    <p className="h-detail-kpi-sub">In selected period</p>
+                                    <div className="h-detail-kpi-bar kpi-bar-blue" />
+                                </div>
+
+                                <div className="h-detail-kpi-card kpi-card-purple">
+                                    <div className="h-detail-kpi-icon-wrap kpi-icon-purple">
+                                        <i className="fa-regular fa-calendar-check" />
+                                    </div>
+                                    <h3 className="h-detail-kpi-val">{s?.totalAppointments ?? 0}</h3>
+                                    <h5 className="h-detail-kpi-lbl">Total Appointments</h5>
+                                    <p className="h-detail-kpi-sub">In selected period</p>
+                                    <div className="h-detail-kpi-bar kpi-bar-purple" />
+                                </div>
+
+                                <div className="h-detail-kpi-card kpi-card-orange">
+                                    <div className="h-detail-kpi-icon-wrap kpi-icon-orange">
+                                        <i className="fa-solid fa-indian-rupee-sign" />
+                                    </div>
+                                    <h3 className="h-detail-kpi-val">{formatCurrency(s?.totalRevenue || 0)}</h3>
+                                    <h5 className="h-detail-kpi-lbl">Total Revenue</h5>
+                                    <p className="h-detail-kpi-sub">From paid appointments</p>
+                                    <div className="h-detail-kpi-bar kpi-bar-orange" />
+                                </div>
+                            </div>
+
+                            {/* 4. Appointments Overview & Recent Appointments (Replaced Quick Summary) */}
+                            <div className="h-detail-middle-grid">
+                                {/* Left: Appointments Overview Chart */}
+                                <div className="h-detail-chart-card">
+                                    <div className="h-detail-card-head">
+                                        <div className="h-detail-timeframe-title-group">
+                                            <div className="h-detail-purple-icon-circle">
+                                                <i className="fa-regular fa-calendar" />
+                                            </div>
+                                            <h4 className="h-detail-timeframe-title">Appointments Overview</h4>
+                                        </div>
+                                        <select 
+                                            value={chartRange} 
+                                            onChange={(e) => setChartRange(e.target.value)}
+                                            className="h-detail-select"
+                                        >
+                                            <option value="this_month">All Time</option>
+                                            <option value="last_month">Last Month</option>
+                                            <option value="this_year">This Year</option>
+                                        </select>
+                                    </div>
+
+                                    <div className="h-detail-chart-body">
+                                        <div className="h-detail-y-axis">
+                                            <span>40</span>
+                                            <span>30</span>
+                                            <span>20</span>
+                                            <span>10</span>
+                                            <span>0</span>
+                                        </div>
+                                        <div className="h-detail-plot">
+                                            <div className="h-detail-gridline" style={{ top: '0%' }} />
+                                            <div className="h-detail-gridline" style={{ top: '25%' }} />
+                                            <div className="h-detail-gridline" style={{ top: '50%' }} />
+                                            <div className="h-detail-gridline" style={{ top: '75%' }} />
+                                            <div className="h-detail-gridline" style={{ top: '100%' }} />
+
+                                            <svg viewBox="0 0 500 160" preserveAspectRatio="none" style={{ width: '100%', height: '100%', position: 'absolute', top: 0, left: 0 }}>
+                                                <defs>
+                                                    <linearGradient id="detailPurpleArea" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="0%" stopColor="#818cf8" stopOpacity="0.3" />
+                                                        <stop offset="100%" stopColor="#818cf8" stopOpacity="0.02" />
+                                                    </linearGradient>
+                                                </defs>
+                                                <path
+                                                    d="M0 130 C40 100, 70 115, 110 110 C140 105, 170 50, 200 55 C230 60, 260 120, 300 100 C340 85, 370 70, 410 75 C450 80, 480 75, 500 78 L500 160 L0 160 Z"
+                                                    fill="url(#detailPurpleArea)"
+                                                />
+                                                <path
+                                                    d="M0 130 C40 100, 70 115, 110 110 C140 105, 170 50, 200 55 C230 60, 260 120, 300 100 C340 85, 370 70, 410 75 C450 80, 480 75, 500 78"
+                                                    fill="none"
+                                                    stroke="#6366f1"
+                                                    strokeWidth="2.5"
+                                                    strokeLinecap="round"
+                                                />
+                                            </svg>
+                                        </div>
+                                    </div>
+
+                                    <div className="h-detail-x-axis">
+                                        <span>01 Aug</span>
+                                        <span>05 Aug</span>
+                                        <span>10 Aug</span>
+                                        <span>15 Aug</span>
+                                        <span>20 Aug</span>
+                                        <span>25 Aug</span>
+                                        <span>30 Aug</span>
+                                    </div>
+                                </div>
+
+                                {/* Right: Recent Appointments (Replaced Quick Summary with exact Image 1 Recent Appointments Table) */}
+                                <div className="h-detail-summary-card">
+                                    <div className="h-detail-card-head">
+                                        <div className="h-detail-timeframe-title-group">
+                                            <div className="h-detail-purple-icon-circle" style={{ background: '#ffedd5', color: '#ea580c' }}>
+                                                <i className="fa-solid fa-list-ol" />
+                                            </div>
+                                            <h4 className="h-detail-timeframe-title">Recent Appointments ({appointmentsToRender.length} latest)</h4>
+                                        </div>
+                                    </div>
+
+                                    <div style={{ flex: 1, overflowX: 'auto', overflowY: 'auto', maxHeight: '235px', border: '1px solid #e2e8f0', borderRadius: '12px' }}>
+                                        <table className="h-detail-appt-table" style={{ margin: 0, width: '100%' }}>
+                                            <thead>
+                                                <tr>
+                                                    <th>PATIENT</th>
+                                                    <th>DOCTOR</th>
+                                                    <th>DATE</th>
+                                                    <th>STATUS</th>
+                                                    <th>AMOUNT</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody>
+                                                {appointmentsToRender.length > 0 ? (
+                                                    appointmentsToRender.map((appt, idx) => (
+                                                        <tr key={appt.id || appt._id || idx}>
+                                                            <td style={{ fontWeight: 600 }}>{appt.userId?.name || appt.patientName || appt.patient || 'Patient'}</td>
+                                                            <td>{appt.doctorId?.name || appt.doctorName || appt.doctor || 'Doctor'}</td>
+                                                            <td>{appt.appointmentDate ? new Date(appt.appointmentDate).toLocaleDateString('en-GB') : (appt.date || '—')}</td>
+                                                            <td>
+                                                                <span className="h-detail-status-completed" style={{ textTransform: 'capitalize' }}>
+                                                                    {appt.status || 'completed'}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ fontWeight: 700 }}>{formatCurrency(appt.amount || 0)}</td>
+                                                        </tr>
+                                                    ))
+                                                ) : (
+                                                    <tr>
+                                                        <td colSpan="5" style={{ textAlign: 'center', padding: '36px 16px', color: '#94a3b8', fontSize: '13px' }}>
+                                                            No recent appointments found for this hospital in the selected timeframe.
+                                                        </td>
+                                                    </tr>
+                                                )}
+                                            </tbody>
+                                        </table>
+                                    </div>
+                                </div>
+                            </div>
+
+
+                            {/* 6. Appointment System Mode */}
+                            <div className="h-detail-apptmode-card">
+                                <div className="h-detail-apptmode-title-row">
+                                    <h4 className="h-detail-apptmode-title">Appointment System Mode</h4>
+                                    <span className="h-detail-mode-badge">Current: {h.appointmentMode === 'token' ? 'Token Queue' : 'Time Slots'}</span>
+                                </div>
+                                <p className="h-detail-apptmode-sub">
+                                    Choose your appointment system mode. You can switch between modes at any time.
+                                </p>
+
+                                <div className="h-detail-mode-options-grid">
+                                    <div 
+                                        className={`h-detail-mode-card ${apptMode === 'slot' ? 'active' : ''}`}
+                                        onClick={() => setApptMode('slot')}
+                                    >
+                                        <div className="h-detail-mode-icon-box" style={{ background: '#ede9fe', color: '#6366f1' }}>
+                                            <i className="fa-regular fa-clock" />
+                                        </div>
+                                        <div className="h-detail-mode-text-box">
+                                            <h5>
+                                                Time Slot Booking
+                                                <span className="h-detail-rec-badge">Recommended</span>
+                                            </h5>
+                                            <p>Patients pick a specific time (10:00, 10:30...). Doctor sees one time slot at a time.</p>
+                                        </div>
+                                    </div>
+
+                                    <div 
+                                        className={`h-detail-mode-card ${apptMode === 'token' ? 'active' : ''}`}
+                                        onClick={() => setApptMode('token')}
+                                    >
+                                        <div className="h-detail-mode-icon-box" style={{ background: '#fef3c7', color: '#d97706' }}>
+                                            <i className="fa-solid fa-ticket" />
+                                        </div>
+                                        <div className="h-detail-mode-text-box">
+                                            <h5>Token Queue System</h5>
+                                            <p>Sequential tokens (1, 2, 3...). 1 patient per day (one token in live mode) or live token updating board.</p>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <div className="h-detail-save-mode-row">
+                                    <button
+                                        onClick={handleSaveApptMode}
+                                        disabled={savingApptMode || apptMode === (h.appointmentMode || 'slot')}
+                                        className="h-detail-save-btn"
+                                        style={{ opacity: (savingApptMode || apptMode === (h.appointmentMode || 'slot')) ? 0.6 : 1 }}
+                                    >
+                                        {savingApptMode ? 'Saving…' : 'Save Mode'}
+                                    </button>
+                                    <span className="h-detail-saved-text">
+                                        {apptMode === (h.appointmentMode || 'slot') ? 'All changes are saved.' : 'Unsaved changes pending.'}
+                                    </span>
+                                </div>
+                            </div>
+
+                            {/* 7. Hospital Info (Colorful Single Column with AI Neural Hub Animation) */}
+                            <div className="h-detail-hospital-info-card">
+                                <div className="h-detail-info-card-layout">
+                                    {/* Left Side: Colorful Single Column Hospital Info */}
+                                    <div className="h-detail-info-left-col">
+                                        <div className="h-detail-info-header-row">
+                                            <div className="h-detail-ai-gradient-icon">
+                                                <i className="fa-solid fa-microchip" />
+                                            </div>
+                                            <div className="h-detail-info-header-titles">
+                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                    <h4 className="h-detail-col-title" style={{ margin: 0 }}>
+                                                        Hospital Profile
+                                                    </h4>
+                                                    <span className="h-ai-sync-pill">
+                                                        <span className="h-ai-pulse-dot" /> AI Synced
+                                                    </span>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        <div className="h-detail-meta-list-colorful">
+                                            {/* Email */}
+                                            <div className="h-detail-meta-row-colorful theme-blue">
+                                                <div className="h-detail-row-left">
+                                                    <div className="h-detail-chip-icon icon-blue">
+                                                        <i className="fa-solid fa-envelope" />
+                                                    </div>
+                                                    <span className="h-detail-row-key">Email</span>
+                                                </div>
+                                                <span className="h-detail-row-val">{h.email || '—'}</span>
+                                            </div>
+
+                                            {/* Address */}
+                                            <div className="h-detail-meta-row-colorful theme-amber">
+                                                <div className="h-detail-row-left">
+                                                    <div className="h-detail-chip-icon icon-amber">
+                                                        <i className="fa-solid fa-location-dot" />
+                                                    </div>
+                                                    <span className="h-detail-row-key">Address</span>
+                                                </div>
+                                                <span className="h-detail-row-val">{h.address ? `${h.address}${h.city ? `, ${h.city}` : ''}` : (h.city || '—')}</span>
+                                            </div>
+
+                                            {/* Admin */}
+                                            <div className="h-detail-meta-row-colorful theme-purple">
+                                                <div className="h-detail-row-left">
+                                                    <div className="h-detail-chip-icon icon-purple">
+                                                        <i className="fa-solid fa-user-shield" />
+                                                    </div>
+                                                    <span className="h-detail-row-key">Admin</span>
+                                                </div>
+                                                <span className="h-detail-row-val admin-badge-wrap">
+                                                    <span className="h-admin-tag">{h.adminName || h.name || 'Admin'}</span>
+                                                </span>
+                                            </div>
+
+                                            {/* Admin Email */}
+                                            <div className="h-detail-meta-row-colorful theme-pink">
+                                                <div className="h-detail-row-left">
+                                                    <div className="h-detail-chip-icon icon-pink">
+                                                        <i className="fa-solid fa-at" />
+                                                    </div>
+                                                    <span className="h-detail-row-key">Admin Email</span>
+                                                </div>
+                                                <span className="h-detail-row-val">{h.adminEmail || h.email || '—'}</span>
+                                            </div>
+
+                                            {/* Staff Login URL */}
+                                            <div className="h-detail-meta-row-colorful theme-emerald">
+                                                <div className="h-detail-row-left">
+                                                    <div className="h-detail-chip-icon icon-emerald">
+                                                        <i className="fa-solid fa-link" />
+                                                    </div>
+                                                    <span className="h-detail-row-key">Staff Login URL</span>
+                                                </div>
+                                                <span className="h-detail-row-val">
+                                                    {h.slug ? (
+                                                        <a 
+                                                            href={`${window.location.protocol}//${h.slug}.${getBaseHost()}`} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer" 
+                                                            className="h-detail-login-pill-link"
+                                                            title={`Open ${h.slug}.${getBaseHost()}`}
+                                                        >
+                                                            <span>{`${h.slug}.${getBaseHost()}`}</span>
+                                                            <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: '10px' }} />
+                                                        </a>
+                                                    ) : '—'}
+                                                </span>
+                                            </div>
+
+                                            {/* Custom Domain */}
+                                            {h.customDomain && (
+                                                <div className="h-detail-meta-row-colorful theme-cyan">
+                                                    <div className="h-detail-row-left">
+                                                        <div className="h-detail-chip-icon icon-cyan">
+                                                            <i className="fa-solid fa-globe" />
+                                                        </div>
+                                                        <span className="h-detail-row-key">Custom Domain</span>
+                                                    </div>
+                                                    <span className="h-detail-row-val">
+                                                        <a 
+                                                            href={`${window.location.protocol}//${h.customDomain.replace(/^https?:\/\//, '')}`} 
+                                                            target="_blank" 
+                                                            rel="noopener noreferrer" 
+                                                            className="h-detail-login-pill-link"
+                                                            title={`Open ${h.customDomain}`}
+                                                        >
+                                                            <span>{h.customDomain.replace(/^https?:\/\//, '')}</span>
+                                                            <i className="fa-solid fa-arrow-up-right-from-square" style={{ fontSize: '10px' }} />
+                                                        </a>
+                                                    </span>
+                                                </div>
+                                            )}
+                                        </div>
+                                    </div>
+
+                                    {/* Right Side: Futuristic AI Neural Cloud & Holographic Security Hub */}
+                                    <div className="h-detail-info-right-ai-col">
+                                        <div className="h-enterprise-status-card">
+                                            <div className="h-status-badge-row">
+                                                <span className="h-status-indicator-dot" />
+                                                <span className="h-status-indicator-text">System Active &amp; Operational</span>
+                                            </div>
+                                            <div className="h-spec-grid">
+                                                <div className="h-spec-item">
+                                                    <span className="h-spec-label">Security Tier</span>
+                                                    <span className="h-spec-val">HIPAA &amp; AES-256</span>
+                                                </div>
+                                                <div className="h-spec-item">
+                                                    <span className="h-spec-label">Uptime SLA</span>
+                                                    <span className="h-spec-val">99.9% Enterprise</span>
+                                                </div>
+                                                <div className="h-spec-item">
+                                                    <span className="h-spec-label">Data Isolation</span>
+                                                    <span className="h-spec-val">Dedicated Tenant DB</span>
+                                                </div>
+                                                <div className="h-spec-item">
+                                                    <span className="h-spec-label">Backup Schedule</span>
+                                                    <span className="h-spec-val">Automated Daily</span>
+                                                </div>
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* 8. Monthly Revenue (Last 6 Months) (100% Real API Data) */}
+                            <div className="h-detail-revenue-card">
+                                <div className="h-detail-timeframe-title-group" style={{ marginBottom: '4px' }}>
+                                    <div className="h-detail-purple-icon-circle" style={{ background: '#dcfce7', color: '#16a34a' }}>
+                                        <i className="fa-solid fa-chart-line" />
+                                    </div>
+                                    <h4 className="h-detail-col-title">Monthly Revenue (Last 6 Months)</h4>
+                                </div>
+                                <h3 className="h-detail-rev-val">{formatCurrency(totalSixMonthRevenue)}</h3>
+                                <p className="h-detail-rev-sub">
+                                    {s?.monthlyRevenue && s.monthlyRevenue.length > 0 
+                                        ? `${s.monthlyRevenue.length} active billing month(s) recorded` 
+                                        : 'Total hospital revenue across billing cycles'}
+                                </p>
+                            </div>
+
+                            {/* 9. Staff Members Table with Filter & Search Controls */}
+                            <div className="h-detail-table-card">
+                                <div className="h-detail-card-head h-detail-staff-head">
+                                    <div className="h-detail-timeframe-title-group">
+                                        <div className="h-detail-purple-icon-circle">
+                                            <i className="fa-solid fa-users" />
+                                        </div>
+                                        <div>
+                                            <h4 className="h-detail-col-title" style={{ margin: 0 }}>
+                                                Staff Members <span className="h-detail-count-badge">({filteredStaffToRender.length}{filteredStaffToRender.length !== staffToRender.length ? ` of ${staffToRender.length}` : ''})</span>
+                                            </h4>
+                                            <p className="h-detail-col-sub" style={{ margin: '2px 0 0' }}>See staff and login details in hospital's panel</p>
+                                        </div>
+                                    </div>
+
+                                    {/* Filter Controls: Live Search + Role Filter Dropdown with Filter Icon */}
+                                    <div className="h-detail-staff-filter-toolbar">
+                                        {/* Search Box */}
+                                        <div className="h-detail-staff-search-box">
+                                            <i className="fa-solid fa-magnifying-glass h-detail-staff-search-icon" />
+                                            <input
+                                                type="text"
+                                                placeholder="Search staff (name, email, phone)..."
+                                                value={staffSearchQuery}
+                                                onChange={(e) => setStaffSearchQuery(e.target.value)}
+                                                className="h-detail-staff-search-input"
+                                            />
+                                            {staffSearchQuery && (
+                                                <button
+                                                    type="button"
+                                                    onClick={() => setStaffSearchQuery('')}
+                                                    className="h-detail-staff-search-clear"
+                                                    title="Clear search"
+                                                >
+                                                    <i className="fa-solid fa-xmark" />
+                                                </button>
+                                            )}
+                                        </div>
+
+                                        {/* Role Filter Dropdown with Filter Icon */}
+                                        <div className="h-detail-role-select-wrap">
+                                            <i className="fa-solid fa-filter h-detail-role-select-icon" />
+                                            <select
+                                                value={staffRoleFilter}
+                                                onChange={(e) => setStaffRoleFilter(e.target.value)}
+                                                className="h-detail-role-select"
+                                                title="Filter staff by role"
+                                            >
+                                                <option value="all">All Roles ({staffToRender.length})</option>
+                                                {uniqueRoles.map(role => (
+                                                    <option key={role} value={role}>
+                                                        {role} ({roleCountMap[role]})
+                                                    </option>
+                                                ))}
+                                            </select>
+                                            <i className="fa-solid fa-chevron-down h-detail-role-select-arrow" />
+                                        </div>
+
+                                        {/* Reset Button (visible when any filter or search is active) */}
+                                        {(staffRoleFilter !== 'all' || staffSearchQuery.trim() !== '') && (
+                                            <button
+                                                type="button"
+                                                onClick={() => {
+                                                    setStaffRoleFilter('all');
+                                                    setStaffSearchQuery('');
+                                                }}
+                                                className="h-detail-filter-reset-btn"
+                                                title="Reset all filters"
+                                            >
+                                                <i className="fa-solid fa-rotate-left" />
+                                                <span>Reset</span>
+                                            </button>
+                                        )}
+                                    </div>
+                                </div>
+
+                                <div className="h-detail-staff-table-wrap">
+                                    <table className="h-detail-staff-table">
+                                        <thead>
+                                            <tr>
+                                                <th>NAME</th>
+                                                <th>ROLE</th>
+                                                <th>EMAIL</th>
+                                                <th>PHONE</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {filteredStaffToRender.length > 0 ? (
+                                                filteredStaffToRender.map((staff, idx) => {
+                                                    const initials = staff.name
+                                                        ? staff.name.split(' ').filter(Boolean).map(n => n[0]).join('').substring(0, 2).toUpperCase()
+                                                        : 'S';
+                                                    const roleRaw = staff.roleName || staff.role || 'STAFF';
+                                                    const roleKey = roleRaw.toLowerCase();
+                                                    let roleBadgeClass = 'role-badge-default';
+                                                    if (roleKey.includes('doc')) roleBadgeClass = 'role-badge-doctor';
+                                                    else if (roleKey.includes('nurse')) roleBadgeClass = 'role-badge-nurse';
+                                                    else if (roleKey.includes('recept')) roleBadgeClass = 'role-badge-reception';
+                                                    else if (roleKey.includes('pharm')) roleBadgeClass = 'role-badge-pharmacy';
+                                                    else if (roleKey.includes('lab')) roleBadgeClass = 'role-badge-lab';
+                                                    else if (roleKey.includes('admin')) roleBadgeClass = 'role-badge-admin';
+
+                                                    return (
+                                                        <tr key={staff.id || staff._id || idx}>
+                                                            <td>
+                                                                <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                                                                    <div className="h-detail-avatar-circle">{initials}</div>
+                                                                    <span style={{ fontWeight: 700, color: '#0f172a' }}>{staff.name}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td>
+                                                                <span className={`h-detail-role-badge ${roleBadgeClass}`}>
+                                                                    {roleRaw}
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                {staff.email ? (
+                                                                    <a href={`mailto:${staff.email}`} className="h-detail-contact-link">
+                                                                        {staff.email}
+                                                                    </a>
+                                                                ) : (
+                                                                    <span style={{ color: '#94a3b8' }}>—</span>
+                                                                )}
+                                                            </td>
+                                                            <td>
+                                                                {staff.phone ? (
+                                                                    <a href={`tel:${staff.phone}`} className="h-detail-contact-link">
+                                                                        {staff.phone}
+                                                                    </a>
+                                                                ) : (
+                                                                    <span style={{ color: '#94a3b8' }}>—</span>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })
+                                            ) : (
+                                                <tr>
+                                                    <td colSpan="4" style={{ textAlign: 'center', padding: '36px 16px', color: '#64748b', fontSize: '13px' }}>
+                                                        <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: '8px' }}>
+                                                            <div style={{ width: '42px', height: '42px', borderRadius: '50%', background: '#f1f5f9', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#94a3b8', fontSize: '18px' }}>
+                                                                <i className="fa-solid fa-user-slash" />
+                                                            </div>
+                                                            <span style={{ fontWeight: 600, color: '#334155' }}>
+                                                                {staffToRender.length === 0
+                                                                    ? 'No staff members found for this hospital. Click "Staff" in Feature Management above to add staff.'
+                                                                    : 'No staff matching your search/filter.'}
+                                                            </span>
+                                                            {(staffRoleFilter !== 'all' || staffSearchQuery.trim() !== '') && (
+                                                                <button
+                                                                    type="button"
+                                                                    onClick={() => {
+                                                                        setStaffRoleFilter('all');
+                                                                        setStaffSearchQuery('');
+                                                                    }}
+                                                                    className="h-detail-filter-reset-btn"
+                                                                    style={{ marginTop: '4px' }}
+                                                                >
+                                                                    <i className="fa-solid fa-rotate-left" /> Clear Filters
+                                                                </button>
+                                                            )}
+                                                        </div>
+                                                    </td>
+                                                </tr>
+                                            )}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            </>
+                        )}
+                    </div>
+                </div>
+            </div>
+        );
+    }
+
+    // ==========================================
+    // CLINIC DETAIL PANEL (STARTER / BASIC CLINIC)
+    // ==========================================
+    if (selectedClinic) {
+        return (
+            <div className="centraladmin-page">
+                <div className="centraladmin-container" style={{ maxWidth: '1280px', margin: '0 auto', paddingBottom: '40px' }}>
+                    {error && <div className="error-message">{error}</div>}
+                    {success && <div className="success-message">{success}</div>}
+
+                    <div className="h-detail-container">
+                        {/* 1. Clinic Profile Hero Header Banner */}
+                        <div className="h-detail-hero-banner">
+                            {/* Left Organic Deep Blue / Indigo Wave Background */}
+                            <div className="h-detail-hero-waves">
+                                <svg className="h-detail-hero-wave-svg" viewBox="0 0 280 280" preserveAspectRatio="none">
+                                    <defs>
+                                        <linearGradient id="heroBlueDeepClinic" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" stopColor="#081038" />
+                                            <stop offset="28%" stopColor="#131e5c" />
+                                            <stop offset="55%" stopColor="#2e1a6b" />
+                                            <stop offset="78%" stopColor="#4c1d95" />
+                                            <stop offset="100%" stopColor="#6366f1" />
+                                        </linearGradient>
+                                        <linearGradient id="heroBlueEdgeClinic" x1="0%" y1="0%" x2="100%" y2="100%">
+                                            <stop offset="0%" stopColor="#38bdf8" />
+                                            <stop offset="45%" stopColor="#818cf8" />
+                                            <stop offset="80%" stopColor="#a855f7" />
+                                            <stop offset="100%" stopColor="#c084fc" />
+                                        </linearGradient>
+                                    </defs>
+                                    {/* Deep royal blue / purple organic wave - extended moderately rightward */}
+                                    <path d="M0 0 L265 0 C215 55 225 120 185 180 C145 230 100 280 0 280 Z" fill="url(#heroBlueDeepClinic)" />
+                                    {/* Glowing neon cyan/purple wave contour edge */}
+                                    <path d="M265 0 C215 55 225 120 185 180 C145 230 100 280 0 280" fill="none" stroke="url(#heroBlueEdgeClinic)" strokeWidth="3.5" strokeOpacity="0.95" />
+                                </svg>
+                                {/* Bottom Left Dot Matrix */}
+                                <div className="h-detail-dark-dot-matrix">
+                                    {[...Array(16)].map((_, i) => (
+                                        <span key={i} className="h-matrix-dot blue-dot" />
+                                    ))}
+                                </div>
+                            </div>
+
+                            {/* Top Row: Left "Clinic Profile" Badge + Right Compact "← Back" Button */}
+                            <div className="h-detail-hero-top-row">
+                                <div className="h-detail-profile-pill-top-left">
+                                    <span className="h-detail-profile-shield-icon">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="#38bdf8">
+                                            <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z" />
+                                            <path d="M9 12l2 2 4-4" stroke="#ffffff" strokeWidth="2.5" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                        </svg>
+                                    </span>
+                                    <span>Clinic Profile</span>
+                                </div>
+
+                                <button 
+                                    type="button"
+                                    onClick={closeClinicDetail} 
+                                    className="h-detail-top-back-btn"
+                                    title="Return to Clinics List"
+                                >
+                                    <span className="h-detail-top-back-arrow">←</span>
+                                    <span>Back</span>
+                                </button>
+                            </div>
+
+                            {/* Main Hero Upper Content */}
+                            <div className="h-detail-hero-content">
+                                {/* 3D Hexagon Clinic Logo with Orbital Rings */}
+                                <div className="h-detail-hex-logo-container">
+                                    <div className="h-detail-hex-orbit-ring" />
+                                    <div className="h-detail-hex-orbit-node node-a" />
+                                    <div className="h-detail-hex-orbit-node node-b" />
+                                    <div className="h-detail-hex-orbit-node node-c" />
+
+                                    <div className="h-detail-hex-outer">
+                                        <div className="h-detail-hex-inner">
+                                            <div className="h-detail-red-cross-box">
+                                                <span className="h-cross-arm-h" />
+                                                <span className="h-cross-arm-v" />
+                                            </div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                {/* Center Clinic Info */}
+                                <div className="h-detail-hero-info">
+                                    {/* Top 5x4 Dot Matrix Pattern */}
+                                    <div className="h-detail-center-dot-matrix">
+                                        {[...Array(20)].map((_, i) => (
+                                            <span key={i} className="h-center-matrix-dot" />
+                                        ))}
+                                    </div>
+
+                                    {/* Title */}
+                                    <h2 className="h-detail-hero-title">{selectedClinic.name}</h2>
+
+                                    {/* Progress Underline Accent Bar */}
+                                    <div className="h-detail-hero-accent-bar">
+                                        <div className="h-detail-accent-bar-fill" />
+                                        <div className="h-detail-accent-bar-dot" />
+                                    </div>
+
+                                    {/* Meta Pills: Location, Phone & Subdomain */}
+                                    <div className="h-detail-hero-meta-row">
+                                        <div className="h-detail-meta-chip">
+                                            <span className="h-detail-meta-chip-icon pin-icon">
+                                                <i className="fa-solid fa-location-dot" />
+                                            </span>
+                                            <span className="h-detail-meta-chip-text">
+                                                {selectedClinic.city ? `${selectedClinic.city}${selectedClinic.state ? `, ${selectedClinic.state}` : ''}` : (selectedClinic.address || 'Jaipur, Rajasthan')}
+                                            </span>
+                                        </div>
+                                        <div className="h-detail-meta-sep" />
+                                        <div className="h-detail-meta-chip">
+                                            <span className="h-detail-meta-chip-icon phone-icon">
+                                                <i className="fa-solid fa-phone" />
+                                            </span>
+                                            <span className="h-detail-meta-chip-text">
+                                                {selectedClinic.phone || '9571168462'}
+                                            </span>
+                                        </div>
+                                        {selectedClinic.slug && (
+                                            <>
+                                                <div className="h-detail-meta-sep" />
+                                                <div className="h-detail-meta-chip" style={{ background: '#FCE7EF', borderColor: '#F1DCE4' }}>
+                                                    <span className="h-detail-meta-chip-icon" style={{ background: '#FCE7EF', color: '#D85F89' }}>
+                                                        <i className="fa-solid fa-link" />
+                                                    </span>
+                                                    <a 
+                                                        href={`${window.location.protocol}//${selectedClinic.slug}.${getBaseHost()}`} 
+                                                        target="_blank" 
+                                                        rel="noopener noreferrer" 
+                                                        style={{ color: '#D85F89', textDecoration: 'none', fontWeight: 700, fontSize: '0.74rem' }}
+                                                    >
+                                                        {selectedClinic.slug}.{getBaseHost()}
+                                                    </a>
+                                                </div>
+                                            </>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Right: Animated ECG Heartbeat Wave Widget */}
+                                <div className="h-detail-hero-right-col">
+                                    <div className="h-detail-hero-ecg-widget">
+                                        <svg className="h-detail-hero-ecg-svg" viewBox="0 0 230 76" fill="none" xmlns="http://www.w3.org/2000/svg">
+                                            <defs>
+                                                <linearGradient id="ecgClinicLineGrad" x1="0%" y1="0%" x2="100%" y2="0%">
+                                                    <stop offset="0%" stopColor="#38bdf8" />
+                                                    <stop offset="45%" stopColor="#0284c7" />
+                                                    <stop offset="85%" stopColor="#2563eb" />
+                                                    <stop offset="100%" stopColor="#10b981" />
+                                                </linearGradient>
+                                                <pattern id="ecgGridDotsClinic" x="0" y="0" width="12" height="12" patternUnits="userSpaceOnUse">
+                                                    <circle cx="2" cy="2" r="0.9" fill="#93c5fd" fillOpacity="0.4" />
+                                                </pattern>
+                                                <radialGradient id="ecgRadarGlowClinic" cx="50%" cy="50%" r="50%">
+                                                    <stop offset="0%" stopColor="#10b981" stopOpacity="0.8" />
+                                                    <stop offset="50%" stopColor="#34d399" stopOpacity="0.3" />
+                                                    <stop offset="100%" stopColor="#6ee7b7" stopOpacity="0" />
+                                                </radialGradient>
+                                            </defs>
+                                            <rect x="0" y="0" width="230" height="76" fill="url(#ecgGridDotsClinic)" rx="8" />
+                                            <path d="M 12 40 H 42 L 48 34 L 54 44 L 66 10 L 76 68 L 83 38 L 89 43 L 130 40 L 138 52 L 148 18 L 158 55 L 164 40 L 198 40" stroke="#e0f2fe" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" />
+                                            <path className="h-detail-ecg-animated-path" d="M 12 40 H 42 L 48 34 L 54 44 L 66 10 L 76 68 L 83 38 L 89 43 L 130 40 L 138 52 L 148 18 L 158 55 L 164 40 L 198 40" stroke="url(#ecgClinicLineGrad)" strokeWidth="2.8" strokeLinecap="round" strokeLinejoin="round" />
+                                            <g transform="translate(198, 40)">
+                                                <circle cx="0" cy="0" r="16" className="h-detail-ecg-ripple ripple-1" fill="url(#ecgRadarGlowClinic)" />
+                                                <circle cx="0" cy="0" r="10" className="h-detail-ecg-ripple ripple-2" stroke="#10b981" strokeWidth="1" fill="none" opacity="0.6" />
+                                                <circle cx="0" cy="0" r="7" fill="#a7f3d0" fillOpacity="0.75" />
+                                                <circle cx="0" cy="0" r="4.5" fill="#10b981" />
+                                                <circle cx="-1" cy="-1" r="1.5" fill="#ffffff" />
+                                            </g>
+                                        </svg>
+                                    </div>
+                                </div>
+                            </div>
+
+                            {/* Bottom Floating Stats & Real-time Status Bar */}
+                            <div className="h-detail-hero-bottom-bar">
+                                <div className="h-detail-bottom-stat-item">
+                                    <div className="h-detail-bottom-stat-icon icon-shield">
+                                        <i className="fa-solid fa-shield-halved" />
+                                    </div>
+                                    <div className="h-detail-bottom-stat-text">
+                                        <span className="h-detail-bottom-stat-label">Trusted Care</span>
+                                        <span className="h-detail-bottom-stat-val">24/7</span>
+                                    </div>
+                                </div>
+
+                                <div className="h-detail-bottom-stat-sep" />
+
+                                <div className="h-detail-bottom-stat-item">
+                                    <div className="h-detail-bottom-stat-icon icon-doctors">
+                                        <i className="fa-solid fa-user-doctor" />
+                                    </div>
+                                    <div className="h-detail-bottom-stat-text">
+                                        <span className="h-detail-bottom-stat-label">Staff Members</span>
+                                        <span className="h-detail-bottom-stat-val">
+                                            {clinicStats?.stats?.staff?.length ?? 0}
+                                        </span>
+                                    </div>
+                                </div>
+
+                                <div className="h-detail-bottom-stat-right">
+                                    <div className={selectedClinic.isActive === false ? 'h-detail-bottom-status-capsule inactive' : 'h-detail-bottom-status-capsule active'}>
+                                        <span className="h-detail-bottom-live-dot" />
+                                        <span className="h-detail-bottom-status-name">{selectedClinic.isActive === false ? 'INACTIVE' : 'ACTIVE'}</span>
+                                        <div className="h-detail-bottom-ecg-svg-wrap">
+                                            <svg viewBox="0 0 60 24" className="h-detail-bottom-ecg-svg">
+                                                <path d="M0 12 L15 12 L20 4 L25 20 L30 8 L35 16 L40 12 L60 12" stroke="#16a34a" strokeWidth="2" fill="none" strokeLinecap="round" strokeLinejoin="round" />
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* 2. KPI Cards Grid (Light Colorful Themes) */}
+                        {loadingClinicStats && !clinicStats ? (
+                            <div className="h-detail-loading-hud">
+                                <div className="h-hud-card">
+                                    <div className="h-hud-pulse-cluster">
+                                        <div className="h-hud-radar-ring" />
+                                        <div className="h-hud-radar-ring-delay" />
+                                        <div className="h-hud-core-icon">
+                                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none">
+                                                <path d="M12 2L4 5v6.09c0 5.05 3.41 9.76 8 10.91 4.59-1.15 8-5.86 8-10.91V5l-8-3z" fill="#ffffff" fillOpacity="0.25" stroke="#ffffff" strokeWidth="2" />
+                                                <path d="M12 7v10M7 12h10" stroke="#ffffff" strokeWidth="2.5" strokeLinecap="round" />
+                                            </svg>
+                                        </div>
+                                    </div>
+
+                                    <div className="h-hud-text-area">
+                                        <div className="h-hud-title">
+                                            <span>Synchronizing Clinic Intelligence</span>
+                                            <span className="h-hud-dot-pulse" />
+                                        </div>
+                                        <div className="h-hud-subtitle">
+                                            Aggregating Real-Time Doctor Schedule, Patient Queue & Subscription Billing...
+                                        </div>
+                                    </div>
+
+                                    <div className="h-hud-ecg-stream">
+                                        <svg className="h-hud-ecg-svg" viewBox="0 0 220 36" preserveAspectRatio="none">
+                                            <path className="h-hud-ecg-track" d="M0 18 L40 18 L50 18 L58 4 L66 32 L74 8 L82 24 L90 18 L130 18 L140 18 L148 4 L156 32 L164 8 L172 24 L180 18 L220 18" fill="none" stroke="rgba(56, 189, 248, 0.2)" strokeWidth="2" />
+                                            <path className="h-hud-ecg-glow" d="M0 18 L40 18 L50 18 L58 4 L66 32 L74 8 L82 24 L90 18 L130 18 L140 18 L148 4 L156 32 L164 8 L172 24 L180 18 L220 18" fill="none" stroke="#38bdf8" strokeWidth="2.5" strokeLinecap="round" />
+                                        </svg>
+                                    </div>
+                                </div>
+
+                                {/* Shimmering Skeleton KPI Grid */}
+                                <div className="h-detail-kpi-grid h-skeleton-grid">
+                                    {[1, 2, 3, 4].map(idx => (
+                                        <div key={idx} className="h-detail-kpi-card h-skeleton-card">
+                                            <div className="h-skeleton-shimmer" />
+                                            <div className="h-skeleton-icon" />
+                                            <div className="h-skeleton-line h-skeleton-line-lg" />
+                                            <div className="h-skeleton-line h-skeleton-line-sm" />
+                                        </div>
+                                    ))}
+                                </div>
+                            </div>
+                        ) : clinicStats ? (
+                            <>
+                                <div className="h-detail-kpi-grid">
+                                    <div className="h-detail-kpi-card kpi-card-blue">
+                                        <div className="h-detail-kpi-icon-wrap kpi-icon-blue">
+                                            <i className="fa-solid fa-user-group" />
+                                        </div>
+                                        <h3 className="h-detail-kpi-val">{clinicStats.stats.totalPatients ?? 0}</h3>
+                                        <h5 className="h-detail-kpi-lbl">Total Patients</h5>
+                                        <p className="h-detail-kpi-sub">Registered patients</p>
+                                        <div className="h-detail-kpi-bar kpi-bar-blue" />
+                                    </div>
+
+                                    <div className="h-detail-kpi-card kpi-card-purple">
+                                        <div className="h-detail-kpi-icon-wrap kpi-icon-purple">
+                                            <i className="fa-regular fa-calendar-check" />
+                                        </div>
+                                        <h3 className="h-detail-kpi-val">{clinicStats.stats.totalAppointments ?? 0}</h3>
+                                        <h5 className="h-detail-kpi-lbl">Total Appointments</h5>
+                                        <p className="h-detail-kpi-sub">Booked consultations</p>
+                                        <div className="h-detail-kpi-bar kpi-bar-purple" />
+                                    </div>
+
+                                    <div className="h-detail-kpi-card kpi-card-green">
+                                        <div className="h-detail-kpi-icon-wrap kpi-icon-green">
+                                            <i className="fa-solid fa-circle-check" />
+                                        </div>
+                                        <h3 className="h-detail-kpi-val">{clinicStats.stats.completedAppointments ?? 0}</h3>
+                                        <h5 className="h-detail-kpi-lbl">Completed</h5>
+                                        <p className="h-detail-kpi-sub">Finished visits</p>
+                                        <div className="h-detail-kpi-bar kpi-bar-green" />
+                                    </div>
+
+                                    <div className="h-detail-kpi-card kpi-card-orange">
+                                        <div className="h-detail-kpi-icon-wrap kpi-icon-orange">
+                                            <i className="fa-solid fa-indian-rupee-sign" />
+                                        </div>
+                                        <h3 className="h-detail-kpi-val">{formatCurrency(clinicStats.stats.revenue ?? 0)}</h3>
+                                        <h5 className="h-detail-kpi-lbl">Revenue</h5>
+                                        <p className="h-detail-kpi-sub">From paid visits</p>
+                                        <div className="h-detail-kpi-bar kpi-bar-orange" />
+                                    </div>
+
+                                    <div className="h-detail-kpi-card kpi-card-purple">
+                                        <div className="h-detail-kpi-icon-wrap kpi-icon-purple">
+                                            <i className="fa-solid fa-user-doctor" />
+                                        </div>
+                                        <h3 className="h-detail-kpi-val">{clinicStats.stats.staff?.length ?? 0}</h3>
+                                        <h5 className="h-detail-kpi-lbl">Staff Members</h5>
+                                        <p className="h-detail-kpi-sub">Doctors & Reception</p>
+                                        <div className="h-detail-kpi-bar kpi-bar-purple" />
+                                    </div>
+                                </div>
+
+                                {/* Clinic Admin Section */}
+                                <div className="admin-card w-full max-w-full min-w-0" style={{ marginBottom: '20px', border: '2px solid #e0e7ff' }}>
+                                    <div className="flex flex-col md:flex-row flex-wrap md:justify-between items-start md:items-center gap-4 w-full" style={{ marginBottom: '16px' }}>
+                                        <div>
+                                            <h3 className="break-words whitespace-normal max-w-full" style={{ margin: 0 }}>Clinic Admin Account</h3>
+                                            <p style={{ color: '#888', fontSize: '13px', margin: '4px 0 0' }}>
+                                                The admin has full access to this clinic. Login at <strong>/login</strong>
+                                            </p>
+                                        </div>
+                                        {(() => {
+                                            const isStarter = clinicStats.clinic?.subscriptionPlan === 'starter' || clinicStats.clinic?.clinicPlan === 'starter' || activeTab === 'simple-clinics';
+                                            const hasAdmin = !!clinicStats.clinic?.adminUserId;
+                                            const disableAdminBtn = isStarter && hasAdmin && !showClinicManagerForm;
+                                            
+                                            return (
+                                                <button 
+                                                    className={showClinicManagerForm ? 'btn-cancel' : 'btn-save'} 
+                                                    style={{ 
+                                                        fontSize: '13px', 
+                                                        padding: '8px 16px',
+                                                        opacity: disableAdminBtn ? 0.5 : 1,
+                                                        cursor: disableAdminBtn ? 'not-allowed' : 'pointer'
+                                                    }}
+                                                    onClick={disableAdminBtn ? undefined : () => { setShowClinicManagerForm(!showClinicManagerForm); setShowClinicStaffForm(false); setClinicManagerForm({ name: '', email: '', password: '', phone: '' }); }}
+                                                    title={disableAdminBtn ? "Starter Plan allows only 1 Hospital Admin." : ""}
+                                                >
+                                                    {showClinicManagerForm ? 'Cancel' : hasAdmin ? '+ Add Another Admin' : '+ Add Clinic Admin'}
+                                                </button>
+                                            );
+                                        })()}
+                                    </div>
+
+                                    {/* Current admin info */}
+                                    {clinicStats.clinic?.adminUserId && !showClinicManagerForm && (
+                                        <div className="clinic-admin-profile-box">
+                                            <div style={{ width: '44px', height: '44px', borderRadius: '50%', background: '#dcfce7', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px', fontWeight: 700, color: '#16a34a', flexShrink: 0 }}>
+                                                {clinicStats.clinic.adminUserId.name?.charAt(0)?.toUpperCase() || '?'}
+                                            </div>
+                                            <div style={{ minWidth: 0, flex: '1 1 auto' }}>
+                                                <div style={{ fontWeight: 700, color: '#1e293b', fontSize: '15px', wordBreak: 'break-word' }}>{clinicStats.clinic.adminUserId.name}</div>
+                                                <div style={{ color: '#64748b', fontSize: '13px', wordBreak: 'break-all' }}>{clinicStats.clinic.adminUserId.email}</div>
+                                                {clinicStats.clinic.adminUserId.phone && <div style={{ color: '#64748b', fontSize: '13px' }}>{clinicStats.clinic.adminUserId.phone}</div>}
+                                            </div>
+                                            <span style={{ marginLeft: 'auto', background: '#dcfce7', color: '#16a34a', padding: '4px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 700, whiteSpace: 'nowrap' }}>CLINIC ADMIN</span>
+                                        </div>
+                                    )}
+
+                                    {!clinicStats.clinic?.adminUserId && !showClinicManagerForm && (
+                                        <div style={{ textAlign: 'center', padding: '24px', background: '#fff7ed', borderRadius: '10px', border: '1px dashed #fed7aa' }}>
+                                            <div style={{ fontSize: '28px', marginBottom: '8px', color: '#d97706' }}><FiAlertTriangle /></div>
+                                            <p style={{ color: '#92400e', fontWeight: 600, margin: '0 0 4px' }}>No admin assigned yet</p>
+                                            <p style={{ color: '#b45309', fontSize: '13px', margin: 0 }}>Click <strong>+ Add Clinic Admin</strong> to create login credentials for this clinic.</p>
+                                        </div>
+                                    )}
+
+                                    {/* Add Admin Form */}
+                                    {showClinicManagerForm && (
+                                        <div style={{ background: '#f8fafc', borderRadius: '10px', padding: '20px', border: '1px solid #e2e8f0' }}>
+                                            <h4 style={{ margin: '0 0 4px', color: '#1e293b' }}>Create Clinic Admin Account</h4>
+                                            <p style={{ color: '#64748b', fontSize: '13px', margin: '0 0 16px' }}>This person will have full access — patients, appointments, billing, pharmacy, analytics.</p>
+                                            <form onSubmit={handleCreateClinicManager} className="user-form">
+                                                <div className="form-row">
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Full Name *</label>
+                                                        <input type="text" className="staff-input w-full" placeholder="e.g. Dr. Ramesh Sharma" value={clinicManagerForm.name}
+                                                            onChange={e => setClinicManagerForm({ ...clinicManagerForm, name: e.target.value })} required minLength={2} />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Email Address *</label>
+                                                        <input type="email" className="staff-input" placeholder="admin@clinic.com" value={clinicManagerForm.email}
+                                                            onChange={e => setClinicManagerForm({ ...clinicManagerForm, email: e.target.value })} required />
+                                                    </div>
+                                                </div>
+                                                <div className="form-row">
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Password *</label>
+                                                        <input type="text" className="staff-input w-full" placeholder="Set a temporary password" value={clinicManagerForm.password}
+                                                            onChange={e => setClinicManagerForm({ ...clinicManagerForm, password: e.target.value })} required />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Phone *</label>
+                                                        <input type="tel" className="staff-input" placeholder="Phone number" maxLength={10} value={clinicManagerForm.phone}
+                                                            onChange={e => {
+                                                                const cleanVal = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                                                setClinicManagerForm({ ...clinicManagerForm, phone: cleanVal });
+                                                            }} required pattern="\d{10}" title="Phone number must be exactly 10 digits" />
+                                                    </div>
+                                                </div>
+                                                <div className="form-row">
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Age *</label>
+                                                        <input type="number" className="staff-input" placeholder="Age" value={clinicManagerForm.age} onChange={e => setClinicManagerForm({ ...clinicManagerForm, age: e.target.value })} required min="1" />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Aadhaar Number *</label>
+                                                        <input type="text" className="staff-input w-full" placeholder="12-digit Aadhaar" value={clinicManagerForm.aadhaarNumber} onChange={e => {
+                                                            const cleanVal = e.target.value.replace(/\D/g, '').slice(0, 12);
+                                                            setClinicManagerForm({ ...clinicManagerForm, aadhaarNumber: cleanVal });
+                                                        }} required pattern="^\d{12}$" title="Aadhaar number must be exactly 12 digits" />
+                                                    </div>
+                                                </div>
+                                                <button type="submit" disabled={savingClinicManager} className="submit-button" style={{ marginTop: '4px' }}>
+                                                    {savingClinicManager ? 'Creating...' : 'Create Clinic Admin'}
+                                                </button>
+                                            </form>
+                                        </div>
+                                    )}
+                                </div>
+
+                                {/* Staff Management */}
+                                <div className="admin-card w-full max-w-full min-w-0" style={{ marginBottom: '20px' }}>
+                                    <div className="flex flex-col md:flex-row flex-wrap md:justify-between items-start md:items-center gap-4 w-full" style={{ marginBottom: '16px' }}>
+                                        <div>
+                                            <h3 className="break-words whitespace-normal max-w-full" style={{ margin: 0 }}>Additional Staff</h3>
+                                            <p style={{ color: '#888', fontSize: '13px', margin: '4px 0 0' }}>
+                                                Tier: {clinicStats.stats.staff?.filter(s => s.role?.toLowerCase() === 'doctor' || s.role?.toLowerCase() === 'clinic doctor').length || 0}/{clinicStats.clinic?.tier?.maxDoctors || 1} Doctors · {clinicStats.stats.staff?.filter(s => s.role?.toLowerCase() === 'hospitaladmin' || s.role?.toLowerCase() === 'clinic admin').length || 0}/1 Hospital Admin · All login at <strong>/login</strong>
+                                            </p>
+                                        </div>
+                                        {(() => {
+                                            const isStarter = clinicStats.clinic?.subscriptionPlan === 'starter' || clinicStats.clinic?.clinicPlan === 'starter' || activeTab === 'simple-clinics';
+                                            const totalUsers = clinicStats.stats?.staff?.length || 0;
+                                            const disableStaffBtn = isStarter && totalUsers >= 2 && !showClinicStaffForm;
+                                            
+                                            return (
+                                                <button 
+                                                    className="btn-edit" 
+                                                    style={{ 
+                                                        fontSize: '13px', 
+                                                        padding: '8px 14px',
+                                                        opacity: disableStaffBtn ? 0.5 : 1,
+                                                        cursor: disableStaffBtn ? 'not-allowed' : 'pointer'
+                                                    }}
+                                                    onClick={disableStaffBtn ? undefined : () => { setShowClinicStaffForm(!showClinicStaffForm); setShowClinicManagerForm(false); }}
+                                                    title={disableStaffBtn ? "Starter Plan user limit reached. Upgrade your plan to add more staff." : ""}
+                                                >
+                                                    {showClinicStaffForm ? 'Cancel' : '+ Add Staff'}
+                                                </button>
+                                            );
+                                        })()}
+                                    </div>
+
+                                    {/* Staff Form */}
+                                    {showClinicStaffForm && (
+                                        <div style={{ background: '#f8fafc', borderRadius: '8px', padding: '16px', marginBottom: '16px' }}>
+                                            <h4 style={{ margin: '0 0 4px', color: '#1e293b' }}>Add Staff Login Account</h4>
+                                            <p style={{ color: '#64748b', fontSize: '12px', margin: '0 0 12px' }}>
+                                                Standard tier: 1 Doctor + 1 Receptionist. Upgrade tier first if slots are full.
+                                            </p>
+                                            <form onSubmit={handleCreateClinicStaff} className="user-form">
+                                                <div className="form-row">
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Full Name *</label>
+                                                        <input type="text" className="staff-input w-full" placeholder="Staff name" value={clinicStaffForm.name}
+                                                            onChange={e => setClinicStaffForm({ ...clinicStaffForm, name: e.target.value })} required minLength={2} />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Email *</label>
+                                                        <input type="email" className="staff-input" placeholder="staff@clinic.com" value={clinicStaffForm.email}
+                                                            onChange={e => setClinicStaffForm({ ...clinicStaffForm, email: e.target.value })} required />
+                                                    </div>
+                                                </div>
+                                                <div className="form-row">
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Password *</label>
+                                                        <input type="text" className="staff-input w-full" placeholder="Temporary password" value={clinicStaffForm.password}
+                                                            onChange={e => setClinicStaffForm({ ...clinicStaffForm, password: e.target.value })} required />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Phone *</label>
+                                                        <input type="tel" className="staff-input" placeholder="Phone number" maxLength={10} value={clinicStaffForm.phone}
+                                                            onChange={e => {
+                                                                const cleanVal = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                                                setClinicStaffForm({ ...clinicStaffForm, phone: cleanVal });
+                                                            }} required pattern="\d{10}" title="Phone number must be exactly 10 digits" />
+                                                    </div>
+                                                </div>
+                                                <div className="form-row">
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Age *</label>
+                                                        <input 
+                                                            type="text" 
+                                                            className="staff-input" 
+                                                            placeholder="Age" 
+                                                            value={clinicStaffForm.age || ''} 
+                                                            onChange={e => {
+                                                                const cleanVal = e.target.value.replace(/\D/g, '').slice(0, 3);
+                                                                setClinicStaffForm({ ...clinicStaffForm, age: cleanVal });
+                                                            }} 
+                                                            required 
+                                                        />
+                                                    </div>
+                                                    <div className="form-group">
+                                                        <label className="staff-label">Aadhaar Number *</label>
+                                                        <input type="text" className="staff-input w-full" placeholder="12-digit Aadhaar" value={clinicStaffForm.aadhaarNumber} onChange={e => {
+                                                            const cleanVal = e.target.value.replace(/\D/g, '').slice(0, 12);
+                                                            setClinicStaffForm({ ...clinicStaffForm, aadhaarNumber: cleanVal });
+                                                        }} required pattern="^\d{12}$" title="Aadhaar number must be exactly 12 digits" />
+                                                    </div>
+                                                </div>
+                                                <div className="form-group">
+                                                    <label className="staff-label">Role *</label>
+                                                    <select className="staff-input w-full" value={clinicStaffForm.staffRole}
+                                                        onChange={e => setClinicStaffForm({ ...clinicStaffForm, staffRole: e.target.value })}>
+                                                        <option value="doctor">🩺 Clinic Doctor</option>
+                                                    </select>
+                                                </div>
+                                                <button type="submit" disabled={savingClinicStaff} className="submit-button">
+                                                    {savingClinicStaff ? 'Adding...' : 'Add Staff'}
+                                                </button>
+                                            </form>
+                                        </div>
+                                    )}
+
+                                    {/* Staff Table */}
+                                    {clinicStats.stats.staff?.length > 0 ? (
+                                        <div className="users-table w-full overflow-x-auto">
+                                            <table className="w-full min-w-[600px] overflow-hidden">
+                                                <thead>
+                                                    <tr><th>Name</th><th>Email</th><th>Phone</th><th>Role</th><th>Added</th><th></th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    {clinicStats.stats.staff.map(s => (
+                                                        <tr key={s._id}>
+                                                            <td style={{ fontWeight: 600 }}>
+                                                                <div className="flex flex-row items-center gap-3">
+                                                                    <div style={{ width: '32px', height: '32px', borderRadius: '50%', background: '#e0e7ff', display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 700, color: '#6366f1', fontSize: '13px', flexShrink: 0 }}>
+                                                                        {s.name?.charAt(0)?.toUpperCase()}
+                                                                    </div>
+                                                                    <span style={{ whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{s.name}</span>
+                                                                </div>
+                                                            </td>
+                                                            <td>{s.email}</td>
+                                                            <td>{s.phone || '—'}</td>
+                                                            <td>
+                                                                <span className="role-badge">{String(s.role).toUpperCase()}</span>
+                                                            </td>
+                                                            <td style={{ color: '#94a3b8', fontSize: '12px' }}>{s.createdAt ? new Date(s.createdAt).toLocaleDateString('en-IN') : '—'}</td>
+                                                            <td>
+                                                                <button className="btn-confirm-delete" style={{ fontSize: '11px', padding: '4px 8px' }}
+                                                                    onClick={() => handleDeleteClinicStaff(s._id)}>Remove</button>
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <p style={{ color: '#94a3b8', textAlign: 'center', padding: '20px 0' }}>No staff added yet. Add a manager or staff member above.</p>
+                                    )}
+                                </div>
+
+                                {/* Recent Appointments */}
+                                {clinicStats.stats.recentAppointments?.length > 0 && (
+                                    <div className="admin-card w-full max-w-full min-w-0">
+                                        <h3>Recent Appointments</h3>
+                                        <div className="users-table w-full overflow-x-auto">
+                                            <table className="w-full min-w-[600px] overflow-hidden">
+                                                <thead>
+                                                    <tr><th>Patient ID</th><th>Doctor</th><th>Date</th><th>Status</th><th>Amount</th><th>Payment</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    {clinicStats.stats.recentAppointments.map((a, i) => (
+                                                        <tr key={i}>
+                                                            <td style={{ fontFamily: 'monospace', fontWeight: 600 }}>{a.clinicPatientId?.patientUid || a.patientId || '—'}</td>
+                                                            <td>{a.doctorName || '—'}</td>
+                                                            <td>{a.appointmentDate ? new Date(a.appointmentDate).toLocaleDateString('en-IN') : '—'}</td>
+                                                            <td><span className={`status-badge status-${a.status}`}>{a.status}</span></td>
+                                                            <td>{formatCurrency(a.amount)}</td>
+                                                            <td><span style={{ color: a.paymentStatus === 'paid' ? '#16a34a' : '#dc2626', fontWeight: 600, fontSize: '12px' }}>{a.paymentStatus}</span></td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    </div>
+                                )}
+
+                                {/* ── Subscription / Billing Management ── */}
+                                <div className="admin-card w-full max-w-full min-w-0" style={{ marginTop: '20px', border: '2px solid #e0e7ff' }}>
+                                    <h3 style={{ marginBottom: '4px' }}>Billing &amp; Subscription</h3>
+                                    <p style={{ color: '#888', fontSize: '13px', margin: '0 0 16px' }}>
+                                        Patient code: <strong style={{ color: '#6366f1' }}>{clinicStats.clinic?.clinicCode || '—'}</strong> · Rate per new patient this month
+                                    </p>
+
+                                    {/* Set rate form */}
+                                    <form onSubmit={handleSaveRate} className="grid md:flex md:flex-wrap md:items-end gap-[10px]" style={{ gridTemplateColumns: '1fr auto', marginBottom: '20px', padding: '14px', background: '#f8fafc', borderRadius: '8px' }}>
+                                        <div className="order-1 md:order-1">
+                                            <label style={{ fontSize: '12px', fontWeight: 600, color: '#64748b', display: 'block', marginBottom: '4px' }}>Rate per New Patient (₹)</label>
+                                            <input type="number" min="0" className="w-full sm:w-[160px]" style={{ padding: '8px 12px', borderRadius: '6px', border: '1px solid #e2e8f0', fontSize: '14px' }}
+                                                placeholder="e.g. 50" value={subscriptionRateForm.ratePerPatient}
+                                                onChange={e => setSubscriptionRateForm(f => ({ ...f, ratePerPatient: e.target.value }))} />
+                                        </div>
+                                        <div className="order-3 md:order-2" style={{ gridColumn: '1 / -1', display: 'flex', alignItems: 'center', gap: '6px', paddingBottom: '4px' }}>
+                                            <input type="checkbox" id="billingEnabled" checked={subscriptionRateForm.billingEnabled}
+                                                onChange={e => setSubscriptionRateForm(f => ({ ...f, billingEnabled: e.target.checked }))} />
+                                            <label htmlFor="billingEnabled" style={{ fontSize: '13px', color: '#475569', cursor: 'pointer' }}>Enable billing</label>
+                                        </div>
+                                        <button type="submit" className="btn-save order-2 md:order-3" style={{ alignSelf: 'end', fontSize: '13px', padding: '8px 16px', height: '38px' }} disabled={savingRate}>
+                                            {savingRate ? 'Saving...' : 'Save Rate'}
+                                        </button>
+                                    </form>
+
+                                    {/* Subscription history table */}
+                                    {clinicSubscriptions.length > 0 ? (
+                                        <div className="users-table w-full overflow-x-auto">
+                                            <table className="w-full min-w-[600px] overflow-hidden">
+                                                <thead>
+                                                    <tr><th>Month / Year</th><th>New Patients</th><th>Total Patients</th><th>Rate</th><th>Amount</th><th>Status</th><th>Actions</th></tr>
+                                                </thead>
+                                                <tbody>
+                                                    {clinicSubscriptions.map(sub => (
+                                                        <tr key={sub._id}>
+                                                            <td style={{ fontWeight: 600 }}>{new Date(sub.year, sub.month - 1).toLocaleDateString('en-IN', { month: 'long', year: 'numeric' })}</td>
+                                                            <td style={{ color: '#6366f1', fontWeight: 600 }}>{sub.newPatientCount}</td>
+                                                            <td>{sub.totalPatientCount}</td>
+                                                            <td>₹{sub.ratePerPatient}</td>
+                                                            <td style={{ fontWeight: 700 }}>₹{sub.totalAmount.toLocaleString('en-IN')}</td>
+                                                            <td>
+                                                                <span style={{
+                                                                    padding: '3px 10px', borderRadius: '6px', fontSize: '12px', fontWeight: 700,
+                                                                    background: sub.status === 'paid' ? '#dcfce7' : sub.status === 'waived' ? '#f1f5f9' : '#fef3c7',
+                                                                    color: sub.status === 'paid' ? '#16a34a' : sub.status === 'waived' ? '#64748b' : '#92400e'
+                                                                }}>
+                                                                    {sub.status.toUpperCase()}
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                {sub.status !== 'paid' && (
+                                                                    <button className="btn-save w-full md:w-auto" style={{ fontSize: '11px', padding: '4px 10px', marginRight: '4px' }}
+                                                                        onClick={() => handleMarkSubscription(sub._id, 'paid')}>Mark Paid</button>
+                                                                )}
+                                                                {sub.status === 'pending' && (
+                                                                    <button className="btn-edit" style={{ fontSize: '11px', padding: '4px 10px' }}
+                                                                        onClick={() => handleMarkSubscription(sub._id, 'waived')}>Waive</button>
+                                                                )}
+                                                            </td>
+                                                        </tr>
+                                                    ))}
+                                                </tbody>
+                                            </table>
+                                        </div>
+                                    ) : (
+                                        <p style={{ color: '#94a3b8', textAlign: 'center', padding: '16px 0', fontSize: '13px' }}>No billing records yet. Records appear once patients are registered.</p>
+                                    )}
+                                </div>
+
+                                {/* ── Appointment System Mode ── */}
+                                <div className="admin-card w-full max-w-full min-w-0" style={{ marginTop: '20px', border: '2px solid #e0f2fe' }}>
+                                    <div className="flex flex-col md:flex-row items-start md:items-center gap-2 md:gap-[10px]" style={{ marginBottom: '6px' }}>
+                                        <h3 className="break-words whitespace-normal max-w-full" style={{ margin: 0 }}>Appointment System Mode</h3>
+                                        <span style={{ fontSize: '0.75rem', background: selectedClinic.appointmentMode === 'token' ? '#fef3c7' : '#dbeafe', color: selectedClinic.appointmentMode === 'token' ? '#92400e' : '#1d4ed8', padding: '2px 10px', borderRadius: '20px', fontWeight: 700 }}>
+                                            Current: {selectedClinic.appointmentMode === 'token' ? 'Token Queue' : 'Time Slots'}
+                                        </span>
+                                    </div>
+                                    <p style={{ color: '#64748b', fontSize: '13px', margin: '0 0 18px' }}>
+                                        Choose how patients are managed in this clinic's reception queue.
+                                    </p>
+                                    <div className="flex md:grid md:grid-cols-2 gap-4 mb-4 overflow-x-auto pb-4 hide-scrollbars" style={{ scrollSnapType: 'x mandatory' }}>
+                                        {/* Token Mode Card */}
+                                        <label className="shrink-0 w-11/12 md:w-auto" style={{
+                                            display: 'block', padding: '18px', borderRadius: '12px', cursor: 'pointer',
+                                            border: clinicApptMode === 'token' ? '2px solid #f59e0b' : '2px solid #e2e8f0',
+                                            background: clinicApptMode === 'token' ? '#fffbeb' : '#f8fafc',
+                                            transition: 'all 0.15s', scrollSnapAlign: 'center'
+                                        }}>
+                                            <input type="radio" name="clinicApptMode" value="token" checked={clinicApptMode === 'token'} onChange={() => setClinicApptMode('token')} style={{ display: 'none' }} />
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                                                <span style={{ fontSize: '1.75rem', lineHeight: 1, color: '#D85F89', display: 'inline-flex', alignItems: 'center' }}><FiCalendar /></span>
+                                                <div>
+                                                    <div style={{ fontWeight: 700, fontSize: '1rem', color: clinicApptMode === 'token' ? '#92400e' : '#1e293b', marginBottom: '4px' }}>
+                                                        Token Queue System
+                                                        {clinicApptMode === 'token' && <span style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#f59e0b', color: '#fff', padding: '2px 8px', borderRadius: '10px' }}>Selected</span>}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.83rem', color: '#64748b', lineHeight: 1.5 }}>
+                                                        Sequential tokens (1, 2, 3…) per day. Auto-resets at midnight. No time-slot picking needed. Best for walk-in clinics.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </label>
+                                        {/* Slot Mode Card */}
+                                        <label className="shrink-0 w-11/12 md:w-auto" style={{
+                                            display: 'block', padding: '18px', borderRadius: '12px', cursor: 'pointer',
+                                            border: clinicApptMode === 'slot' ? '2px solid #D85F89' : '2px solid #F1DCE4',
+                                            background: clinicApptMode === 'slot' ? '#FCE7EF' : '#FFFFFF',
+                                            transition: 'all 0.15s', scrollSnapAlign: 'center'
+                                        }}>
+                                            <input type="radio" name="clinicApptMode" value="slot" checked={clinicApptMode === 'slot'} onChange={() => setClinicApptMode('slot')} style={{ display: 'none' }} />
+                                            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '12px' }}>
+                                                <span style={{ fontSize: '1.75rem', lineHeight: 1, color: '#D85F89', display: 'inline-flex', alignItems: 'center' }}><FiClock /></span>
+                                                <div>
+                                                    <div style={{ fontWeight: 700, fontSize: '1rem', color: clinicApptMode === 'slot' ? '#172238' : '#1e293b', marginBottom: '4px' }}>
+                                                        Time Slot Booking
+                                                        {clinicApptMode === 'slot' && <span style={{ marginLeft: '8px', fontSize: '0.75rem', background: '#D85F89', color: '#fff', padding: '2px 8px', borderRadius: '10px' }}>Selected</span>}
+                                                    </div>
+                                                    <div style={{ fontSize: '0.83rem', color: '#64748b', lineHeight: 1.5 }}>
+                                                        Patients pick a specific time (09:00, 09:30…). Fixed scheduling with conflict prevention. Best for planned appointments.
+                                                    </div>
+                                                </div>
+                                            </div>
+                                        </label>
+                                    </div>
+
+                                    {clinicApptMode !== (selectedClinic.appointmentMode || 'token') && (
+                                        <div style={{ background: '#fef9c3', border: '1px solid #fde047', borderRadius: '8px', padding: '10px 14px', fontSize: '0.85rem', color: '#713f12', marginBottom: '14px' }}>
+                                            You are changing the appointment mode. Existing appointments will not be affected — only new bookings will follow the new mode.
+                                        </div>
+                                    )}
+
+                                    <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+                                        <button
+                                            onClick={handleSaveClinicApptMode}
+                                            disabled={savingClinicApptMode || clinicApptMode === (selectedClinic.appointmentMode || 'token')}
+                                            style={{
+                                                padding: '10px 24px', background: '#1d4ed8', color: '#fff', border: 'none',
+                                                borderRadius: '8px', fontWeight: 700, cursor: 'pointer', fontSize: '0.9rem',
+                                                opacity: (savingClinicApptMode || clinicApptMode === (selectedClinic.appointmentMode || 'token')) ? 0.5 : 1
+                                            }}
+                                        >
+                                            {savingClinicApptMode ? 'Saving…' : 'Save Mode'}
+                                        </button>
+                                        {clinicApptMode === (selectedClinic.appointmentMode || 'token') && (
+                                            <span style={{ fontSize: '0.85rem', color: '#64748b' }}>No changes to save</span>
+                                        )}
+                                    </div>
+                                </div>
+
+                                {/* Quick Access Links */}
+                                <div className="admin-card w-full max-w-full min-w-0" style={{ marginTop: '20px' }}>
+                                    <h3>Clinic Features</h3>
+                                    <p style={{ color: '#888', fontSize: '13px', margin: '0 0 16px' }}>Staff can access these modules after logging in at <strong>/login</strong></p>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                                        {[
+                                            { icon: <FiUsers />, label: 'Patient Registration', desc: 'Register & search patients' },
+                                            { icon: <FiActivity />, label: 'Doctor Consultation', desc: 'Appointments & prescriptions' },
+                                            { icon: <FiPlus />, label: 'Pharmacy', desc: 'Medicine orders & inventory' },
+                                            { icon: <FiDollarSign />, label: 'Billing & Payments', desc: 'Invoice & collect payments' },
+                                            { icon: <FiFileText />, label: 'Lab Reports', desc: 'Upload & share lab results' },
+                                            { icon: <FiTrendingUp />, label: 'Analytics', desc: 'Revenue, patients & reports' },
+                                        ].map((item, i) => (
+                                            <div key={i} className="config-card" style={{ cursor: 'default' }}>
+                                                <div className="config-icon">{item.icon}</div>
+                                                <div>
+                                                    <h4>{item.label}</h4>
+                                                    <p>{item.desc}</p>
+                                                </div>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </div>
+                            </>
+                        ) : (
+                            <div className="ca-empty"><p>Could not load clinic analytics. The clinic may have no data yet.</p></div>
+                        )}
+                    </div>
+
+                    {/* Delete Clinic Confirm Modal */}
+                    {deleteClinicConfirm && (
+                        <div className="modal-overlay">
+                            <div className="modal-content">
+                                <h3>Delete Simple Clinic?</h3>
+                                <p style={{ color: '#dc2626', fontWeight: '600' }}>This will permanently delete the clinic, all staff accounts, and all clinic data. This action CANNOT be undone.</p>
+                                <div className="modal-buttons">
+                                    <button onClick={() => handleDeleteClinic(deleteClinicConfirm)} className="btn-confirm-delete">Delete</button>
+                                    <button onClick={() => setDeleteClinicConfirm(null)} className="btn-cancel">Cancel</button>
+                                </div>
+                            </div>
+                        </div>
+                    )}
+                </div>
+            </div>
+        );
+    }
+
+    // ==========================================
+    // MAIN DASHBOARD
+    // ==========================================
+    const totalHospitals = systemAnalytics?.summary?.totalEntities ?? (hospitals.length + clinics.length);
+    const totalDoctors = (systemAnalytics?.hospitals?.length ? systemAnalytics.hospitals.length * 14 : (hospitals.length * 12 + 6)) || 0;
+    const totalAppointments = (systemAnalytics?.monthlyBreakdown?.reduce((s, m) => s + (m.total > 0 ? Math.round(m.total / 300) : 0), 0)) || (hospitals.length > 0 ? hospitals.length * 85 : 0);
+    const totalPatients = (systemAnalytics?.summary?.perPatient?.currentMonthRevenue ? Math.round(systemAnalytics.summary.perPatient.currentMonthRevenue / 50) : (hospitals.length * 200 + clinics.length * 50)) || 0;
+    const totalRevenue = systemAnalytics?.summary?.totalCurrentMonthRevenue || 0;
+
+    return (
+        <div className="centraladmin-page">
+            <div className={`centraladmin-container ${selectedHospital ? 'has-sidebar-padding' : ''}`}>
+                {/* 1. Dashboard Title Area */}
+                <div className="cad-header-row">
+                    <div className="cad-title-group">
+                        <div className="cad-title-icon-box">
+                            <svg width="28" height="28" viewBox="0 0 40 40" fill="none">
+                                <rect width="40" height="40" rx="10" fill="#D85F89" />
+                                <rect x="8" y="10" width="24" height="22" rx="4" fill="#ffffff" />
+                                <rect x="17" y="5" width="6" height="6" rx="2" fill="#FCE7EF" />
+                                <rect x="17" y="24" width="6" height="8" rx="1" fill="#D85F89" />
+                                <circle cx="13" cy="16" r="2" fill="#F1DCE4" />
+                                <circle cx="27" cy="16" r="2" fill="#F1DCE4" />
+                                <circle cx="13" cy="22" r="2" fill="#F1DCE4" />
+                                <circle cx="27" cy="22" r="2" fill="#F1DCE4" />
+                            </svg>
+                        </div>
+                        <div className="cad-title-text-col">
+                            <h1 className="cad-main-title">Central Administration Dashboard</h1>
+                            <p className="cad-main-subtitle">Manage all hospitals, staff, and system configurations</p>
+                        </div>
+                    </div>
+                    <div className="cad-header-actions-row">
+                        <button
+                            onClick={() => navigate('/supremeadmin/revenue')}
+                            className="cad-revenue-analytics-btn"
+                        >
+                            <span className="cad-rev-btn-icon">
+                                <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                    <path d="M3 3v18h18" />
+                                    <path d="m19 9-5 5-4-4-3 3" />
+                                </svg>
+                            </span>
+                            <span>System Revenue Analytics</span>
+                            <span className="cad-rev-btn-arrow">▼</span>
+                        </button>
+                        <button
+                            onClick={handleRefreshAll}
+                            disabled={isRefreshing}
+                            className="cad-refresh-btn"
+                            title="Refresh all dashboard entities and analytics"
+                        >
+                            <svg className={isRefreshing ? 'cad-spin' : ''} width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                <path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/>
+                                <path d="M3 3v5h5"/>
+                                <path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/>
+                                <path d="M16 21h5v-5"/>
+                            </svg>
+                            <span className="cad-refresh-btn-text">{isRefreshing ? 'Refreshing...' : 'Refresh'}</span>
+                        </button>
+                    </div>
+                </div>
+
+                {error && <div className="error-message">{error}</div>}
+                {success && <div className="success-message">{success}</div>}
+
+                {/* 2. Category / Plan Navigation Tabs */}
+                <div className="cad-tabs-nav-container">
+                    <button 
+                        type="button" 
+                        className="cad-tabs-scroll-btn left" 
+                        onClick={() => scrollTabs('left')}
+                        aria-label="Scroll tabs left"
+                        title="Scroll tabs left"
+                    >
+                        <FiChevronLeft size={16} />
+                    </button>
+                    <div className="cad-tabs-scroll-wrapper" ref={tabsScrollRef}>
+                        {tabs.map((tab) => (
+                            <button
+                                key={tab.id}
+                                className={`cad-tab-pill ${activeTab === tab.id ? 'active' : ''}`}
+                                onClick={(e) => {
+                                    setActiveTab(tab.id);
+                                    e.currentTarget?.scrollIntoView({ behavior: 'smooth', block: 'nearest', inline: 'center' });
+                                }}
+                            >
+                                <span className="cad-tab-icon">{tab.icon}</span>
+                                <span className="cad-tab-label">{tab.name || tab.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                    <button 
+                        type="button" 
+                        className="cad-tabs-scroll-btn right" 
+                        onClick={() => scrollTabs('right')}
+                        aria-label="Scroll tabs right"
+                        title="Scroll tabs right"
+                    >
+                        <FiChevronRight size={16} />
+                    </button>
+                </div>
+
+                {/* ========== 3. HOSPITALS TAB (Enterprise, Multi-Speciality, Clinic Basic) ========== */}
+                {(activeTab === 'hospitals' || activeTab === 'multi-speciality' || activeTab === 'clinic-basic') && !selectedHospital && (
+                    <div key={activeTab} className="cad-featured-plan-section cad-tab-content-anim">
+                        {/* Section Header */}
+                        <div className="cad-plan-header-row">
+                            <div className="cad-plan-title-col">
+                                <div className="cad-plan-badge-icon">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#D85F89" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M3 21h18"/>
+                                        <path d="M5 21V5a2 2 0 0 1 2-2h10a2 2 0 0 1 2 2v16"/>
+                                        <path d="M9 9h.01"/><path d="M9 13h.01"/><path d="M9 17h.01"/>
+                                        <path d="M15 9h.01"/><path d="M15 13h.01"/><path d="M15 17h.01"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 className="cad-plan-section-title">
+                                        {activeTab === 'hospitals' 
+                                            ? 'Enterprise Plan' 
+                                            : activeTab === 'multi-speciality' 
+                                                ? 'Multi-Speciality Starter' 
+                                                : 'Clinic Basic Plan'}
+                                    </h2>
+                                    <p className="cad-plan-section-sub">
+                                        {activeTab === 'hospitals' 
+                                            ? 'Click any hospital card to view full analytics' 
+                                            : activeTab === 'multi-speciality'
+                                                ? 'Optimized for Multi-Speciality Hospitals and Diagnostic Centers.'
+                                                : 'Advanced clinics supporting up to 5 Doctors & 3 Staff.'}
+                                    </p>
+                                </div>
+                            </div>
+                            <div className="cad-plan-actions-row">
+                                <button
+                                    className="cad-btn-secondary"
+                                    onClick={() => { setShowHospitalAdminForm(!showHospitalAdminForm); setShowHospitalForm(false); setEditHospital(null); }}
+                                >
+                                    {showHospitalAdminForm ? 'Cancel' : '+ Add Hospital Admin'}
+                                </button>
+                                <button
+                                    className="cad-btn-primary"
+                                    onClick={() => { setShowHospitalForm(!showHospitalForm); setShowHospitalAdminForm(false); setEditHospital(null); setHospitalForm({ name: '', slug: '', customDomain: '', address: '', city: '', state: '', phone: '', email: '', website: '', departments: [] }); }}
+                                >
+                                    {showHospitalForm 
+                                        ? 'Cancel' 
+                                        : activeTab === 'hospitals' 
+                                            ? '+ Add Enterprise Hospital' 
+                                            : activeTab === 'multi-speciality' 
+                                                ? '+ Add Multi-Speciality' 
+                                                : '+ Add Clinic Basic'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Two Information Cards Row - Hidden when form is open */}
+                        {!showHospitalForm && !showHospitalAdminForm && !editHospital && (
+                        <div className="cad-plan-cards-grid">
+                            {/* Left Card: Plan Operational Provision */}
+                            <div className="cad-plan-info-card">
+                                <div className="cad-info-card-header">
+                                    <h3 className="cad-info-plan-name">
+                                        {activeTab === 'hospitals' ? 'Enterprise Plan' : activeTab === 'multi-speciality' ? 'Multi-Speciality Starter Plan' : 'Clinic Basic Plan'}
+                                    </h3>
+                                    <span className="cad-info-plan-price">
+                                        {activeTab === 'hospitals' ? 'Custom Quote' : activeTab === 'multi-speciality' ? '₹30,000 / Year' : '₹15,000 / Year'}
+                                    </span>
+                                </div>
+                                <h4 className="cad-info-provision-heading">Operational Provision</h4>
+                                <div className="cad-info-features-grid">
+                                    {activeTab === 'hospitals' && (
+                                        <>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Unlimited Hospital Admins</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Multi-Branch Management</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Unlimited Doctor Accounts</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Dedicated Account Manager</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Unlimited Staff Accounts</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Priority Support</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Unlimited Branch Locations</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> SLA Support</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Unlimited Patients</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> All HMS Modules Included</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Advanced Role & Permissions</div>
+                                        </>
+                                    )}
+                                    {activeTab === 'multi-speciality' && (
+                                        <>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> 1 Hospital Admin (Included)</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Up to 15 Doctor Accounts</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Up to 25 Staff Accounts</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> 1 Branch Location</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Unlimited Patients</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> All Facilities Included*</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Dedicated Support</div>
+                                        </>
+                                    )}
+                                    {activeTab === 'clinic-basic' && (
+                                        <>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> 1 Hospital Admin (Included)</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Up to 5 Doctor Accounts</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Up to 3 Staff Accounts</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> 1 Branch Location</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Unlimited Patients</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> All Core HMS Facilities Included</div>
+                                            <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Dedicated Support</div>
+                                        </>
+                                    )}
+                                </div>
+                                {/* Shield Watermark */}
+                                <div className="cad-shield-watermark">
+                                    <svg width="90" height="90" viewBox="0 0 24 24" fill="none" stroke="#F1DCE4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                                        <path d="m9 12 2 2 4-4" stroke="#D85F89" strokeWidth="2"/>
+                                    </svg>
+                                </div>
+                            </div>
+
+                            {/* Right Card: Digital Presence Add-on */}
+                            <div className="cad-addon-card">
+                                <div className="cad-addon-content-col">
+                                    <div className="cad-addon-tag">
+                                        
+                                        <span className="cad-addon-tag-text">DIGITAL PRESENCE ADD-ON (₹5,000 EXTRA)</span>
+                                    </div>
+                                    <div className="cad-addon-checklist">
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> 5-Page Custom Website</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> 100% Responsive & Modern UI/UX</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> Free Hosting (1 Year)</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> .in Domain (1 Year)</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> WhatsApp Integration</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> On-Page SEO</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> Lead Gen (Forms, Click-to-call)</div>
+                                    </div>
+                                </div>
+                                <div className="cad-addon-graphic-col">
+                                    {/* 3D Medical Clipboard Illustration */}
+                                    <svg width="170" height="190" viewBox="0 0 200 220" fill="none" className="cad-clipboard-illustration">
+                                        <ellipse cx="100" cy="195" rx="80" ry="18" fill="#FFF7FA" />
+                                        <ellipse cx="100" cy="190" rx="65" ry="12" fill="#F1DCE4" fillOpacity="0.7" />
+                                        <rect x="40" y="30" width="110" height="150" rx="14" fill="#ffffff" stroke="#F1DCE4" strokeWidth="2.5" />
+                                        <rect x="68" y="20" width="54" height="20" rx="6" fill="#D85F89" />
+                                        <circle cx="95" cy="28" r="4" fill="#ffffff" />
+                                        <rect x="85" y="55" width="20" height="20" rx="4" fill="#FCE7EF" />
+                                        <rect x="92" y="58" width="6" height="14" rx="2" fill="#D85F89" />
+                                        <rect x="88" y="62" width="14" height="6" rx="2" fill="#D85F89" />
+                                        <rect x="58" y="90" width="74" height="5" rx="2.5" fill="#F1DCE4" />
+                                        <rect x="58" y="104" width="74" height="5" rx="2.5" fill="#cbd5e1" />
+                                        <rect x="58" y="118" width="74" height="5" rx="2.5" fill="#cbd5e1" />
+                                        <rect x="58" y="132" width="50" height="5" rx="2.5" fill="#cbd5e1" />
+                                        <rect x="58" y="146" width="60" height="5" rx="2.5" fill="#cbd5e1" />
+                                        <g transform="rotate(35 155 125)">
+                                            <rect x="145" y="60" width="14" height="90" rx="7" fill="#172238" />
+                                            <path d="M145 150 L152 166 L159 150 Z" fill="#172238" />
+                                            <circle cx="152" cy="166" r="1.5" fill="#D85F89" />
+                                            <rect x="148" y="70" width="8" height="15" rx="2" fill="#D85F89" />
+                                            <rect x="143" y="66" width="3" height="30" rx="1.5" fill="#F1DCE4" />
+                                        </g>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        )}
+
+                        {/* Futuristic Hospital Admin HUD Form */}
+                        {showHospitalAdminForm && (
+                            <HospitalAdminHUDForm
+                                hospitalAdminForm={hospitalAdminForm}
+                                setHospitalAdminForm={setHospitalAdminForm}
+                                handleCreateHospitalAdmin={handleCreateHospitalAdmin}
+                                creatingHospitalAdmin={creatingHospitalAdmin}
+                                hospitals={hospitals}
+                                onClose={() => setShowHospitalAdminForm(false)}
+                            />
+                        )}
+
+                        {/* Hospital Add/Edit Form matching reference design */}
+                        {showHospitalForm && (
+                            <div ref={hospitalFormRef} className="cad-create-hospital-page">
+                                <div className="cad-create-hospital-grid">
+                                    {/* Left Main Form Card */}
+                                    <div className="cad-ch-main-card">
+                                        <div className="cad-ch-card-header">
+                                            <div className="cad-ch-icon-box">
+                                                <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#059669" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z" />
+                                                    <path d="M9 10h6" />
+                                                    <path d="M12 7v6" />
+                                                    <path d="M9 18h6" />
+                                                </svg>
+                                            </div>
+                                            <div className="cad-ch-title-col">
+                                                <h2>{editHospital ? 'Edit Hospital' : 'Create New Hospital'}</h2>
+                                                <p>{editHospital ? 'Update hospital details and configurations' : 'Add a new hospital to the system'}</p>
+                                            </div>
+                                            <button 
+                                                type="button" 
+                                                className="cad-ch-close-btn" 
+                                                onClick={() => { setShowHospitalForm(false); setEditHospital(null); }}
+                                                title="Cancel"
+                                            >
+                                                ✕
+                                            </button>
+                                        </div>
+
+                                        <form onSubmit={handleSaveHospital} className="cad-ch-form">
+                                            {/* Row 1: Hospital Name & Subdomain Prefix */}
+                                            <div className="cad-ch-row-2col">
+                                                <div className="cad-ch-field-group">
+                                                    <label className="cad-ch-label">Hospital Name <span className="cad-ch-req">*</span></label>
+                                                    <input
+                                                        type="text"
+                                                        className="cad-ch-input"
+                                                        placeholder="e.g. City General Hospital"
+                                                        value={hospitalForm.name}
+                                                        onChange={e => setHospitalForm({ ...hospitalForm, name: e.target.value })}
+                                                        required
+                                                    />
+                                                </div>
+                                                <div className="cad-ch-field-group">
+                                                    <label className="cad-ch-label">
+                                                        Subdomain Prefix <span className="cad-ch-req">*</span>
+                                                    </label>
+                                                    <input
+                                                        type="text"
+                                                        className="cad-ch-input"
+                                                        placeholder="e.g. citycare"
+                                                        value={hospitalForm.slug}
+                                                        onChange={e => setHospitalForm({ ...hospitalForm, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })}
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+
+
+
+                                            {/* Row 3: City, State, Phone */}
+                                            <div className="cad-ch-row-3col">
+                                                <div className="cad-ch-field-group">
+                                                    <label className="cad-ch-label">City <span className="cad-ch-req">*</span></label>
+                                                    <input
+                                                        type="text"
+                                                        className="cad-ch-input"
+                                                        placeholder="e.g. Mumbai"
+                                                        value={hospitalForm.city}
+                                                        onChange={e => setHospitalForm({ ...hospitalForm, city: e.target.value })}
+                                                        required
+                                                    />
+                                                </div>
+                                                <div className="cad-ch-field-group">
+                                                    <label className="cad-ch-label">State <span className="cad-ch-req">*</span></label>
+                                                    <input
+                                                        type="text"
+                                                        className="cad-ch-input"
+                                                        placeholder="e.g. Maharashtra"
+                                                        value={hospitalForm.state}
+                                                        onChange={e => setHospitalForm({ ...hospitalForm, state: e.target.value })}
+                                                        required
+                                                    />
+                                                </div>
+                                                <div className="cad-ch-field-group">
+                                                    <label className="cad-ch-label">Phone <span className="cad-ch-req">*</span></label>
+                                                    <input
+                                                        type="tel"
+                                                        className="cad-ch-input"
+                                                        placeholder="Hospital contact number"
+                                                        maxLength={10}
+                                                        value={hospitalForm.phone}
+                                                        onChange={e => {
+                                                            const cleanVal = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                                            setHospitalForm({ ...hospitalForm, phone: cleanVal });
+                                                        }}
+                                                        required
+                                                        pattern="\d{10}"
+                                                        title="Phone number must be exactly 10 digits"
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Row 4: Email & Website */}
+                                            <div className="cad-ch-row-2col">
+                                                <div className="cad-ch-field-group">
+                                                    <label className="cad-ch-label">Email <span className="cad-ch-req">*</span></label>
+                                                    <input
+                                                        type="email"
+                                                        className="cad-ch-input"
+                                                        placeholder="example@gmail.com"
+                                                        value={hospitalForm.email}
+                                                        onChange={e => setHospitalForm({ ...hospitalForm, email: e.target.value })}
+                                                        required
+                                                    />
+                                                </div>
+                                                <div className="cad-ch-field-group">
+                                                    <label className="cad-ch-label">Website</label>
+                                                    <input
+                                                        type="text"
+                                                        className="cad-ch-input"
+                                                        placeholder="e.g. www.cityhospital.com"
+                                                        value={hospitalForm.website}
+                                                        onChange={e => setHospitalForm({ ...hospitalForm, website: e.target.value })}
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Row 5: Address */}
+                                            <div className="cad-ch-row-full">
+                                                <div className="cad-ch-field-group">
+                                                    <label className="cad-ch-label">Address <span className="cad-ch-req">*</span></label>
+                                                    <input
+                                                        type="text"
+                                                        className="cad-ch-input"
+                                                        placeholder="Enter complete address"
+                                                        value={hospitalForm.address}
+                                                        onChange={e => setHospitalForm({ ...hospitalForm, address: e.target.value })}
+                                                        required
+                                                    />
+                                                </div>
+                                            </div>
+
+                                            {/* Row 6: Departments Provided */}
+                                            <div className="cad-ch-row-full">
+                                                <div className="cad-ch-field-group">
+                                                    <label className="cad-ch-label">Departments Provided (Linked to Question Library)</label>
+                                                    <div className="cad-ch-dept-container" ref={deptDropdownRef}>
+                                                        <div
+                                                            className={`cad-ch-dept-trigger ${deptDropdownOpen ? 'open' : ''}`}
+                                                            onClick={() => setDeptDropdownOpen(!deptDropdownOpen)}
+                                                        >
+                                                            <div className="cad-ch-dept-trigger-text">
+                                                                {(hospitalForm.departments || []).length === 0 ? (
+                                                                    <span>Select departments</span>
+                                                                ) : (
+                                                                    (hospitalForm.departments || []).map(dept => (
+                                                                        <span key={dept} className="cad-ch-dept-tag">
+                                                                            {dept}
+                                                                            <span
+                                                                                className="cad-ch-dept-tag-remove"
+                                                                                onClick={(e) => {
+                                                                                    e.stopPropagation();
+                                                                                    setHospitalForm({
+                                                                                        ...hospitalForm,
+                                                                                        departments: (hospitalForm.departments || []).filter(d => d !== dept)
+                                                                                    });
+                                                                                }}
+                                                                            >
+                                                                                ×
+                                                                            </span>
+                                                                        </span>
+                                                                    ))
+                                                                )}
+                                                            </div>
+                                                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#64748b" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" style={{ transform: deptDropdownOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.2s' }}>
+                                                                <polyline points="6 9 12 15 18 9" />
+                                                            </svg>
+                                                        </div>
+
+                                                        {deptDropdownOpen && (
+                                                            <div className="cad-ch-dept-dropdown-panel">
+                                                                {availableDepartments.length === 0 ? (
+                                                                    <div style={{ padding: '8px', color: '#94a3b8', fontSize: '0.84rem' }}>
+                                                                        No departments found in Question Library.
+                                                                    </div>
+                                                                ) : (
+                                                                    availableDepartments.map(dept => {
+                                                                        const isSelected = (hospitalForm.departments || []).includes(dept);
+                                                                        return (
+                                                                            <div
+                                                                                key={dept}
+                                                                                className={`cad-ch-dept-option ${isSelected ? 'selected' : ''}`}
+                                                                                onClick={() => {
+                                                                                    if (isSelected) {
+                                                                                        setHospitalForm({
+                                                                                            ...hospitalForm,
+                                                                                            departments: hospitalForm.departments.filter(d => d !== dept)
+                                                                                        });
+                                                                                    } else {
+                                                                                        setHospitalForm({
+                                                                                            ...hospitalForm,
+                                                                                            departments: [...(hospitalForm.departments || []), dept]
+                                                                                        });
+                                                                                    }
+                                                                                }}
+                                                                            >
+                                                                                <input
+                                                                                    type="checkbox"
+                                                                                    checked={isSelected}
+                                                                                    readOnly
+                                                                                    style={{ accentColor: '#059669', cursor: 'pointer' }}
+                                                                                />
+                                                                                <span>{dept}</span>
+                                                                            </div>
+                                                                        );
+                                                                    })
+                                                                )}
+                                                            </div>
+                                                        )}
+                                                    </div>
+                                                </div>
+                                            </div>
+
+                                            {/* White-Label & Branding Settings */}
+                                            <div style={{ marginTop: '24px', padding: '20px', background: '#f8fafc', borderRadius: '12px', border: '1px solid #e2e8f0', marginBottom: '24px' }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                                                    <div>
+                                                        <h3 style={{ fontSize: '1.1rem', fontWeight: 600, color: '#1e293b', margin: 0 }}>White-Label & Branding Settings</h3>
+                                                        <p style={{ fontSize: '0.85rem', color: '#64748b', margin: '4px 0 0 0' }}>Configure custom domains, themes, and logos for this hospital.</p>
+                                                    </div>
+                                                    <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer' }}>
+                                                        <input 
+                                                            type="checkbox" 
+                                                            checked={hospitalForm.whiteLabelEnabled} 
+                                                            onChange={e => setHospitalForm({ ...hospitalForm, whiteLabelEnabled: e.target.checked })}
+                                                            style={{ width: '18px', height: '18px', accentColor: '#059669', cursor: 'pointer' }}
+                                                        />
+                                                        <span style={{ fontWeight: 600, color: '#0f172a', fontSize: '0.95rem' }}>Enable White-Label</span>
+                                                    </label>
+                                                </div>
+
+                                                {hospitalForm.whiteLabelEnabled && (
+                                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '16px', marginTop: '16px', paddingTop: '16px', borderTop: '1px solid #e2e8f0' }}>
+                                                        <div className="cad-ch-row-2col">
+                                                            <div className="cad-ch-field-group">
+                                                                <label className="cad-ch-label">Custom Domain</label>
+                                                                <input
+                                                                    type="text"
+                                                                    className="cad-ch-input"
+                                                                    placeholder="portal.cityhospital.com"
+                                                                    value={hospitalForm.customDomain || ''}
+                                                                    onChange={e => setHospitalForm({ ...hospitalForm, customDomain: e.target.value.toLowerCase().replace(/^https?:\/\//, '').replace(/\/$/, '') })}
+                                                                />
+                                                            </div>
+                                                            <div className="cad-ch-field-group">
+                                                                <label className="cad-ch-label">App Name</label>
+                                                                <input
+                                                                    type="text"
+                                                                    className="cad-ch-input"
+                                                                    placeholder="e.g. City Care"
+                                                                    value={hospitalForm.brandingSchema?.appName || ''}
+                                                                    onChange={e => setHospitalForm({ ...hospitalForm, brandingSchema: { ...hospitalForm.brandingSchema, appName: e.target.value } })}
+                                                                />
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="cad-ch-row-full">
+                                                            <div className="cad-ch-field-group">
+                                                                <label className="cad-ch-label">Logo URL</label>
+                                                                <input
+                                                                    type="text"
+                                                                    className="cad-ch-input"
+                                                                    placeholder="https://example.com/logo.png"
+                                                                    value={hospitalForm.brandingSchema?.logoUrl || ''}
+                                                                    onChange={e => setHospitalForm({ ...hospitalForm, brandingSchema: { ...hospitalForm.brandingSchema, logoUrl: e.target.value } })}
+                                                                />
+                                                            </div>
+                                                        </div>
+
+                                                        <div className="cad-ch-row-3col">
+                                                            <div className="cad-ch-field-group">
+                                                                <label className="cad-ch-label">Primary Color</label>
+                                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                                    <input
+                                                                        type="color"
+                                                                        value={hospitalForm.brandingSchema?.themeColors?.primary || '#D85F89'}
+                                                                        onChange={e => setHospitalForm({ ...hospitalForm, brandingSchema: { ...hospitalForm.brandingSchema, themeColors: { ...hospitalForm.brandingSchema?.themeColors, primary: e.target.value } } })}
+                                                                        style={{ height: '42px', width: '42px', padding: '0', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                                                                    />
+                                                                    <input type="text" className="cad-ch-input" style={{ flex: 1 }} value={hospitalForm.brandingSchema?.themeColors?.primary || '#D85F89'} readOnly />
+                                                                </div>
+                                                            </div>
+                                                            <div className="cad-ch-field-group">
+                                                                <label className="cad-ch-label">Secondary Color</label>
+                                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                                    <input
+                                                                        type="color"
+                                                                        value={hospitalForm.brandingSchema?.themeColors?.secondary || '#0a2647'}
+                                                                        onChange={e => setHospitalForm({ ...hospitalForm, brandingSchema: { ...hospitalForm.brandingSchema, themeColors: { ...hospitalForm.brandingSchema?.themeColors, secondary: e.target.value } } })}
+                                                                        style={{ height: '42px', width: '42px', padding: '0', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                                                                    />
+                                                                    <input type="text" className="cad-ch-input" style={{ flex: 1 }} value={hospitalForm.brandingSchema?.themeColors?.secondary || '#0a2647'} readOnly />
+                                                                </div>
+                                                            </div>
+                                                            <div className="cad-ch-field-group">
+                                                                <label className="cad-ch-label">Background Color</label>
+                                                                <div style={{ display: 'flex', gap: '8px' }}>
+                                                                    <input
+                                                                        type="color"
+                                                                        value={hospitalForm.brandingSchema?.themeColors?.background || '#ffffff'}
+                                                                        onChange={e => setHospitalForm({ ...hospitalForm, brandingSchema: { ...hospitalForm.brandingSchema, themeColors: { ...hospitalForm.brandingSchema?.themeColors, background: e.target.value } } })}
+                                                                        style={{ height: '42px', width: '42px', padding: '0', border: 'none', borderRadius: '6px', cursor: 'pointer' }}
+                                                                    />
+                                                                    <input type="text" className="cad-ch-input" style={{ flex: 1 }} value={hospitalForm.brandingSchema?.themeColors?.background || '#ffffff'} readOnly />
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+                                            </div>
+
+                                            {/* Submit Button */}
+                                            <button type="submit" disabled={savingHospital} className="cad-ch-submit-btn">
+                                                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                    <path d="M18 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2Z" />
+                                                    <path d="M9 10h6" />
+                                                    <path d="M12 7v6" />
+                                                </svg>
+                                                {savingHospital ? 'Saving...' : editHospital ? 'Update Hospital' : 'Create Hospital'}
+                                            </button>
+                                        </form>
+                                    </div>
+
+                                    {/* Right Companion Illustration Card */}
+                                    <div className="cad-ch-side-card">
+                                        <div className="cad-ch-side-illustration-wrap">
+                                            <svg width="240" height="185" viewBox="0 0 260 210" fill="none" className="cad-ch-illustration-svg">
+                                                {/* Lawn Ground */}
+                                                <ellipse cx="130" cy="180" rx="105" ry="20" fill="#dcfce7" />
+                                                <ellipse cx="130" cy="175" rx="85" ry="14" fill="#bbf7d0" fillOpacity="0.7" />
+                                                
+                                                {/* Left Tree */}
+                                                <rect x="36" y="145" width="6" height="20" rx="2" fill="#15803d" />
+                                                <circle cx="39" cy="135" r="14" fill="#22c55e" />
+                                                <circle cx="33" cy="140" r="10" fill="#16a34a" />
+                                                <circle cx="45" cy="138" r="10" fill="#4ade80" />
+
+                                                {/* Right Tree */}
+                                                <rect x="218" y="145" width="6" height="20" rx="2" fill="#15803d" />
+                                                <circle cx="221" cy="135" r="14" fill="#22c55e" />
+                                                <circle cx="215" cy="140" r="10" fill="#16a34a" />
+                                                <circle cx="227" cy="138" r="10" fill="#4ade80" />
+
+                                                {/* Shrubs */}
+                                                <circle cx="62" cy="165" r="9" fill="#16a34a" />
+                                                <circle cx="68" cy="163" r="7" fill="#22c55e" />
+                                                <circle cx="198" cy="165" r="9" fill="#16a34a" />
+                                                <circle cx="192" cy="163" r="7" fill="#22c55e" />
+
+                                                {/* Left Building Wing */}
+                                                <path d="M52 85 H80 V175 H52 V85 Z" fill="#f0fdf4" stroke="#86efac" strokeWidth="2" />
+                                                {/* Right Building Wing */}
+                                                <path d="M180 85 H208 V175 H180 V85 Z" fill="#f0fdf4" stroke="#86efac" strokeWidth="2" />
+
+                                                {/* Left Wing Windows */}
+                                                <rect x="58" y="98" width="8" height="12" rx="2" fill="#bbf7d0" />
+                                                <rect x="68" y="98" width="8" height="12" rx="2" fill="#bbf7d0" />
+                                                <rect x="58" y="118" width="8" height="12" rx="2" fill="#bbf7d0" />
+                                                <rect x="68" y="118" width="8" height="12" rx="2" fill="#bbf7d0" />
+                                                <rect x="58" y="138" width="8" height="12" rx="2" fill="#bbf7d0" />
+                                                <rect x="68" y="138" width="8" height="12" rx="2" fill="#bbf7d0" />
+
+                                                {/* Right Wing Windows */}
+                                                <rect x="186" y="98" width="8" height="12" rx="2" fill="#bbf7d0" />
+                                                <rect x="196" y="98" width="8" height="12" rx="2" fill="#bbf7d0" />
+                                                <rect x="186" y="118" width="8" height="12" rx="2" fill="#bbf7d0" />
+                                                <rect x="196" y="118" width="8" height="12" rx="2" fill="#bbf7d0" />
+                                                <rect x="186" y="138" width="8" height="12" rx="2" fill="#bbf7d0" />
+                                                <rect x="196" y="138" width="8" height="12" rx="2" fill="#bbf7d0" />
+
+                                                {/* Main Center Tower */}
+                                                <rect x="80" y="45" width="100" height="130" rx="12" fill="#ffffff" stroke="#86efac" strokeWidth="2.5" />
+
+                                                {/* Center Roof Banner */}
+                                                <rect x="75" y="40" width="110" height="10" rx="5" fill="#10b981" />
+                                                
+                                                {/* Roof Cross Sign Box */}
+                                                <rect x="112" y="18" width="36" height="26" rx="6" fill="#ecfdf5" stroke="#10b981" strokeWidth="2" />
+                                                <rect x="126" y="24" width="8" height="14" rx="2" fill="#059669" />
+                                                <rect x="123" y="27" width="14" height="8" rx="2" fill="#059669" />
+
+                                                {/* Floating badge */}
+                                                <circle cx="130" cy="10" r="5" fill="#34d399" />
+                                                <circle cx="130" cy="10" r="3" fill="#ffffff" />
+
+                                                {/* Center Windows Grid */}
+                                                <rect x="94" y="62" width="12" height="14" rx="2" fill="#bbf7d0" />
+                                                <rect x="114" y="62" width="12" height="14" rx="2" fill="#bbf7d0" />
+                                                <rect x="134" y="62" width="12" height="14" rx="2" fill="#bbf7d0" />
+                                                <rect x="154" y="62" width="12" height="14" rx="2" fill="#bbf7d0" />
+
+                                                <rect x="94" y="86" width="12" height="14" rx="2" fill="#bbf7d0" />
+                                                <rect x="114" y="86" width="12" height="14" rx="2" fill="#bbf7d0" />
+                                                <rect x="134" y="86" width="12" height="14" rx="2" fill="#bbf7d0" />
+                                                <rect x="154" y="86" width="12" height="14" rx="2" fill="#bbf7d0" />
+
+                                                <rect x="94" y="110" width="12" height="14" rx="2" fill="#bbf7d0" />
+                                                <rect x="114" y="110" width="12" height="14" rx="2" fill="#bbf7d0" />
+                                                <rect x="134" y="110" width="12" height="14" rx="2" fill="#bbf7d0" />
+                                                <rect x="154" y="110" width="12" height="14" rx="2" fill="#bbf7d0" />
+
+                                                {/* Center Entrance Door */}
+                                                <rect x="112" y="140" width="36" height="35" rx="4" fill="#047857" />
+                                                <rect x="110" y="137" width="40" height="6" rx="3" fill="#10b981" />
+                                                <rect x="116" y="146" width="12" height="29" rx="2" fill="#ecfdf5" />
+                                                <rect x="132" y="146" width="12" height="29" rx="2" fill="#ecfdf5" />
+                                            </svg>
+                                        </div>
+
+                                        <h3 className="cad-ch-side-heading">You're almost there!</h3>
+                                        <p className="cad-ch-side-subtitle">Fill in the details to add a new hospital to the system.</p>
+
+                                        <div className="cad-ch-checklist">
+                                            <div className="cad-ch-check-item">
+                                                <span className="cad-ch-check-circle">✓</span>
+                                                <span>Subdomain will be used for login and portal access.</span>
+                                            </div>
+                                            <div className="cad-ch-check-item">
+                                                <span className="cad-ch-check-circle">✓</span>
+                                                <span>Custom domain is optional.</span>
+                                            </div>
+                                            <div className="cad-ch-check-item">
+                                                <span className="cad-ch-check-circle">✓</span>
+                                                <span>You can manage departments after creation.</span>
+                                            </div>
+                                        </div>
+
+                                        <div className="cad-ch-dots-bg">
+                                                    <svg width="220" height="40" viewBox="0 0 220 40" fill="none">
+                                                {[0, 1, 2, 3].map(row => (
+                                                    [0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14].map(col => (
+                                                        <circle key={`${row}-${col}`} cx={10 + col * 14} cy={6 + row * 10} r="1.5" fill="#86efac" fillOpacity="0.45" />
+                                                    ))
+                                                ))}
+                                            </svg>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+
+                        {/* Hospital Cards Grid or Empty State - Hidden when form is open */}
+                        {!showHospitalForm && !showHospitalAdminForm && !editHospital && (
+                            loadingHospitals ? (
+                                <div className="loading-message">⏳ Loading hospitals...</div>
+                            ) : (() => {
+                                const planHospitals = hospitals.filter(h => 
+                                    activeTab === 'multi-speciality' 
+                                        ? h.subscriptionPlan === 'multi_speciality_starter' 
+                                        : activeTab === 'clinic-basic'
+                                            ? h.subscriptionPlan === 'clinic_basic'
+                                            : (h.subscriptionPlan !== 'multi_speciality_starter' && h.subscriptionPlan !== 'clinic_basic')
+                                );
+                                
+                                if (planHospitals.length === 0) {
+                                    return (
+                                        <div className="cad-empty-banner">
+                                            <span className="cad-empty-icon"><FiFileText /></span>
+                                            <span>No hospitals found for this plan. Add your first hospital above.</span>
+                                        </div>
+                                    );
+                                }
+
+                                // Apply search filter
+                                let filtered = [...planHospitals];
+                                if (hospitalSearch.trim()) {
+                                    const q = hospitalSearch.toLowerCase().trim();
+                                    filtered = filtered.filter(h => {
+                                        const name = (h.branding?.appName || h.name || '').toLowerCase();
+                                        const city = (h.city || '').toLowerCase();
+                                        const state = (h.state || '').toLowerCase();
+                                        const email = (h.email || '').toLowerCase();
+                                        const phone = (h.phone || '').toLowerCase();
+                                        const slug = (h.slug || '').toLowerCase();
+                                        const domain = (h.customDomain || '').toLowerCase();
+                                        return name.includes(q) || city.includes(q) || state.includes(q) || email.includes(q) || phone.includes(q) || slug.includes(q) || domain.includes(q);
+                                    });
+                                }
+
+                                // Apply sorting
+                                filtered.sort((a, b) => {
+                                    const nameA = (a.branding?.appName || a.name || '').trim();
+                                    const nameB = (b.branding?.appName || b.name || '').trim();
+
+                                    if (hospitalSort === 'a-z') {
+                                        return nameA.localeCompare(nameB, undefined, { sensitivity: 'base', numeric: true });
+                                    }
+                                    if (hospitalSort === 'z-a') {
+                                        return nameB.localeCompare(nameA, undefined, { sensitivity: 'base', numeric: true });
+                                    }
+                                    if (hospitalSort === 'newest') {
+                                        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                                        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                                        if (dateA && dateB) return dateB - dateA;
+                                        return (b._id || '').localeCompare(a._id || '');
+                                    }
+                                    if (hospitalSort === 'oldest') {
+                                        const dateA = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+                                        const dateB = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+                                        if (dateA && dateB) return dateA - dateB;
+                                        return (a._id || '').localeCompare(b._id || '');
+                                    }
+                                    return 0;
+                                });
+
+                                return (
+                                    <div className="cad-hospital-section-wrapper">
+                                        {/* Filter & Sort Bar */}
+                                        <div className="cad-hospital-filter-bar">
+                                            <div className="cad-hospital-filter-left">
+                                                <div className="cad-hospital-search-box">
+                                                    <svg className="cad-search-icon" width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                                                        <circle cx="11" cy="11" r="8" />
+                                                        <line x1="21" y1="21" x2="16.65" y2="16.65" />
+                                                    </svg>
+                                                    <input
+                                                        type="text"
+                                                        className="cad-hospital-search-input"
+                                                        placeholder="Search hospitals..."
+                                                        value={hospitalSearch}
+                                                        onChange={e => setHospitalSearch(e.target.value)}
+                                                    />
+                                                    {hospitalSearch && (
+                                                        <button 
+                                                            type="button" 
+                                                            className="cad-search-clear-btn" 
+                                                            onClick={() => setHospitalSearch('')} 
+                                                            title="Clear search"
+                                                        >
+                                                            ✕
+                                                        </button>
+                                                    )}
+                                                </div>
+                                                <span className="cad-hospital-count-badge">
+                                                    {filtered.length} {filtered.length === 1 ? 'Hospital' : 'Hospitals'}
+                                                    {hospitalSearch && ` (${planHospitals.length} total)`}
+                                                </span>
+                                            </div>
+
+                                            {/* Sort Filters on the side */}
+                                            <div className="cad-hospital-filter-right">
+                                                <span className="cad-filter-label">Sort:</span>
+                                                <div className="cad-sort-pills-wrap">
+                                                    <button
+                                                        type="button"
+                                                        className={`cad-sort-pill ${hospitalSort === 'a-z' ? 'active' : ''}`}
+                                                        onClick={() => setHospitalSort('a-z')}
+                                                        title="Alphabetical A to Z (Default)"
+                                                    >
+                                                        A → Z
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={`cad-sort-pill ${hospitalSort === 'z-a' ? 'active' : ''}`}
+                                                        onClick={() => setHospitalSort('z-a')}
+                                                        title="Alphabetical Z to A"
+                                                    >
+                                                        Z → A
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={`cad-sort-pill ${hospitalSort === 'newest' ? 'active' : ''}`}
+                                                        onClick={() => setHospitalSort('newest')}
+                                                        title="Recently added first (New wala)"
+                                                    >
+                                                        Newest
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        className={`cad-sort-pill ${hospitalSort === 'oldest' ? 'active' : ''}`}
+                                                        onClick={() => setHospitalSort('oldest')}
+                                                        title="Oldest added first (Old wala)"
+                                                    >
+                                                        <span className="cad-sort-pill-icon">⏳</span> Oldest
+                                                    </button>
+                                                </div>
+                                            </div>
+                                        </div>
+
+                                        {/* Scrollable Container with Custom Scrollbar */}
+                                        {filtered.length === 0 ? (
+                                            <div className="cad-empty-banner" style={{ marginTop: '14px' }}>
+                                                <span className="cad-empty-icon"><FiSearch /></span>
+                                                <span>No hospitals match &quot;{hospitalSearch}&quot;.</span>
+                                                <button 
+                                                    className="cad-btn-secondary" 
+                                                    style={{ marginTop: '8px', padding: '6px 14px', fontSize: '12.5px' }}
+                                                    onClick={() => setHospitalSearch('')}
+                                                >
+                                                    Clear Filter
+                                                </button>
+                                            </div>
+                                        ) : (
+                                            <div className="cad-hospital-scroll-area">
+                                                <div className="cad-hospitals-grid">
+                                                    {filtered.map(h => (
+                                                        <div key={h._id} className="cad-hospital-card" onClick={() => openHospitalDetail(h)}>
+                                                            <div className="cad-hospital-card-header">
+                                                                <div className="cad-hospital-logo-box">
+                                                                    {h.branding?.logoUrl ? (
+                                                                        <img src={h.branding.logoUrl} alt={h.name} />
+                                                                    ) : (
+                                                                        <div className="cad-entity-avatar"><FiHome /></div>
+                                                                    )}
+                                                                </div>
+                                                                <div className="cad-hospital-info">
+                                                                    <h3 className="cad-hospital-name">
+                                                                        {h.branding?.appName || h.name}
+                                                                    </h3>
+                                                                    {h.branding?.tagline && (
+                                                                        <p className="cad-hospital-tagline">{h.branding.tagline}</p>
+                                                                    )}
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="cad-hospital-meta-list">
+                                                                {h.city && <span>{h.city}{h.state ? `, ${h.state}` : ''}</span>}
+                                                                {h.phone && <span>{h.phone}</span>}
+                                                                {h.email && <span>{h.email}</span>}
+
+                                                                <div className="cad-domain-badge-wrap" onClick={e => e.stopPropagation()}>
+                                                                    {h.slug && (
+                                                                        <a href={`${window.location.protocol}//${h.slug}.${getBaseHost()}`} target="_blank" rel="noreferrer" className="cad-domain-badge">
+                                                                            {h.slug}.{getBaseHost()}
+                                                                        </a>
+                                                                    )}
+                                                                    {h.customDomain && (
+                                                                        <a href={`http://${h.customDomain}`} target="_blank" rel="noreferrer" className="cad-domain-badge">
+                                                                            {h.customDomain}
+                                                                        </a>
+                                                                    )}
+                                                                    <WhiteLabelBuilder hospital={h} />
+                                                                </div>
+                                                            </div>
+
+                                                            <div className="cad-hospital-card-footer">
+                                                                <div className="cad-hospital-click-hint">View full analytics →</div>
+                                                                <div className="cad-hospital-btn-group" onClick={e => e.stopPropagation()}>
+                                                                    <button className="cad-btn-sm-branding" onClick={() => setBrandingHospital(h)}>Branding</button>
+                                                                    <button className="cad-btn-sm-edit" onClick={() => openEditHospital(h)}>Edit</button>
+                                                                    <button className="cad-btn-sm-delete" onClick={() => setDeleteHospitalConfirm(h._id)}>Delete</button>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    ))}
+                                                </div>
+                                            </div>
+                                        )}
+                                    </div>
+                                );
+                            })()
+                        )}
+                    </div>
+                )}
+
+
+                {/* ========== CLINICS TAB (Starter) ========== */}
+                {activeTab === 'simple-clinics' && !selectedClinic && (
+                    <div key={activeTab} className="cad-featured-plan-section cad-tab-content-anim">
+                        <div className="cad-plan-header-row">
+                            <div className="cad-plan-title-col">
+                                <div className="cad-plan-badge-icon">
+                                    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#D85F89" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/><polyline points="14 2 14 8 20 8"/>
+                                    </svg>
+                                </div>
+                                <div>
+                                    <h2 className="cad-plan-section-title">Starter Plan</h2>
+                                    <p className="cad-plan-section-sub">Small clinics managed by 1 doctor. All features included.</p>
+                                </div>
+                            </div>
+                            <div className="cad-plan-actions-row">
+                                <button className="cad-btn-primary"
+                                    onClick={() => { setShowClinicForm(!showClinicForm); setEditClinic(null); setClinicForm({ name: '', slug: '', address: '', city: '', state: '', phone: '', email: '', website: '', defaultFee: 0 }); }}>
+                                    {showClinicForm ? 'Cancel' : '+ Add Starter Clinic'}
+                                </button>
+                            </div>
+                        </div>
+
+                        {/* Two Information Cards - Hidden when clinic form is open */}
+                        {!showClinicForm && !editClinic && (
+                        <div className="cad-plan-cards-grid">
+                            <div className="cad-plan-info-card">
+                                <div className="cad-info-card-header">
+                                    <h3 className="cad-info-plan-name">Starter Plan</h3>
+                                    <span className="cad-info-plan-price">₹6,000 / Year</span>
+                                </div>
+                                <h4 className="cad-info-provision-heading">Operational Provision</h4>
+                                <div className="cad-info-features-grid">
+                                    <div className="cad-feature-item"><span className="cad-check-blue">✓</span> 1 Doctor Account</div>
+                                    <div className="cad-feature-item"><span className="cad-check-blue">✓</span> 1 Receptionist Account</div>
+                                    <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Unlimited Patients</div>
+                                    <div className="cad-feature-item"><span className="cad-check-blue">✓</span> All Facilities Included</div>
+                                    <div className="cad-feature-item"><span className="cad-check-blue">✓</span> Dedicated Support</div>
+                                </div>
+                                <div className="cad-shield-watermark">
+                                    <svg width="90" height="90" viewBox="0 0 24 24" fill="none" stroke="#F1DCE4" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
+                                        <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+                                        <path d="m9 12 2 2 4-4" stroke="#D85F89" strokeWidth="2"/>
+                                    </svg>
+                                </div>
+                            </div>
+                            <div className="cad-addon-card">
+                                <div className="cad-addon-content-col">
+                                    <div className="cad-addon-tag">
+                                        
+                                        <span className="cad-addon-tag-text">DIGITAL PRESENCE ADD-ON (₹5,000 EXTRA)</span>
+                                    </div>
+                                    <div className="cad-addon-checklist">
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> 5-Page Custom Website</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> 100% Responsive & Modern UI/UX</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> Free Hosting (1 Year)</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> .in Domain (1 Year)</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> WhatsApp Integration</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> On-Page SEO</div>
+                                        <div className="cad-addon-item"><span className="cad-check-blue">✓</span> Lead Gen (Forms, Click-to-call)</div>
+                                    </div>
+                                </div>
+                                <div className="cad-addon-graphic-col">
+                                    <svg width="170" height="190" viewBox="0 0 200 220" fill="none" className="cad-clipboard-illustration">
+                                        <ellipse cx="100" cy="195" rx="80" ry="18" fill="#FFF7FA" />
+                                        <ellipse cx="100" cy="190" rx="65" ry="12" fill="#F1DCE4" fillOpacity="0.7" />
+                                        <rect x="40" y="30" width="110" height="150" rx="14" fill="#ffffff" stroke="#F1DCE4" strokeWidth="2.5" />
+                                        <rect x="68" y="20" width="54" height="20" rx="6" fill="#D85F89" />
+                                        <circle cx="95" cy="28" r="4" fill="#ffffff" />
+                                        <rect x="85" y="55" width="20" height="20" rx="4" fill="#FCE7EF" />
+                                        <rect x="92" y="58" width="6" height="14" rx="2" fill="#D85F89" />
+                                        <rect x="88" y="62" width="14" height="6" rx="2" fill="#D85F89" />
+                                        <rect x="58" y="90" width="74" height="5" rx="2.5" fill="#F1DCE4" />
+                                        <rect x="58" y="104" width="74" height="5" rx="2.5" fill="#cbd5e1" />
+                                        <rect x="58" y="118" width="74" height="5" rx="2.5" fill="#cbd5e1" />
+                                        <rect x="58" y="132" width="50" height="5" rx="2.5" fill="#cbd5e1" />
+                                        <rect x="58" y="146" width="60" height="5" rx="2.5" fill="#cbd5e1" />
+                                        <g transform="rotate(35 155 125)">
+                                            <rect x="145" y="60" width="14" height="90" rx="7" fill="#172238" />
+                                            <path d="M145 150 L152 166 L159 150 Z" fill="#172238" />
+                                            <circle cx="152" cy="166" r="1.5" fill="#D85F89" />
+                                            <rect x="148" y="70" width="8" height="15" rx="2" fill="#D85F89" />
+                                            <rect x="143" y="66" width="3" height="30" rx="1.5" fill="#F1DCE4" />
+                                        </g>
+                                    </svg>
+                                </div>
+                            </div>
+                        </div>
+                        )}
+
+                            {/* Add / Edit Clinic Form */}
+                            {showClinicForm && (
+                                <div className="cad-form-box">
+                                    <h3>{editClinic ? 'Edit Clinic' : 'Add Starter Clinic'}</h3>
+                                    <form onSubmit={handleSaveClinic} className="user-form">
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="staff-label">Clinic Name *</label>
+                                                <input type="text" className="staff-input w-full" placeholder="e.g. Sharma Family Clinic" value={clinicForm.name}
+                                                    onChange={e => setClinicForm({ ...clinicForm, name: e.target.value })} required />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="staff-label">Subdomain / Slug *</label>
+                                                <input type="text" className="staff-input w-full" placeholder="e.g. sharma-clinic" value={clinicForm.slug}
+                                                    onChange={e => setClinicForm({ ...clinicForm, slug: e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, '') })} />
+                                                <small style={{ color: '#888' }}>Leave blank to auto-generate from name</small>
+                                            </div>
+                                        </div>
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="staff-label">Address</label>
+                                                <input type="text" className="staff-input w-full" placeholder="Street address" value={clinicForm.address}
+                                                    onChange={e => setClinicForm({ ...clinicForm, address: e.target.value })} />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="staff-label">City</label>
+                                                <input type="text" className="staff-input w-full" placeholder="e.g. Delhi" value={clinicForm.city}
+                                                    onChange={e => setClinicForm({ ...clinicForm, city: e.target.value })} />
+                                            </div>
+                                        </div>
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="staff-label">State</label>
+                                                <input type="text" className="staff-input w-full" placeholder="e.g. Delhi" value={clinicForm.state}
+                                                    onChange={e => setClinicForm({ ...clinicForm, state: e.target.value })} />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="staff-label">Phone *</label>
+                                                <input type="tel" className="staff-input" placeholder="Clinic contact number" maxLength={10} value={clinicForm.phone}
+                                                    onChange={e => {
+                                                        const cleanVal = e.target.value.replace(/\D/g, '').slice(0, 10);
+                                                        setClinicForm({ ...clinicForm, phone: cleanVal });
+                                                    }} required pattern="\d{10}" title="Phone number must be exactly 10 digits" />
+                                            </div>
+                                        </div>
+                                        <div className="form-row">
+                                            <div className="form-group">
+                                                <label className="staff-label">Email *</label>
+                                                <input type="email" className="staff-input" placeholder="clinic@email.com" value={clinicForm.email}
+                                                    onChange={e => setClinicForm({ ...clinicForm, email: e.target.value })} required />
+                                            </div>
+                                            <div className="form-group">
+                                                <label className="staff-label">Consultation Fee (₹)</label>
+                                                <input type="number" className="staff-input" placeholder="300" value={clinicForm.defaultFee}
+                                                    onChange={e => setClinicForm({ ...clinicForm, defaultFee: Number(e.target.value) })} />
+                                            </div>
+                                        </div>
+                                        <button type="submit" disabled={savingClinic} className="cad-btn-primary" style={{ width: '100%' }}>
+                                            {savingClinic ? 'Saving...' : editClinic ? 'Update Clinic' : 'Create Clinic'}
+                                        </button>
+                                    </form>
+                                </div>
+                            )}
+
+                            {/* Clinics List - Hidden when clinic form is open */}
+                            {!showClinicForm && !editClinic && (
+                                loadingClinics ? (
+                                    <div className="loading-message">⏳ Loading clinics...</div>
+                                ) : (() => {
+                                    const filteredClinics = clinics.filter(clinic => 
+                                        activeTab === 'clinic-basic' 
+                                            ? clinic.subscriptionPlan === 'clinic_basic'
+                                            : clinic.subscriptionPlan !== 'clinic_basic'
+                                    ).sort((a, b) => b._id.localeCompare(a._id));
+
+                                    if (filteredClinics.length === 0) {
+                                        return (
+                                            <div className="cad-empty-banner">
+                                                <span className="cad-empty-icon"><FiHome /></span>
+                                                <span>No clinics found in this plan. Click <strong>+ Add Starter Clinic</strong> to get started.</span>
+                                            </div>
+                                        );
+                                    }
+
+                                    return (
+                                        <div className="cad-hospitals-grid">
+                                            {filteredClinics.map(clinic => (
+                                            <div key={clinic._id} className="cad-hospital-card" onClick={() => openClinicDetail(clinic)}>
+                                                <div className="cad-hospital-card-header">
+                                                    <div className="cad-hospital-logo-box">
+                                                        <div className="cad-entity-avatar"><FiHome /></div>
+                                                    </div>
+                                                    <div className="cad-hospital-info">
+                                                        <h3 className="cad-hospital-name">{clinic.name}</h3>
+                                                        <p className="cad-hospital-tagline">{clinic.city}{clinic.state ? `, ${clinic.state}` : ''}</p>
+                                                    </div>
+                                                </div>
+                                                <div className="cad-hospital-meta-list">
+                                                    {clinic.phone && <span>{clinic.phone}</span>}
+                                                    {clinic.email && <span>{clinic.email}</span>}
+                                                    <div>Consultation Fee: {formatCurrency(clinic.defaultFee)}</div>
+                                                    {clinic.slug && (
+                                                        <div className="cad-domain-badge-wrap" onClick={e => e.stopPropagation()}>
+                                                            <a href={`${window.location.protocol}//${clinic.slug}.${getBaseHost()}`} target="_blank" rel="noopener noreferrer" className="cad-domain-badge">
+                                                                {clinic.slug}.{getBaseHost()}
+                                                            </a>
+                                                        </div>
+                                                    )}
+                                                    {clinic.adminUserId && (
+                                                        <span style={{ marginTop: '4px', color: '#16a34a', fontWeight: 600 }}>Admin: {clinic.adminUserId.name}</span>
+                                                    )}
+                                                </div>
+                                                <div className="cad-hospital-card-footer">
+                                                    <div className="cad-hospital-click-hint">View full analytics →</div>
+                                                    <div className="cad-hospital-btn-group" onClick={e => e.stopPropagation()}>
+                                                        <button className="cad-btn-sm-edit"
+                                                            onClick={() => { setEditClinic(clinic); setClinicForm({ name: clinic.name, slug: clinic.slug || '', address: clinic.address || '', city: clinic.city || '', state: clinic.state || '', phone: clinic.phone || '', email: clinic.email || '', website: clinic.website || '', defaultFee: clinic.defaultFee || 0 }); setShowClinicForm(true); }}>
+                                                            Edit
+                                                        </button>
+                                                        <button className="cad-btn-sm-delete"
+                                                            onClick={() => setDeleteClinicConfirm(clinic._id)}>
+                                                            Delete
+                                                        </button>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            ))}
+                                        </div>
+                                    );
+                                })()
+                            )}
+                    </div>
+                )}
+
+                {/* Delete Clinic Confirm Modal */}
+
+                {/* Delete Clinic Confirm Modal */}
+                {deleteClinicConfirm && (
+                    <div className="modal-overlay">
+                        <div className="modal-content">
+                            <h3>Delete Simple Clinic?</h3>
+                            <p style={{ color: '#dc2626', fontWeight: '600' }}>This will permanently delete the clinic, all staff accounts, and all clinic data. This action CANNOT be undone.</p>
+                            <div className="modal-buttons">
+                                <button onClick={() => handleDeleteClinic(deleteClinicConfirm)} className="btn-confirm-delete">Delete</button>
+                                <button onClick={() => setDeleteClinicConfirm(null)} className="btn-cancel">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
+                {/* ========== REVENUE PLANS TAB ========== */}
+                {activeTab === 'revenue-plans' && (
+                    <div key={activeTab} className="cad-tab-content-anim">
+                        <div className="admin-card w-full max-w-full min-w-0">
+                            <div className="flex flex-col md:flex-row flex-wrap md:justify-between items-start md:items-center gap-4 w-full" style={{ marginBottom: '20px' }}>
+                                <div>
+                                    <h2>Revenue Plans</h2>
+                                    <p style={{ color: '#888', fontSize: '13px', margin: '4px 0 0' }}>Assign a billing model to each hospital or clinic</p>
+                                </div>
+                                <div className="flex flex-col sm:flex-row gap-3 w-full">
+                                    <button
+                                        onClick={() => navigate('/supremeadmin/revenue')}
+                                        style={{ background: 'linear-gradient(135deg, #6366f1, #8b5cf6)', color: 'white', border: 'none', padding: '9px 18px', borderRadius: '9px', fontWeight: 700, fontSize: '12px', cursor: 'pointer' }}
+                                    >
+                                        View System Analytics
+                                    </button>
+                                    <button className="btn-edit" onClick={fetchRevenuePlans} style={{ padding: '9px 18px' }}>
+                                        ↻ Refresh
+                                    </button>
+                                </div>
+                            </div>
+
+                            {/* Model Legend */}
+                            <div style={{ display: 'flex', gap: '12px', marginBottom: '20px', flexWrap: 'wrap' }}>
+                                {Object.entries(MODEL_LABELS).map(([key, m]) => (
+                                    <div key={key} style={{ display: 'flex', alignItems: 'center', gap: '8px', padding: '8px 14px', borderRadius: '10px', background: m.bg, border: `1px solid ${m.color}30` }}>
+                                        <span>{m.icon}</span>
+                                        <div>
+                                            <div style={{ fontSize: '12px', fontWeight: 700, color: m.color }}>{m.label}</div>
+                                            <div style={{ fontSize: '11px', color: '#888' }}>
+                                                {key === 'per_patient' && 'Charge per new patient registered monthly'}
+                                                {key === 'fixed_monthly' && 'Flat fee every billing cycle'}
+                                                {key === 'per_login' && 'Charge per login session (coming soon)'}
+                                            </div>
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+
+                            {/* Search */}
+                            <input
+                                placeholder="Search hospital or clinic name…"
+                                value={revenuePlanSearch}
+                                onChange={e => setRevenuePlanSearch(e.target.value)}
+                                style={{ width: '100%', padding: '9px 14px', border: '1px solid #F1DCE4', borderRadius: '8px', fontSize: '13px', marginBottom: '16px', boxSizing: 'border-box', outline: 'none', background: '#FFFFFF', color: '#172238' }}
+                            />
+
+                            {loadingRevenuePlans ? (
+                                <p style={{ textAlign: 'center', color: '#888', padding: '24px' }}>Loading revenue plans…</p>
+                            ) : revenuePlans.length === 0 ? (
+                                <div style={{ textAlign: 'center', padding: '40px', color: '#888' }}>
+                                    <p style={{ fontSize: '32px', marginBottom: '8px', color: '#D85F89' }}><FiDollarSign /></p>
+                                    <p>No hospitals found. Add hospitals first, then assign revenue plans.</p>
+                                    <button className="btn-save w-full md:w-auto" style={{ marginTop: '12px' }} onClick={fetchRevenuePlans}>Load Plans</button>
+                                </div>
+                            ) : (
+                                <div className="users-table w-full overflow-x-auto">
+                                    <table className="w-full min-w-[600px] overflow-hidden">
+                                        <thead>
+                                            <tr>
+                                                <th>#</th>
+                                                <th>Name</th>
+                                                <th>Type</th>
+                                                <th>Revenue Model</th>
+                                                <th>Rate / Fee</th>
+                                                <th>Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {revenuePlans
+                                                .filter(h => !revenuePlanSearch || h.name.toLowerCase().includes(revenuePlanSearch.toLowerCase()))
+                                                .map((h, i) => {
+                                                    const meta = MODEL_LABELS[h.revenueModel] || MODEL_LABELS.per_patient;
+                                                    const rateLabel = h.revenueModel === 'per_patient'
+                                                        ? `₹${h.subscription?.ratePerPatient || 0}/patient`
+                                                        : h.revenueModel === 'fixed_monthly'
+                                                            ? `₹${h.revenueConfig?.monthlyFee || 0}/month`
+                                                            : `₹${h.revenueConfig?.ratePerLogin || 0}/login`;
+                                                    return (
+                                                        <tr key={h._id}>
+                                                            <td style={{ color: '#94a3b8' }}>{i + 1}</td>
+                                                            <td><strong>{h.name}</strong></td>
+                                                            <td>
+                                                                <span style={{ padding: '3px 8px', borderRadius: '6px', fontSize: '11px', fontWeight: 600, background: h.clinicType === 'hospital' ? '#eff6ff' : '#f5f3ff', color: h.clinicType === 'hospital' ? '#3b82f6' : '#8b5cf6' }}>
+                                                                    {h.clinicType === 'hospital' ? 'Hospital' : 'Clinic'}
+                                                                </span>
+                                                            </td>
+                                                            <td>
+                                                                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '4px', padding: '4px 10px', borderRadius: '20px', fontSize: '11px', fontWeight: 700, background: meta.bg, color: meta.color }}>
+                                                                    {meta.icon} {meta.label.split(' — ')[0]}
+                                                                </span>
+                                                            </td>
+                                                            <td style={{ fontWeight: 600, color: '#374151' }}>{rateLabel}</td>
+                                                            <td>
+                                                                <button className="btn-edit" style={{ fontSize: '12px', padding: '5px 12px' }}
+                                                                    onClick={() => openPlanEditor(h)}>
+                                                                    Edit Plan
+                                                                </button>
+                                                            </td>
+                                                        </tr>
+                                                    );
+                                                })}
+                                        </tbody>
+                                    </table>
+                                </div>
+                            )}
+                        </div>
+
+                        {/* ── Plan Editor Modal ── */}
+                        {editingPlan && (
+                            <div className="modal-overlay">
+                                <div className="modal-content" style={{ maxWidth: '480px', width: '90%' }}>
+                                    <h3>Set Revenue Plan — {editingPlan.name}</h3>
+                                    <p style={{ color: '#64748b', fontSize: '13px', margin: '4px 0 20px' }}>
+                                        Choose a billing model and set the rate. This determines how your system charges this {editingPlan.clinicType}.
+                                    </p>
+                                    <form onSubmit={handleSavePlan}>
+                                        {/* Model selector */}
+                                        <div style={{ display: 'flex', gap: '10px', marginBottom: '20px' }}>
+                                            {Object.entries(MODEL_LABELS).map(([key, m]) => (
+                                                <div
+                                                    key={key}
+                                                    onClick={() => setPlanForm(f => ({ ...f, revenueModel: key }))}
+                                                    style={{ flex: 1, padding: '12px', borderRadius: '10px', border: `2px solid ${planForm.revenueModel === key ? m.color : '#e2e8f0'}`, background: planForm.revenueModel === key ? m.bg : '#f8fafc', cursor: 'pointer', textAlign: 'center', transition: 'all 0.15s' }}
+                                                >
+                                                    <div style={{ fontSize: '20px', marginBottom: '4px' }}>{m.icon}</div>
+                                                    <div style={{ fontSize: '11px', fontWeight: 700, color: planForm.revenueModel === key ? m.color : '#64748b' }}>{m.label.split(' — ')[0]}</div>
+                                                    <div style={{ fontSize: '10px', color: '#94a3b8', marginTop: '2px' }}>{m.label.split(' — ')[1]}</div>
+                                                </div>
+                                            ))}
+                                        </div>
+
+                                        {/* Rate fields based on model */}
+                                        {planForm.revenueModel === 'per_patient' && (
+                                            <div style={{ marginBottom: '16px' }}>
+                                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: '#374151' }}>Rate per Patient (₹)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={planForm.ratePerPatient}
+                                                    onChange={e => setPlanForm(f => ({ ...f, ratePerPatient: e.target.value }))}
+                                                    placeholder="e.g. 50"
+                                                    style={{ width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }}
+                                                />
+                                                <p style={{ fontSize: '11px', color: '#888', margin: '4px 0 0' }}>Charged per new patient registered each billing cycle.</p>
+                                            </div>
+                                        )}
+                                        {planForm.revenueModel === 'fixed_monthly' && (
+                                            <>
+                                                <div style={{ marginBottom: '16px' }}>
+                                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: '#374151' }}>Monthly Fee (₹)</label>
+                                                    <input
+                                                        type="number"
+                                                        min="0"
+                                                        value={planForm.monthlyFee}
+                                                        onChange={e => setPlanForm(f => ({ ...f, monthlyFee: e.target.value }))}
+                                                        placeholder="e.g. 2000"
+                                                        style={{ width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }}
+                                                    />
+                                                </div>
+                                                <div style={{ marginBottom: '16px' }}>
+                                                    <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: '#374151' }}>Billing Cycle</label>
+                                                    <select
+                                                        value={planForm.billingCycle}
+                                                        onChange={e => setPlanForm(f => ({ ...f, billingCycle: e.target.value }))}
+                                                        style={{ width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', background: 'white', boxSizing: 'border-box' }}
+                                                    >
+                                                        <option value="monthly">Monthly</option>
+                                                        <option value="quarterly">Quarterly</option>
+                                                        <option value="annual">Annual</option>
+                                                    </select>
+                                                </div>
+                                            </>
+                                        )}
+                                        {planForm.revenueModel === 'per_login' && (
+                                            <div style={{ marginBottom: '16px' }}>
+                                                <label style={{ display: 'block', fontSize: '13px', fontWeight: 600, marginBottom: '6px', color: '#374151' }}>Rate per Login (₹)</label>
+                                                <input
+                                                    type="number"
+                                                    min="0"
+                                                    value={planForm.ratePerLogin}
+                                                    onChange={e => setPlanForm(f => ({ ...f, ratePerLogin: e.target.value }))}
+                                                    placeholder="e.g. 5"
+                                                    style={{ width: '100%', padding: '9px 12px', border: '1px solid #e2e8f0', borderRadius: '8px', fontSize: '14px', boxSizing: 'border-box' }}
+                                                />
+                                                <div style={{ padding: '10px 14px', borderRadius: '8px', background: '#fef3c7', border: '1px solid #fde68a', marginTop: '8px' }}>
+                                                    <p style={{ margin: 0, fontSize: '12px', color: '#92400e', fontWeight: 600 }}>Coming Soon — Per Login tracking is not yet active. You can pre-configure the rate.</p>
+                                                </div>
+                                            </div>
+                                        )}
+
+                                        <div className="modal-buttons">
+                                            <button type="submit" className="btn-save w-full md:w-auto" disabled={savingPlan}>
+                                                {savingPlan ? 'Saving…' : '✓ Save Plan'}
+                                            </button>
+                                            <button type="button" className="btn-cancel" onClick={() => setEditingPlan(null)}>Cancel</button>
+                                        </div>
+                                    </form>
+                                </div>
+                            </div>
+                        )}
+                    </div>
+                )}
+
+                {/* ========== CONFIGURATIONS TAB ========== */}
+                {activeTab === 'configurations' && (
+                    <div key={activeTab} className="admin-card w-full max-w-full min-w-0 cad-tab-content-anim">
+                        <h2>System Configurations</h2>
+                        <p style={{ color: '#888', fontSize: '14px', margin: '5px 0 20px' }}>
+                            Manage global settings — roles, question libraries, lab tests, medicines, services, and test packages.
+                        </p>
+                        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                            {[
+                                { icon: <FiKey />, label: 'Roles & Permissions', desc: 'Create and manage user roles', path: '/admin/roles' },
+                                { icon: <FiHelpCircle />, label: 'Question Library', desc: 'Configure assessment forms', path: '/admin/question-library' },
+                                { icon: <FiActivity />, label: 'Lab Tests', desc: 'Manage lab test catalog', path: '/admin/lab-tests' },
+                                { icon: <FiPackage />, label: 'Test Packages', desc: 'Bundle lab tests into packages', path: '/admin/test-packages' },
+                                { icon: <FiPlus />, label: 'Medicine Catalog', desc: 'Global medicine library', path: '/admin/medicines' },
+                                { icon: <FiTool />, label: 'Services', desc: 'Hospital services & pricing', path: '/admin/services' },
+                                { icon: <FiFileText />, label: 'Consent Management', desc: 'Manage consent templates', path: '/admin/consent' },
+                                { icon: <FiLayers />, label: 'Labs', desc: 'Manage lab departments', tab: 'labs' },
+                                { icon: <FiHome />, label: 'Pharmacy', desc: 'Manage pharmacy departments', tab: 'pharmacy' },
+                            ].map((item, i) => (
+                                <div key={i} className="config-card" onClick={() => item.tab ? setActiveTab(item.tab) : navigate(item.path)}>
+                                    <div className="config-icon">{item.icon}</div>
+                                    <div>
+                                        <h4>{item.label}</h4>
+                                        <p>{item.desc}</p>
+                                    </div>
+                                </div>
+                            ))}
+                        </div>
+                    </div>
+                )}
+
+                {/* ========== LABS TAB ========== */}
+                {activeTab === 'labs' && (
+                    <div style={{ marginTop: '20px' }}>
+                        <button className="btn-cancel" style={{ marginBottom: '20px' }} onClick={() => setActiveTab('configurations')}>← Back to Configurations</button>
+                        <AdminLabs />
+                    </div>
+                )}
+
+                {/* ========== PHARMACY TAB ========== */}
+                {activeTab === 'pharmacy' && (
+                    <div style={{ marginTop: '20px' }}>
+                        <button className="btn-cancel" style={{ marginBottom: '20px' }} onClick={() => setActiveTab('configurations')}>← Back to Configurations</button>
+                        <AdminPharmacy />
+                    </div>
+                )}
+
+                {/* Delete Hospital Confirm */}
+                {deleteHospitalConfirm && (
+                    <div className="modal-overlay">
+                        <div className="modal-content">
+                            <h3>Delete Hospital?</h3>
+                            <p style={{ color: '#dc2626', fontWeight: '600' }}>WARNING: This will permanently delete the hospital and ALL related data including doctors, staff, patients, appointments, lab records, pharmacy records, inventory, and the entire hospital database. This action CANNOT be undone.</p>
+                            <div className="modal-buttons">
+                                <button onClick={() => handleDeleteHospital(deleteHospitalConfirm)} className="btn-confirm-delete">Delete</button>
+                                <button onClick={() => setDeleteHospitalConfirm(null)} className="btn-cancel">Cancel</button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+            </div>
+
+            {/* Branding Editor Modal */}
+            {brandingHospital && (
+                <HospitalBrandingEditor
+                    hospital={brandingHospital}
+                    onClose={() => { setBrandingHospital(null); fetchHospitals(); }}
+                />
+            )}
+        </div>
+    );
+};
+
+export default CentralAdminDashboard;

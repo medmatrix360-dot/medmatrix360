@@ -1,0 +1,1270 @@
+/* ============================================================
+   Manage All Staff — Clinical Teal & Slate Design System
+   Medical365 Enterprise Healthcare SaaS
+   ============================================================ */
+
+/* ------------------------------------------------------------
+   Page Layout & Container
+   ------------------------------------------------------------ */
+.superadmin-page.staff-management-page {
+  min-height: auto;
+  padding: 24px;
+  background: transparent;
+  font-family: var(--font-primary, 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, sans-serif);
+  box-sizing: border-box;
+  width: 100%;
+  max-width: 100%;
+  color: #0f172a;
+}
+
+.staff-management-page .superadmin-container {
+  max-width: 1400px;
+  margin: 0 auto;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* ------------------------------------------------------------
+   1. Card Surfaces (Top Card, Main Card, Quota Card)
+   ------------------------------------------------------------ */
+.staff-create-card,
+.staff-main-card,
+.staff-quota-card {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 1px 3px rgba(15, 23, 42, 0.05);
+  box-sizing: border-box;
+  width: 100%;
+  position: relative;
+}
+
+/* Top Accent Line (Clinical Teal) */
+.staff-create-card {
+  padding: 22px 26px;
+  border-top: 3px solid #D85F89;
+}
+
+.staff-create-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 16px;
+}
+
+.staff-create-title-wrap {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+}
+
+.staff-create-icon-badge {
+  width: 44px;
+  height: 44px;
+  border-radius: 10px;
+  background: #FFF7FA;
+  color: #D85F89;
+  border: 1px solid #FCE7EF;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.25rem;
+  flex-shrink: 0;
+}
+
+.staff-create-title-wrap h2 {
+  margin: 0;
+  font-size: 1.2rem;
+  font-weight: 700;
+  color: #0f172a;
+  letter-spacing: -0.01em;
+}
+
+.staff-create-subtitle {
+  margin: 2px 0 0 0;
+  font-size: 0.84rem;
+  color: #64748b;
+  font-weight: 400;
+}
+
+/* Quota Pill */
+.staff-quota-pill {
+  background: #FFF7FA;
+  color: #D85F89;
+  border: 1px solid #FCE7EF;
+  padding: 4px 10px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.staff-quota-dot {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background-color: #D85F89;
+}
+
+/* Add Staff Action Button */
+.btn-add-staff-action {
+  background: #D85F89;
+  color: #ffffff;
+  border: 1px solid #D85F89;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+}
+
+.btn-add-staff-action:hover {
+  background: #C94D78;
+  border-color: #C94D78;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(216, 95, 137, 0.25);
+}
+
+.btn-add-staff-action.close-mode {
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  box-shadow: none;
+}
+
+.btn-add-staff-action.close-mode:hover {
+  background: #f1f5f9;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+
+.staff-btn-icon {
+  font-size: 1rem;
+}
+
+.staff-btn-label-desktop {
+  display: inline;
+}
+
+.staff-btn-label-mobile {
+  display: none;
+}
+
+/* ------------------------------------------------------------
+   2. Expandable Create Staff Form
+   ------------------------------------------------------------ */
+.staff-form-expandable {
+  margin-top: 20px;
+  padding-top: 20px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.staff-alert-banner {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  font-size: 0.85rem;
+  line-height: 1.4;
+  margin-bottom: 20px;
+}
+
+.staff-alert-warning {
+  background: #fffbeb;
+  color: #b45309;
+  border: 1px solid #fde68a;
+}
+
+.staff-alert-danger {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fecaca;
+}
+
+.staff-alert-icon {
+  font-size: 1.15rem;
+  flex-shrink: 0;
+}
+
+.user-form .form-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 16px;
+  margin-bottom: 16px;
+}
+
+.user-form .form-group {
+  display: flex;
+  flex-direction: column;
+}
+
+.staff-label {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: #334155;
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.staff-label-highlight {
+  color: #D85F89;
+  font-weight: 700;
+}
+
+.staff-field-icon {
+  color: #D85F89;
+}
+
+.staff-input {
+  width: 100%;
+  padding: 9px 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #ffffff;
+  color: #0f172a;
+  font-size: 0.88rem;
+  font-family: inherit;
+  box-sizing: border-box;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.staff-input:focus {
+  outline: none;
+  border-color: #D85F89;
+  box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.12);
+}
+
+.staff-input::placeholder {
+  color: #94a3b8;
+}
+
+/* Assistant Doctors Assignment Box */
+.staff-assistant-row {
+  background: #f8fafc;
+  padding: 16px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  margin-top: 10px;
+}
+
+.staff-doctors-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(240px, 1fr));
+  gap: 8px;
+  margin-top: 8px;
+}
+
+.staff-doctor-chip {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 12px;
+  border: 1px solid #cbd5e1;
+  border-radius: 6px;
+  background: #ffffff;
+  cursor: pointer;
+  font-size: 0.82rem;
+  transition: all 0.15s ease;
+}
+
+.staff-doctor-chip:hover {
+  border-color: #94a3b8;
+  background: #f8fafc;
+}
+
+.staff-doctor-chip.selected {
+  border-color: #D85F89;
+  background: #FFF7FA;
+}
+
+.staff-doctor-chip input[type="checkbox"] {
+  accent-color: #D85F89;
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+}
+
+.staff-doctor-chip-name {
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.staff-derived-depts-note {
+  margin-top: 10px;
+  font-size: 0.78rem;
+  color: #D85F89;
+  font-weight: 600;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.staff-note-icon {
+  font-size: 0.95rem;
+}
+
+/* Primary Button */
+.btn-staff-primary {
+  background: #D85F89;
+  color: #ffffff;
+  border: 1px solid #D85F89;
+  padding: 10px 22px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.05);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-staff-primary:hover:not(:disabled) {
+  background: #C94D78;
+  border-color: #C94D78;
+  transform: translateY(-1px);
+  box-shadow: 0 4px 12px rgba(216, 95, 137, 0.25);
+}
+
+.btn-staff-primary:disabled {
+  background: #94a3b8;
+  border-color: #94a3b8;
+  cursor: not-allowed;
+  opacity: 0.7;
+}
+
+.btn-staff-secondary {
+  background: #ffffff;
+  color: #475569;
+  border: 1px solid #cbd5e1;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-staff-secondary:hover {
+  background: #f8fafc;
+  color: #0f172a;
+  border-color: #94a3b8;
+}
+
+.btn-staff-danger {
+  background: #dc2626;
+  color: #ffffff;
+  border: 1px solid #dc2626;
+  padding: 9px 18px;
+  border-radius: 8px;
+  font-weight: 600;
+  font-size: 0.88rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.btn-staff-danger:hover:not(:disabled) {
+  background: #b91c1c;
+  border-color: #b91c1c;
+}
+
+.btn-staff-danger:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* ------------------------------------------------------------
+   3. Subscription Quota Card
+   ------------------------------------------------------------ */
+.staff-quota-card {
+  padding: 18px 22px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+
+.staff-quota-card-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.staff-quota-card-header h3 {
+  margin: 0;
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.staff-quota-icon {
+  color: #D85F89;
+  font-size: 1.1rem;
+}
+
+.staff-quota-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 14px;
+}
+
+.staff-quota-metric {
+  background: #ffffff;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.staff-quota-metric-label {
+  font-size: 0.75rem;
+  font-weight: 600;
+  color: #64748b;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.staff-quota-metric-value {
+  font-size: 1.25rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.staff-quota-metric.is-available {
+  border-color: #FCE7EF;
+  background: #FFF7FA;
+}
+
+.staff-quota-metric.is-available .staff-quota-metric-value {
+  color: #D85F89;
+}
+
+.staff-quota-metric.is-exhausted {
+  border-color: #fecaca;
+  background: #fef2f2;
+}
+
+.staff-quota-metric.is-exhausted .staff-quota-metric-value {
+  color: #dc2626;
+}
+
+/* ------------------------------------------------------------
+   4. Main All Staff Card & Table
+   ------------------------------------------------------------ */
+.staff-main-card {
+  padding: 22px 26px;
+}
+
+.staff-main-header {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-bottom: 18px;
+  width: 100%;
+}
+
+@media (min-width: 900px) {
+  .staff-main-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+  }
+}
+
+.staff-title-and-search-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  width: 100%;
+}
+
+.staff-title-text {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  white-space: nowrap;
+}
+
+.staff-count-badge {
+  background: #f1f5f9;
+  color: #475569;
+  padding: 2px 8px;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  border: 1px solid #e2e8f0;
+}
+
+/* Expandable Search Input */
+.staff-expandable-search-box {
+  display: flex;
+  align-items: center;
+  background: #ffffff;
+  border: 1px solid #cbd5e1;
+  border-radius: 8px;
+  height: 38px;
+  width: 38px;
+  overflow: hidden;
+  transition: all 0.2s ease;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+  flex-shrink: 0;
+  margin-left: auto;
+}
+
+.staff-expandable-search-box.is-expanded {
+  width: 100%;
+  max-width: 260px;
+  border-color: #D85F89;
+  box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.12);
+  padding-right: 6px;
+}
+
+@media (min-width: 900px) {
+  .staff-expandable-search-box {
+    width: 260px;
+    padding-right: 6px;
+  }
+}
+
+.staff-search-icon-btn {
+  width: 38px;
+  height: 38px;
+  border: none;
+  background: transparent;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  color: #64748b;
+  flex-shrink: 0;
+  padding: 0;
+  font-size: 1rem;
+}
+
+.staff-search-expandable-input {
+  width: 100%;
+  border: none !important;
+  outline: none !important;
+  background: transparent !important;
+  font-size: 0.85rem;
+  font-weight: 500;
+  color: #0f172a;
+  padding: 0 6px 0 2px !important;
+  box-shadow: none !important;
+  font-family: inherit;
+}
+
+.staff-search-clear-btn {
+  border: none;
+  background: transparent;
+  color: #94a3b8;
+  cursor: pointer;
+  font-size: 0.95rem;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.staff-search-clear-btn:hover {
+  color: #0f172a;
+}
+
+/* Dual Filters Row */
+.staff-filters-dual-row {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+}
+
+@media (min-width: 900px) {
+  .staff-filters-dual-row {
+    width: auto;
+    justify-content: flex-end;
+  }
+}
+
+.staff-filter-plan-select {
+  min-width: 160px;
+  height: 38px;
+  font-size: 0.82rem;
+  padding: 6px 10px;
+  border-radius: 8px;
+}
+
+.staff-filter-hospital-wrap {
+  min-width: 180px;
+  position: relative;
+}
+
+/* Custom HospitalSelect Dropdown */
+.staff-hospital-select-box {
+  position: relative;
+  width: 100%;
+}
+
+.staff-hospital-trigger {
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #ffffff;
+  height: 38px;
+  min-height: 38px;
+  padding: 0 12px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  font-size: 0.82rem;
+  color: #0f172a;
+  box-sizing: border-box;
+  transition: all 0.15s ease;
+}
+
+.staff-hospital-trigger:hover {
+  border-color: #94a3b8;
+}
+
+.staff-hospital-trigger:focus,
+.staff-hospital-trigger.is-open {
+  outline: none;
+  border-color: #D85F89;
+  box-shadow: 0 0 0 3px rgba(216, 95, 137, 0.12);
+}
+
+.staff-hospital-selected-text {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-weight: 500;
+}
+
+.staff-hospital-chevron {
+  font-size: 0.9rem;
+  color: #64748b;
+  transition: transform 0.2s ease;
+  flex-shrink: 0;
+  margin-left: 6px;
+}
+
+.staff-hospital-chevron.open {
+  transform: rotate(180deg);
+}
+
+.staff-hospital-dropdown-menu {
+  position: absolute;
+  top: calc(100% + 4px);
+  left: 0;
+  right: 0;
+  background: #ffffff;
+  border: 1px solid #e2e8f0;
+  border-radius: 8px;
+  z-index: 60;
+  max-height: 200px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  box-shadow: 0 10px 25px -5px rgba(15, 23, 42, 0.1), 0 4px 6px -2px rgba(15, 23, 42, 0.05);
+  padding: 4px;
+}
+
+.staff-hospital-option {
+  padding: 8px 12px;
+  cursor: pointer;
+  border-radius: 6px;
+  font-size: 0.82rem;
+  color: #0f172a;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  transition: background-color 0.15s ease, color 0.15s ease;
+}
+
+.staff-hospital-option:hover {
+  background: #FFF7FA;
+  color: #D85F89;
+}
+
+.staff-hospital-option.is-selected {
+  background: #FFF7FA;
+  color: #D85F89;
+  font-weight: 600;
+}
+
+.staff-option-check {
+  color: #D85F89;
+  font-size: 0.9rem;
+}
+
+/* ------------------------------------------------------------
+   5. Table Container & Row Styling
+   ------------------------------------------------------------ */
+.staff-table-wrapper {
+  position: relative;
+  width: 100%;
+}
+
+.users-table {
+  max-height: 600px;
+  overflow-y: auto;
+  overflow-x: auto;
+  overscroll-behavior: contain;
+  -webkit-overflow-scrolling: touch;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: #ffffff;
+  width: 100%;
+  position: relative;
+  scrollbar-color: #cbd5e1 #f8fafc;
+  scrollbar-width: thin;
+}
+
+.users-table::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+
+.users-table::-webkit-scrollbar-track {
+  background: #f8fafc;
+}
+
+.users-table::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 3px;
+}
+
+.users-table::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
+.users-table table {
+  width: 100%;
+  min-width: 880px;
+  border-collapse: collapse;
+  border-spacing: 0;
+}
+
+.users-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+}
+
+.users-table th {
+  background: #f8fafc;
+  padding: 12px 16px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: #475569;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  border-bottom: 1px solid #e2e8f0;
+  white-space: nowrap;
+  text-align: left;
+}
+
+.users-table td {
+  padding: 12px 16px;
+  font-size: 0.85rem;
+  color: #0f172a;
+  vertical-align: middle;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+/* Neutral Row Hover State */
+.staff-table-row {
+  background: #ffffff;
+  transition: background-color 0.15s ease;
+}
+
+.staff-table-row:hover {
+  background: #f8fafc;
+}
+
+/* Columns */
+.staff-col-avatar {
+  width: 48px;
+  min-width: 48px;
+  text-align: center;
+  padding-right: 8px;
+}
+
+.staff-col-name {
+  white-space: nowrap;
+  min-width: 170px;
+  font-weight: 600;
+  color: #0f172a;
+}
+
+.staff-col-hospital {
+  white-space: nowrap;
+  min-width: 150px;
+}
+
+.staff-col-plan {
+  white-space: nowrap;
+  min-width: 130px;
+}
+
+.staff-col-role {
+  white-space: nowrap;
+  min-width: 120px;
+}
+
+.staff-col-email {
+  white-space: nowrap;
+  min-width: 200px;
+  color: #475569;
+}
+
+.staff-col-phone {
+  white-space: nowrap;
+  min-width: 120px;
+  color: #475569;
+}
+
+.staff-col-actions {
+  white-space: nowrap;
+  min-width: 140px;
+  text-align: right;
+  padding-right: 18px;
+}
+
+/* Avatar Elements */
+.staff-avatar-img {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  object-fit: cover;
+  border: 1px solid #e2e8f0;
+  display: block;
+}
+
+.staff-avatar-circle-neutral {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #FFF7FA;
+  color: #D85F89;
+  border: 1px solid #FCE7EF;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
+/* Badges & Pills */
+.staff-hosp-tag {
+  background: #f8fafc;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.staff-no-hosp {
+  color: #b45309;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.staff-plan-tag {
+  padding: 3px 9px;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  display: inline-block;
+}
+
+.staff-plan-tag.staff-plan-starter {
+  background: #f1f5f9;
+  color: #475569;
+  border: 1px solid #e2e8f0;
+}
+
+.staff-plan-tag.staff-plan-clinic_basic {
+  background: #FFF7FA;
+  color: #D85F89;
+  border: 1px solid #FCE7EF;
+}
+
+.staff-plan-tag.staff-plan-multi_speciality {
+  background: #eff6ff;
+  color: #1d4ed8;
+  border: 1px solid #bfdbfe;
+}
+
+.staff-plan-tag.staff-plan-enterprise {
+  background: #f5f3ff;
+  color: #6d28d9;
+  border: 1px solid #ddd6fe;
+}
+
+.staff-role-tag {
+  background: #FFF7FA;
+  color: #D85F89;
+  border: 1px solid #FCE7EF;
+  padding: 3px 8px;
+  border-radius: 6px;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  display: inline-block;
+}
+
+/* Action Buttons */
+.staff-col-actions .action-buttons {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+}
+
+.btn-staff-action {
+  padding: 6px 11px;
+  border-radius: 6px;
+  font-size: 0.78rem;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  border: 1px solid transparent;
+  background: transparent;
+}
+
+.btn-staff-action.edit {
+  color: #D85F89;
+  background: #FFF7FA;
+  border-color: #FCE7EF;
+}
+
+.btn-staff-action.edit:hover {
+  background: #FCE7EF;
+  color: #C94D78;
+}
+
+.btn-staff-action.delete {
+  color: #dc2626;
+  background: #fef2f2;
+  border-color: #fecaca;
+}
+
+.btn-staff-action.delete:hover:not(:disabled) {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+
+.btn-staff-action.delete:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+/* Empty State */
+.staff-empty-state {
+  text-align: center;
+  padding: 48px 24px;
+  color: #64748b;
+}
+
+.staff-empty-icon-wrap {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  color: #94a3b8;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 1.5rem;
+  margin: 0 auto 14px;
+}
+
+.staff-empty-state h3 {
+  margin: 0 0 6px 0;
+  font-size: 1.05rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.staff-empty-state p {
+  margin: 0;
+  font-size: 0.85rem;
+  color: #64748b;
+}
+
+/* Infinite Scroll Sentinel */
+.staff-infinite-sentinel {
+  padding: 12px 16px;
+  text-align: center;
+  border-top: 1px solid #f1f5f9;
+}
+
+.staff-infinite-loader {
+  display: flex;
+  justify-content: center;
+  padding: 6px 0;
+}
+
+.staff-infinite-spinner {
+  width: 22px;
+  height: 22px;
+  border: 2px solid #e2e8f0;
+  border-top-color: #D85F89;
+  border-radius: 50%;
+  animation: staffSpinnerRotate 0.75s linear infinite;
+}
+
+@keyframes staffSpinnerRotate {
+  to { transform: rotate(360deg); }
+}
+
+.staff-all-loaded-text {
+  font-size: 0.78rem;
+  color: #64748b;
+  font-weight: 500;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.staff-loaded-icon {
+  color: #D85F89;
+  font-size: 0.9rem;
+}
+
+/* Skeleton Loading State */
+.staff-skeleton-row td {
+  padding: 14px 16px;
+}
+
+.staff-skeleton-circle {
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  background: #f1f5f9;
+}
+
+.staff-skeleton-line {
+  height: 12px;
+  border-radius: 4px;
+  background: #f1f5f9;
+}
+
+/* ------------------------------------------------------------
+   6. Modals (Edit Staff & Delete Confirmation)
+   ------------------------------------------------------------ */
+.staff-management-page .modal-overlay {
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(15, 23, 42, 0.45);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 20px;
+  box-sizing: border-box;
+}
+
+.staff-management-page .modal-content {
+  background: #ffffff;
+  border-radius: 12px;
+  border: 1px solid #e2e8f0;
+  box-shadow: 0 20px 25px -5px rgba(15, 23, 42, 0.15), 0 10px 10px -5px rgba(15, 23, 42, 0.05);
+  padding: 24px;
+  width: 100%;
+  max-height: 90vh;
+  overflow-y: auto;
+  box-sizing: border-box;
+}
+
+.staff-modal-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+  padding-bottom: 12px;
+  border-bottom: 1px solid #f1f5f9;
+}
+
+.staff-modal-header h3 {
+  margin: 0;
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.staff-modal-close-btn {
+  background: transparent;
+  border: none;
+  color: #94a3b8;
+  font-size: 1.25rem;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  border-radius: 6px;
+  transition: all 0.15s ease;
+}
+
+.staff-modal-close-btn:hover {
+  color: #0f172a;
+  background: #f1f5f9;
+}
+
+.staff-avatar-edit-row {
+  display: flex;
+  gap: 18px;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.staff-avatar-preview-wrap {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  overflow: hidden;
+  border: 2px solid #e2e8f0;
+  background: #f8fafc;
+  flex-shrink: 0;
+}
+
+.staff-avatar-modal-img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.staff-avatar-modal-placeholder {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #94a3b8;
+  font-size: 1.75rem;
+}
+
+.staff-modal-buttons {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  margin-top: 24px;
+  padding-top: 16px;
+  border-top: 1px solid #f1f5f9;
+}
+
+.staff-delete-prompt-text {
+  margin: 0 0 16px 0;
+  font-size: 0.9rem;
+  color: #475569;
+  line-height: 1.5;
+}
+
+/* ------------------------------------------------------------
+   7. Responsive Adaptations
+   ------------------------------------------------------------ */
+@media (max-width: 768px) {
+  .superadmin-page.staff-management-page {
+    padding: 16px 12px;
+  }
+
+  .staff-create-card,
+  .staff-main-card,
+  .staff-quota-card {
+    padding: 16px;
+  }
+
+  .user-form .form-row {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .staff-quota-grid {
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+
+  .staff-filters-dual-row {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .staff-filter-plan-select,
+  .staff-filter-hospital-wrap {
+    width: 100%;
+    min-width: 100%;
+  }
+
+  .staff-btn-label-desktop {
+    display: none;
+  }
+
+  .staff-btn-label-mobile {
+    display: inline;
+  }
+
+  .btn-add-staff-action {
+    padding: 8px 12px;
+  }
+}
+
+@media (max-width: 480px) {
+  .staff-title-text {
+    font-size: 1.05rem;
+  }
+
+  .staff-create-title-wrap h2 {
+    font-size: 1.05rem;
+  }
+}
+
+/* ------------------------------------------------------------
+   8. Reduced Motion
+   ------------------------------------------------------------ */
+@media (prefers-reduced-motion: reduce) {
+  .staff-create-card,
+  .btn-add-staff-action,
+  .btn-staff-primary,
+  .staff-infinite-spinner,
+  .staff-hospital-chevron {
+    animation: none !important;
+    transition: none !important;
+  }
+}
